@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智慧校园聊天室</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <div class="header">
+                <h3>在线用户</h3>
+                <div class="scan-controls">
+                    <select id="interfaceSelect">
+                        <option value="">选择网络接口</option>
+                    </select>
+                    <button id="scanBtn" onclick="scanNetwork()">扫描</button>
+                    <button id="stopScanBtn" onclick="stopScan()" disabled style="background-color: #dc3545; display: none;">停止</button>
+                </div>
+            </div>
+            <ul id="userList">
+                <!-- Users will be populated here -->
+            </ul>
+            <div class="settings">
+                <div class="my-profile">
+                    <span>我的昵称: <b id="myNickname">{{ nickname }}</b></span>
+                    <button class="edit-btn" onclick="editNickname()">✎</button>
+                </div>
+                <button onclick="toggleSettings()">设置</button>
+            </div>
+        </div>
+        
+        <div class="chat-area">
+            <div class="chat-header" id="chatHeader">
+                请选择用户开始聊天
+            </div>
+            <div class="messages" id="messages">
+                <!-- Messages will appear here -->
+            </div>
+            <div class="input-area">
+                <input type="text" id="msgInput" placeholder="输入消息..." disabled>
+                <button id="sendBtn" onclick="sendMessage()" disabled>发送</button>
+                <button id="fileBtn" onclick="triggerFileUpload()" disabled>文件</button>
+                <input type="file" id="fileInput" style="display: none;">
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="toggleSettings()">&times;</span>
+            <h2>设置</h2>
+            <div class="form-group">
+                <label>存储路径:</label>
+                <input type="text" id="storagePath" placeholder="输入绝对路径">
+                <button onclick="saveSettings()">保存</button>
+            </div>
+            <p class="hint">当前用户ID: {{ user_id }}</p>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
