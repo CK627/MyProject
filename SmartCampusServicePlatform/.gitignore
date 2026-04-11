@@ -1,0 +1,48 @@
+# 忽略文件与目录
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Qoder & AI Assistants
+.qoder/
+.agent
+.claude
+.codebuddy
+.codex
+.continue
+.cursor
+.gemini
+.kiro
+.opencode
+.roo
+.trae
+.windsurf
+
+# Node.js
+node_modules/
+.next/
+out/
+build/
+dist/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+ENV/
+.pytest_cache/
+
+# Logs
+*.log
+backend.log
+frontend.log
+
+# Env
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
