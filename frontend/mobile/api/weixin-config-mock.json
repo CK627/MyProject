@@ -1,0 +1,15 @@
+{
+    "success": true,
+    "data": {
+        "appId": "wx19b8544837efb153",
+        "timestamp": 1737481200,
+        "nonceStr": "abcd1234efgh5678",
+        "signature": "mock_signature_for_testing",
+        "jsApiList": [
+            "openLocation",
+            "updateAppMessageShareData",
+            "updateTimelineShareData"
+        ]
+    },
+    "message": "微信配置获取成功（本地测试模式）"
+}

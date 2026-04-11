@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>座位信息查询 - 福建师范大学广东校友会</title>
+    <meta name="description" content="查询您的座位信息和签到状态">
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- 移动端样式 -->
+    <link href="../css/mobile.css" rel="stylesheet">
+    
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            font-family: 'PingFang SC', 'Helvetica Neue', Arial, sans-serif;
+        }
+        
+        .container {
+            padding: 20px 15px;
+            max-width: 480px;
+            margin: 0 auto;
+        }
+        
+        .page-header {
+            text-align: center;
+            margin-bottom: 30px;
+            color: white;
+        }
+        
+        .page-header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        
+        .page-header p {
+            font-size: 14px;
+            opacity: 0.9;
+            margin: 0;
+        }
+        
+        .search-card {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        
+        .form-label {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        
+        .form-control {
+            border: 2px solid #e9ecef;
+            border-radius: 12px;
+            padding: 12px 16px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+        
+        .form-control:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+        }
+        
+        .btn-search {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            border-radius: 12px;
+            padding: 12px 24px;
+            font-weight: 600;
+            font-size: 16px;
+            width: 100%;
+            margin-top: 16px;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-search:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+        }
+        
+        .result-card {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            display: none;
+        }
+        
+        .user-info {
+            text-align: center;
+            margin-bottom: 24px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #e9ecef;
+        }
+        
+        .user-avatar {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 12px;
+            color: white;
+            font-size: 24px;
+        }
+        
+        .user-name {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+        }
+        
+        .user-phone {
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        
+        .info-item {
+            text-align: center;
+            padding: 16px;
+            background: #f8f9fa;
+            border-radius: 12px;
+        }
+        
+        .info-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 4px;
+        }
+        
+        .info-value {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .seat-number {
+            color: #667eea;
+        }
+        
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 8px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .status-checked-in {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status-not-checked {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .checkin-section {
+            text-align: center;
+            margin-top: 24px;
+        }
+        
+        .btn-checkin {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            border: none;
+            border-radius: 12px;
+            padding: 12px 32px;
+            font-weight: 600;
+            font-size: 16px;
+            color: white;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-checkin:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(40, 167, 69, 0.3);
+        }
+        
+        .btn-checkin:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .family-info {
+            background: #e3f2fd;
+            border-radius: 12px;
+            padding: 16px;
+            margin-top: 16px;
+        }
+        
+        .family-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #1976d2;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .family-count {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .error-card {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            display: none;
+        }
+        
+        .error-icon {
+            font-size: 48px;
+            color: #dc3545;
+            margin-bottom: 16px;
+        }
+        
+        .error-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+        }
+        
+        .error-message {
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .loading-spinner {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .spinner-border {
+            color: #667eea;
+        }
+        
+        .back-btn {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            border: none;
+            border-radius: 50%;
+            width: 44px;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #333;
+            font-size: 18px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            z-index: 1000;
+            transition: all 0.3s ease;
+        }
+        
+        .back-btn:hover {
+            background: white;
+            transform: scale(1.05);
+        }
+        
+        /* 成功模态框样式 */
+        .modal-content {
+            border-radius: 16px;
+            border: none;
+        }
+        
+        .modal-header {
+            border-bottom: none;
+            padding: 24px 24px 0;
+        }
+        
+        .modal-body {
+            padding: 0 24px 24px;
+            text-align: center;
+        }
+        
+        .success-icon {
+            font-size: 64px;
+            color: #28a745;
+            margin-bottom: 16px;
+        }
+        
+        .modal-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .modal-text {
+            font-size: 14px;
+            color: #666;
+            margin-top: 8px;
+        }
+        
+        @media (max-width: 375px) {
+            .container {
+                padding: 15px 10px;
+            }
+            
+            .search-card, .result-card {
+                padding: 20px;
+            }
+            
+            .info-grid {
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- 返回按钮 -->
+    <button class="back-btn" onclick="history.back()">
+        <i class="fas fa-arrow-left"></i>
+    </button>
+
+    <div class="container">
+        <!-- 页面标题 -->
+        <div class="page-header">
+            <h1><i class="fas fa-chair me-2"></i>座位信息查询</h1>
+            <p>输入姓名或手机号码查询您的座位信息</p>
+        </div>
+
+        <!-- 搜索区域 -->
+        <div class="search-card">
+            <form id="searchForm">
+                <div class="mb-3">
+                    <label for="searchInput" class="form-label">
+                        <i class="fas fa-search me-1"></i>姓名或手机号
+                    </label>
+                    <input type="text" class="form-control" id="searchInput" 
+                           placeholder="请输入您的姓名或手机号码" required>
+                    <div class="form-text mt-2">
+                        <i class="fas fa-info-circle me-1"></i>
+                        请输入您报名时使用的姓名或手机号码
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary btn-search">
+                    <i class="fas fa-search me-2"></i>查询座位信息
+                </button>
+            </form>
+        </div>
+
+        <!-- 加载指示器 -->
+        <div class="loading-spinner" id="loadingSpinner">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">查询中...</span>
+            </div>
+            <p class="mt-2 text-white">正在查询座位信息...</p>
+        </div>
+
+        <!-- 查询结果 -->
+        <div class="result-card" id="resultCard">
+            <!-- 用户信息 -->
+            <div class="user-info">
+                <div class="user-avatar">
+                    <i class="fas fa-user"></i>
+                </div>
+                <div class="user-name" id="userName">张三</div>
+                <div class="user-phone" id="userPhone">138****5678</div>
+            </div>
+
+            <!-- 信息网格 -->
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-label">座位号</div>
+                    <div class="info-value seat-number" id="seatNumber">A-001</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">签到状态</div>
+                    <div class="info-value">
+                        <span class="status-badge status-not-checked" id="checkinStatus">
+                            <i class="fas fa-times-circle"></i>
+                            未签到
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 家属信息 -->
+            <div class="family-info" id="familyInfo" style="display: none;">
+                <div class="family-title">
+                    <i class="fas fa-users"></i>
+                    家属信息
+                </div>
+                <div class="family-count" id="familyCount">携带家属 2 人</div>
+            </div>
+
+            <!-- 签到区域 -->
+            <div class="checkin-section">
+                <button class="btn btn-checkin" id="checkinBtn">
+                    <i class="fas fa-check-circle me-2"></i>立即签到
+                </button>
+                <p class="mt-2 text-muted small">
+                    <i class="fas fa-info-circle me-1"></i>
+                    请在活动现场进行签到
+                </p>
+            </div>
+        </div>
+
+        <!-- 错误提示 -->
+        <div class="error-card" id="errorCard">
+            <div class="error-icon">
+                <i class="fas fa-exclamation-triangle"></i>
+            </div>
+            <div class="error-title" id="errorTitle">未找到座位信息</div>
+            <div class="error-message" id="errorMessage">
+                请检查手机号码是否正确，或联系工作人员确认报名状态
+            </div>
+        </div>
+    </div>
+
+    <!-- 签到成功模态框 -->
+    <div class="modal fade" id="successModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="success-icon">
+                        <i class="fas fa-check-circle"></i>
+                    </div>
+                    <h5 class="modal-title">签到成功！</h5>
+                    <p class="modal-text">欢迎参加福建师范大学广东校友会一周年庆典活动</p>
+                    <p class="modal-text small text-muted" id="checkinTime"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- 页面状态检查 -->
+    <script src="../js/page-status.js"></script>
+    
+    <script>
+        // 页面初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            initializePage();
+        });
+
+        // 初始化页面
+        function initializePage() {
+            bindEvents();
+            setupPhoneInput();
+        }
+
+        // 绑定事件监听器
+        function bindEvents() {
+            const searchForm = document.getElementById('searchForm');
+            const checkinBtn = document.getElementById('checkinBtn');
+
+            searchForm.addEventListener('submit', handleSearch);
+            checkinBtn.addEventListener('click', handleCheckin);
+        }
+
+        // 设置搜索输入框
+        function setupPhoneInput() {
+            const searchInput = document.getElementById('searchInput');
+            
+            searchInput.addEventListener('input', function(e) {
+                // 清除之前的错误状态
+                this.classList.remove('is-invalid');
+                hideError();
+            });
+        }
+
+        // 处理搜索
+        async function handleSearch(e) {
+            e.preventDefault();
+            
+            const searchInput = document.getElementById('searchInput');
+            const searchValue = searchInput.value.trim();
+            
+            // 验证输入
+            if (!searchValue) {
+                showError('请输入姓名或手机号码', '请输入您的姓名或手机号码');
+                searchInput.classList.add('is-invalid');
+                return;
+            }
+            
+            // 判断输入类型（手机号或姓名）
+            const isPhone = /^1[3-9]\d{9}$/.test(searchValue);
+            const isName = /^[\u4e00-\u9fa5a-zA-Z\s]{2,10}$/.test(searchValue);
+            
+            if (!isPhone && !isName) {
+                showError('输入格式错误', '请输入正确的手机号码（11位数字）或姓名（2-10个字符）');
+                searchInput.classList.add('is-invalid');
+                return;
+            }
+
+            // 显示加载状态
+            showLoading(true);
+            hideResults();
+            hideError();
+
+            try {
+                // 构建查询参数
+                const queryParam = isPhone ? `phone=${encodeURIComponent(searchValue)}` : `name=${encodeURIComponent(searchValue)}`;
+                
+                // 调用真实API
+                const response = await fetch(`../../api/seating.php?${queryParam}`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayResults(data.data);
+                } else {
+                    showError('未找到座位信息', data.message || '请检查姓名或手机号码是否正确，或联系工作人员确认报名状态');
+                }
+            } catch (error) {
+                console.error('查询失败:', error);
+                showError('查询失败', '网络连接异常，请稍后重试');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        // 生成模拟数据
+        function generateMockData(phoneNumber) {
+            // 模拟一些有数据的手机号码
+            const mockUsers = {
+                '13800138000': {
+                    name: '张三',
+                    phone: phoneNumber,
+                    seatNumber: 'A-001',
+                    isCheckedIn: false,
+                    familyCount: 0,
+                    checkinTime: null
+                },
+                '13900139000': {
+                    name: '李四',
+                    phone: phoneNumber,
+                    seatNumber: 'B-015',
+                    isCheckedIn: true,
+                    familyCount: 2,
+                    checkinTime: '2025-01-22 14:30:00'
+                },
+                '13700137000': {
+                    name: '王五',
+                    phone: phoneNumber,
+                    seatNumber: 'C-028',
+                    isCheckedIn: false,
+                    familyCount: 1,
+                    checkinTime: null
+                }
+            };
+
+            return mockUsers[phoneNumber] || null;
+        }
+
+        // 显示查询结果
+        function displayResults(data) {
+            // 更新用户信息
+            document.getElementById('userName').textContent = data.name;
+            document.getElementById('userPhone').textContent = formatPhoneNumber(data.phone);
+            document.getElementById('seatNumber').textContent = data.seat_number;
+
+            // 更新签到状态
+            updateCheckinStatus(data.is_checked_in, null);
+
+            // 更新家属信息（只在未签到时显示）
+            if (!data.is_checked_in) {
+                updateFamilyInfo(data.family_count);
+            } else {
+                // 已签到时隐藏家属信息
+                updateFamilyInfo(0);
+            }
+
+            // 更新签到按钮状态
+            updateCheckinButton(data.is_checked_in);
+
+            // 显示结果卡片
+            showResults();
+        }
+
+        // 更新签到状态
+        function updateCheckinStatus(isCheckedIn, checkinTime) {
+            const statusElement = document.getElementById('checkinStatus');
+            
+            if (isCheckedIn) {
+                statusElement.className = 'status-badge status-checked-in';
+                statusElement.innerHTML = '<i class="fas fa-check-circle"></i> 已签到';
+            } else {
+                statusElement.className = 'status-badge status-not-checked';
+                statusElement.innerHTML = '<i class="fas fa-times-circle"></i> 未签到';
+            }
+        }
+
+        // 更新家属信息
+        function updateFamilyInfo(familyCount) {
+            const familyInfo = document.getElementById('familyInfo');
+            const familyCountElement = document.getElementById('familyCount');
+            
+            if (familyCount > 0) {
+                familyCountElement.textContent = `携带家属 ${familyCount} 人`;
+                familyInfo.style.display = 'block';
+            } else {
+                familyInfo.style.display = 'none';
+            }
+        }
+
+        // 更新签到按钮状态
+        function updateCheckinButton(isCheckedIn) {
+            const checkinBtn = document.getElementById('checkinBtn');
+            
+            if (isCheckedIn) {
+                checkinBtn.disabled = true;
+                checkinBtn.innerHTML = '<i class="fas fa-check-circle me-2"></i>已完成签到';
+            } else {
+                checkinBtn.disabled = false;
+                checkinBtn.innerHTML = '<i class="fas fa-check-circle me-2"></i>立即签到';
+            }
+        }
+
+        // 处理签到
+        async function handleCheckin() {
+            const checkinBtn = document.getElementById('checkinBtn');
+            const searchInput = document.getElementById('searchInput');
+            const searchValue = searchInput ? searchInput.value.trim() : '';
+            
+            if (checkinBtn.disabled || !searchValue) {
+                showError('签到失败', '请先查询座位信息后再进行签到');
+                return;
+            }
+            
+            // 判断输入类型（手机号或姓名）
+            const isPhone = /^1[3-9]\d{9}$/.test(searchValue);
+            const isName = /^[\u4e00-\u9fa5a-zA-Z\s]{2,10}$/.test(searchValue);
+            
+            if (!isPhone && !isName) {
+                showError('签到失败', '请输入正确的手机号码或姓名进行签到');
+                return;
+            }
+
+            // 禁用按钮，显示加载状态
+            checkinBtn.disabled = true;
+            checkinBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>签到中...';
+
+            try {
+                // 调用真实签到API
+                const response = await fetch('../../api/seating.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        action: 'checkin',
+                        phone: isPhone ? searchValue : null,
+                        name: isName ? searchValue : null
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // 更新签到状态
+                    updateCheckinStatus(true, data.data.checkin_time);
+                    updateCheckinButton(true);
+                    
+                    // 显示成功模态框
+                    showSuccessModal(data.data.checkin_time);
+                } else {
+                    // 恢复按钮状态
+                    checkinBtn.disabled = false;
+                    checkinBtn.innerHTML = '<i class="fas fa-check-circle me-2"></i>立即签到';
+                    
+                    showError('签到失败', data.message || '签到失败，请稍后重试');
+                }
+                
+            } catch (error) {
+                console.error('签到失败:', error);
+                
+                // 恢复按钮状态
+                checkinBtn.disabled = false;
+                checkinBtn.innerHTML = '<i class="fas fa-check-circle me-2"></i>立即签到';
+                
+                showError('签到失败', '网络连接异常，请稍后重试');
+            }
+        }
+
+        // 显示成功模态框
+        function showSuccessModal(checkinTime) {
+            document.getElementById('checkinTime').textContent = `签到时间：${checkinTime}`;
+            const modal = new bootstrap.Modal(document.getElementById('successModal'));
+            modal.show();
+        }
+
+        // 格式化手机号码
+        function formatPhoneNumber(phone) {
+            // 检查 phone 是否为 null 或 undefined
+            if (!phone) {
+                return '未提供';
+            }
+            
+            // 转换为字符串（防止数字类型）
+            const phoneStr = String(phone);
+            
+            if (phoneStr.length === 11) {
+                return phoneStr.replace(/(\d{3})(\d{4})(\d{4})/, '$1****$3');
+            }
+            return phoneStr;
+        }
+
+        // 格式化日期时间
+        function formatDateTime(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            
+            return `${year}-${month}-${day} ${hours}:${minutes}`;
+        }
+
+        // 显示/隐藏加载状态
+        function showLoading(show) {
+            const loadingSpinner = document.getElementById('loadingSpinner');
+            loadingSpinner.style.display = show ? 'block' : 'none';
+        }
+
+        // 显示/隐藏结果
+        function showResults() {
+            document.getElementById('resultCard').style.display = 'block';
+        }
+
+        function hideResults() {
+            document.getElementById('resultCard').style.display = 'none';
+        }
+
+        // 显示/隐藏错误信息
+        function showError(title, message) {
+            document.getElementById('errorTitle').textContent = title;
+            document.getElementById('errorMessage').textContent = message;
+            document.getElementById('errorCard').style.display = 'block';
+        }
+
+        function hideError() {
+            document.getElementById('errorCard').style.display = 'none';
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>照片直播 - 福建师范大学广东校友会一周年庆典晚会</title>
+    <meta name="description" content="福建师范大学广东校友会一周年庆典晚会照片直播">
+    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="../css/main.css" rel="stylesheet">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+    <link rel="alternate icon" href="../favicon.ico">
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary fixed-top">
+        <div class="container">
+            <a class="navbar-brand" href="../index.html">
+                <i class="fas fa-graduation-cap me-2"></i>福建师范大学广东校友会
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="../index.html">首页</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="registrations.html">报名</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="seating.html">座位信息</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="agenda.html">活动议程</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="photo-live.html">照片直播</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="video-live.html">视频直播</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="transport.html">交通指引</a>
+                    </li>
+                    <li class="nav-item">
+                        <button class="btn music-toggle ms-2" id="musicToggle" title="播放音乐">
+                            <span class="music-icon">🎵</span>
+                        </button>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主内容区域 -->
+        <main class="main-content">
+            <!-- 页面标题和控制区域 -->
+            <div class="container-fluid py-2">
+                <div class="row">
+                    <div class="col-12">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <div>
+                                <h4 class="mb-1">
+                                    <i class="fas fa-camera me-2"></i>照片直播
+                                </h4>
+                                <small class="text-muted">实时分享活动精彩瞬间</small>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <a href="https://m.alltuu.com/album/2276504408/" target="_blank" class="btn btn-outline-primary btn-sm">
+                                    <i class="fas fa-external-link-alt me-1"></i>新窗口打开
+                                </a>
+                                <button class="btn btn-outline-secondary btn-sm" onclick="location.reload()">
+                                    <i class="fas fa-refresh me-1"></i>刷新
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 照片直播内容 -->
+            <div class="photo-live-container">
+                <!-- 嵌入式iframe -->
+                <div class="iframe-container">
+                    <iframe 
+                        id="photoLiveFrame"
+                        src="https://m.alltuu.com/album/2276504408/"
+                        frameborder="0"
+                        allowfullscreen
+                        loading="lazy"
+                        title="照片直播">
+                    </iframe>
+                </div>
+
+                <!-- 加载提示 -->
+                <div id="loadingIndicator" class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">加载中...</span>
+                    </div>
+                    <p class="mt-3 text-muted">正在加载照片直播内容...</p>
+                </div>
+            </div>
+        </main>
+
+    <!-- 页脚 -->
+    <footer class="bg-dark text-white py-4 mt-5">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5>联系我们</h5>
+                    <p><i class="fas fa-phone me-2"></i>400-123-4567</p>
+                    <p><i class="fas fa-envelope me-2"></i>conference@school.edu</p>
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <p>&copy; 2025 福建师范大学广东校友会. All rights reserved.</p>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- JavaScript -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../js/main.js"></script>
+    <script src="../js/page-status.js"></script>
+    <script>
+        // 初始化页面状态检查
+        initPageStatusCheck('photo-live');
+    </script>
+    
+    <!-- 照片直播页面脚本 -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const iframe = document.getElementById('photoLiveFrame');
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            
+            // iframe加载完成后隐藏加载指示器
+            iframe.addEventListener('load', function() {
+                setTimeout(() => {
+                    loadingIndicator.style.display = 'none';
+                }, 1000);
+            });
+            
+            // iframe加载错误处理
+            iframe.addEventListener('error', function() {
+                loadingIndicator.innerHTML = `
+                    <div class="text-center">
+                        <i class="fas fa-exclamation-triangle text-warning fa-3x mb-3"></i>
+                        <h5>加载失败</h5>
+                        <p class="text-muted">无法加载照片直播内容，请稍后重试或点击下方链接直接访问。</p>
+                        <a href="https://m.alltuu.com/album/2276504408/" target="_blank" class="btn btn-primary">
+                            <i class="fas fa-external-link-alt me-2"></i>直接访问照片直播
+                        </a>
+                    </div>
+                `;
+            });
+            
+            // 设置超时处理
+            setTimeout(() => {
+                if (loadingIndicator.style.display !== 'none') {
+                    loadingIndicator.innerHTML = `
+                        <div class="text-center">
+                            <i class="fas fa-clock text-info fa-3x mb-3"></i>
+                            <h5>加载时间较长</h5>
+                            <p class="text-muted">照片直播内容正在加载中，请耐心等待...</p>
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">加载中...</span>
+                            </div>
+                        </div>
+                    `;
+                }
+            }, 10000); // 10秒后显示加载时间较长的提示
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>活动议程 - 福建师范大学广东校友会一周年庆典晚会</title>
+    <meta name="description" content="福建师范大学广东校友会一周年庆典晚会活动议程安排">
+    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="../css/main.css" rel="stylesheet">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+    <link rel="alternate icon" href="../favicon.ico">
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary fixed-top">
+        <div class="container">
+            <a class="navbar-brand" href="../index.html">
+                <i class="fas fa-graduation-cap me-2"></i>福建师范大学广东校友会
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="../index.html">首页</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="registrations.html">报名</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="agenda.html">活动议程</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="photo-live.html">照片直播</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="video-live.html">视频直播</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="transport.html">交通指引</a>
+                    </li>
+                    <li class="nav-item">
+                        <button class="btn music-toggle ms-2" id="musicToggle" title="播放音乐">
+                            <span class="music-icon">🎵</span>
+                        </button>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主内容 -->
+    <main class="pt-5">
+        <div class="container mt-5">
+            <div class="row justify-content-center">
+                <div class="col-lg-8">
+                    <!-- 建设中提示 -->
+                    <div class="text-center py-5" id="maintenanceNotice">
+                        <div class="maintenance-icon mb-4">
+                            <i class="fas fa-tools fa-5x text-warning"></i>
+                        </div>
+                        <h1 class="display-4 mb-4">页面建设中</h1>
+                        <p class="lead text-muted mb-4">
+                            活动议程页面正在紧张建设中，敬请期待！
+                        </p>
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            我们正在为您准备详细的活动议程安排，包括时间表、活动流程等精彩内容。
+                        </div>
+                        <a href="../index.html" class="btn btn-primary btn-lg">
+                            <i class="fas fa-home me-2"></i>返回首页
+                        </a>
+                    </div>
+
+                    <!-- 实际内容区域（隐藏状态） -->
+                    <div id="pageContent" style="display: none;">
+                        <div class="page-header text-center mb-5">
+                            <h1 class="display-4 mb-3">活动议程</h1>
+                            <p class="lead text-muted">福建师范大学广东校友会一周年庆典晚会详细安排</p>
+                        </div>
+
+                        <!-- 活动议程内容将在这里显示 -->
+                        <div class="agenda-content">
+                            <!-- 内容待开发 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- 页脚 -->
+    <footer class="bg-dark text-white py-4 mt-5">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5>联系我们</h5>
+                    <p><i class="fas fa-phone me-2"></i>400-123-4567</p>
+                    <p><i class="fas fa-envelope me-2"></i>conference@school.edu</p>
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <p>&copy; 2025 福建师范大学广东校友会. All rights reserved.</p>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- JavaScript -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../js/main.js"></script>
+    <script src="../js/page-status.js"></script>
+    <script>
+        // 初始化页面状态检查
+        initPageStatusCheck('agenda');
+    </script>
+</body>
+</html>

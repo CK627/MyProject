@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1, maximum-scale=1, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="format-detection" content="telephone=no">
+    <meta http-equiv="Cache-Control" content="no-transform">
+    <meta http-equiv="Cache-Control" content="no-siteapp">
+    <meta name="screen-orientation" content="portrait">
+    <meta name="x5-orientation" content="portrait">
+    <meta name="renderer" content="webkit">
+    
+    <title>福建师范大学广东校友会一周年庆典晚会 - 就爱你主题活动</title>
+    <meta name="description" content="悠悠闽江情，共聚岭南心。福建师范大学广东校友会一周年庆典晚会，以"就爱你"为主题，邀请您回家共庆。">
+    <meta name="keywords" content="福建师范大学,广东校友会,一周年庆典,就爱你,校友活动,920">
+    <meta name="author" content="福建师范大学广东校友会">
+    
+    <!-- 微信分享相关meta -->
+    <meta property="og:title" content="福建师范大学广东校友会年度聚会">
+    <meta property="og:description" content="欢迎参加福建师范大学广东校友会年度聚会活动">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="福建师范大学广东校友会年度聚会">
+    <meta name="twitter:description" content="欢迎参加福建师范大学广东校友会年度聚会活动">
+    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="css/main.css" rel="stylesheet">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="alternate icon" href="favicon.ico">
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary fixed-top">
+        <div class="container">
+            <a class="navbar-brand" href="#home">
+                <i class="fas fa-graduation-cap me-2"></i>福建师范大学广东校友会
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#home">首页</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="pages/registrations.html">报名</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="pages/seating.html">座位信息</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="pages/agenda.html">活动议程</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="pages/photo-live.html">照片直播</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="pages/video-live.html">视频直播</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="pages/transport.html">交通指引</a>
+                    </li>
+                    <li class="nav-item">
+                        <button class="btn music-toggle ms-2" id="musicToggle" title="播放音乐">
+                            <span class="music-icon">🎵</span>
+                        </button>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主页面 -->
+    <main>
+        <!-- 首页横幅 -->
+        <section id="home" class="hero-section">
+            <div class="container">
+                <div class="row align-items-center min-vh-100">
+                    <div class="col-lg-6">
+                        <h1 class="display-4 fw-bold text-white mb-4">
+                            福建师范大学广东校友会<br>一周年庆典晚会
+                        </h1>
+                        <h2 class="h3 text-warning mb-3">"就爱你"主题活动</h2>
+                        <p class="lead text-white-50 mb-4">
+                            悠悠闽江情，共聚岭南心。一年前的盛夏，我们相聚广州，见证了校友会的诞生。时光荏苒，转眼间校友会已走过第一个春秋。在这个充满爱意的"920"日子里，我们诚挚邀请您回家，续写福师大人在湾区的精彩篇章！
+                        </p>
+                        <div class="d-flex flex-wrap gap-3">
+                            <a href="pages/registrations.html" class="btn btn-warning btn-lg">
+                                <i class="fas fa-user-plus me-2"></i>立即报名
+                            </a>
+                        </div>
+                    </div>
+                    <div class="col-lg-6">
+                        <div class="stats-card bg-white rounded-4 p-4 shadow-lg">
+                            <h3 class="text-center mb-4">活动统计</h3>
+                            <div class="row text-center">
+                                <div class="col-12">
+                                    <div class="stat-item">
+                                        <h2 class="text-primary mb-0" id="participant-count">0</h2>
+                                        <p class="text-muted">总报名人数</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 快捷导航 -->
+        <section id="quick-nav" class="py-5 bg-light">
+            <div class="container-fluid px-5">
+                <div class="row">
+                    <div class="col-lg-12 mx-auto text-center">
+                        <h2 class="mb-4">快捷导航</h2>
+                        <div class="row g-4 justify-content-center">
+                            <div class="col-12 col-sm-6 col-md-4 col-lg-3 col-xl-2">
+                                <a href="pages/registrations.html" class="text-decoration-none">
+                                    <div class="quick-nav-card text-center p-5 border rounded-4 h-100 shadow">
+                                        <i class="fas fa-user-plus fa-4x text-primary mb-4"></i>
+                                        <h5 class="text-dark mb-3">活动报名</h5>
+                                        <p class="text-muted mb-4">立即报名参加庆典晚会</p>
+                                        <span class="btn btn-outline-primary">立即报名</span>
+                                    </div>
+                                </a>
+                            </div>
+                            <div class="col-12 col-sm-6 col-md-4 col-lg-3 col-xl-2">
+                                <a href="pages/agenda.html" class="text-decoration-none">
+                                    <div class="quick-nav-card text-center p-5 border rounded-4 h-100 shadow">
+                                        <i class="fas fa-calendar-check fa-4x text-success mb-4"></i>
+                                        <h5 class="text-dark mb-3">活动议程</h5>
+                                        <p class="text-muted mb-4">查看详细活动安排</p>
+                                        <span class="btn btn-outline-success">查看议程</span>
+                                    </div>
+                                </a>
+                            </div>
+                            <div class="col-12 col-sm-6 col-md-4 col-lg-3 col-xl-2">
+                                <a href="pages/photo-live.html" class="text-decoration-none">
+                                    <div class="quick-nav-card text-center p-5 border rounded-4 h-100 shadow">
+                                        <i class="fas fa-camera fa-4x text-warning mb-4"></i>
+                                        <h5 class="text-dark mb-3">照片直播</h5>
+                                        <p class="text-muted mb-4">实时查看活动精彩瞬间</p>
+                                        <span class="btn btn-outline-warning">查看照片</span>
+                                    </div>
+                                </a>
+                            </div>
+                            <div class="col-12 col-sm-6 col-md-4 col-lg-3 col-xl-2">
+                                <a href="pages/video-live.html" class="text-decoration-none">
+                                    <div class="quick-nav-card text-center p-5 border rounded-4 h-100 shadow">
+                                        <i class="fas fa-video fa-4x text-danger mb-4"></i>
+                                        <h5 class="text-dark mb-3">视频直播</h5>
+                                        <p class="text-muted mb-4">观看活动现场直播</p>
+                                        <span class="btn btn-outline-danger">观看直播</span>
+                                    </div>
+                                </a>
+                            </div>
+                            <div class="col-12 col-sm-6 col-md-4 col-lg-3 col-xl-2">
+                                <a href="pages/transport.html" class="text-decoration-none">
+                                    <div class="quick-nav-card text-center p-5 border rounded-4 h-100 shadow">
+                                        <i class="fas fa-route fa-4x text-info mb-4"></i>
+                                        <h5 class="text-dark mb-3">交通指引</h5>
+                                        <p class="text-muted mb-4">获取详细路线信息</p>
+                                        <span class="btn btn-outline-info">查看路线</span>
+                                    </div>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 会议信息 -->
+        <section id="info" class="py-5">
+            <div class="container">
+                <div class="row">
+                    <div class="col-lg-10 mx-auto text-center">
+                        <h2 class="mb-4">活动信息</h2>
+                        <div class="row g-4 mb-5 justify-content-center">
+                            <div class="col-md-4">
+                                <div class="info-item">
+                                    <i class="fas fa-calendar-alt fa-2x text-primary mb-3"></i>
+                                    <h5>活动时间</h5>
+                                    <p>2025年9月20日（周六）</p>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="info-item">
+                                    <i class="fas fa-map-marker-alt fa-2x text-primary mb-3"></i>
+                                    <h5>活动地点</h5>
+                                    <p>广州笑傲江湖庄园<br><small class="text-muted">广州市增城区永宁街简村村下春岭打石坑自编8号</small></p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 活动主题 -->
+                        <div class="row mb-5">
+                            <div class="col-12">
+                                <div class="theme-section bg-light rounded-4 p-4">
+                                    <h3 class="text-primary mb-4">"就爱你"三重含义</h3>
+                                    <div class="row g-4">
+                                        <div class="col-md-4">
+                                            <div class="theme-item">
+                                                <i class="fas fa-heart fa-2x text-danger mb-3"></i>
+                                                <h5>就爱你——爱母校</h5>
+                                                <p class="text-muted">闽江之畔的青春记忆，长安山下的书声琅琅，母校永远是我们心底最柔软的牵挂。</p>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <div class="theme-item">
+                                                <i class="fas fa-user-friends fa-2x text-success mb-3"></i>
+                                                <h5>就爱你——爱同窗</h5>
+                                                <p class="text-muted">从八闽大地到岭南热土，我们带着福师大人的精神在广东拼搏奋进，团结互助、携手成长。</p>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-4">
+                                            <div class="theme-item">
+                                                <i class="fas fa-rocket fa-2x text-warning mb-3"></i>
+                                                <h5>就爱你——爱未来</h5>
+                                                <p class="text-muted">校友会将继续搭建更广阔的交流平台，让每一位在粤奋斗的福师大人都能找到归属与支持。</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- 大会亮点 -->
+                        <div class="row">
+                            <div class="col-12">
+                                <h3 class="mb-4">大会亮点</h3>
+                                <div class="row g-4">
+                                    <div class="col-md-6 col-lg-3">
+                                        <div class="highlight-item text-center p-3 border rounded">
+                                            <i class="fas fa-mountain fa-2x text-success mb-3"></i>
+                                            <h6>自然体验</h6>
+                                            <p class="small text-muted">小白云山脚露营观星，感受户外清新</p>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6 col-lg-3">
+                                        <div class="highlight-item text-center p-3 border rounded">
+                                            <i class="fas fa-utensils fa-2x text-warning mb-3"></i>
+                                            <h6>温馨晚宴</h6>
+                                            <p class="small text-muted">10人围桌品粤式佳肴，把酒话当年</p>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6 col-lg-3">
+                                        <div class="highlight-item text-center p-3 border rounded">
+                                            <i class="fas fa-fire fa-2x text-danger mb-3"></i>
+                                            <h6>篝火狂欢</h6>
+                                            <p class="small text-muted">校友家属同台演出、热情共舞、篝火互动</p>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6 col-lg-3">
+                                        <div class="highlight-item text-center p-3 border rounded">
+                                            <i class="fas fa-bed fa-2x text-info mb-3"></i>
+                                            <h6>专属住宿</h6>
+                                            <p class="small text-muted">优选酒店舒适入住（可选）</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- 页脚 -->
+    <footer class="bg-dark text-white py-4">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5>联系我们</h5>
+                    <p><i class="fas fa-phone me-2"></i>400-123-4567</p>
+                    <p><i class="fas fa-envelope me-2"></i>conference@school.edu</p>
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <p>&copy; 2025 福建师范大学广东校友会. All rights reserved.</p>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- 返回顶部按钮 -->
+    <button class="btn btn-primary position-fixed bottom-0 end-0 m-4 back-to-top" style="display: none;">
+        <i class="fas fa-arrow-up"></i>
+    </button>
+
+    <!-- 音频元素 -->
+    <audio id="schoolSong" preload="auto" loop>
+        <source src="audio/yinyue.mp3" type="audio/mpeg">
+        您的浏览器不支持音频播放。
+    </audio>
+
+    <!-- JavaScript -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="js/device-detector.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>

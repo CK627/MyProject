@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>网站建设中 - 福建师范大学广东校友会</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow-x: hidden;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .mobile-construction {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem 1rem;
+            position: relative;
+        }
+        
+        .construction-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grid" width="8" height="8" patternUnits="userSpaceOnUse"><path d="M 8 0 L 0 0 0 8" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="0.5"/></pattern></defs><rect width="100" height="100" fill="url(%23grid)"/></svg>');
+            opacity: 0.3;
+        }
+        
+        .content-wrapper {
+            position: relative;
+            z-index: 2;
+            text-align: center;
+            color: white;
+            max-width: 100%;
+        }
+        
+        .main-icon {
+            font-size: 5rem;
+            color: #ffc107;
+            margin-bottom: 1.5rem;
+            animation: bounce 2s infinite;
+        }
+        
+        .main-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .subtitle {
+            font-size: 1.1rem;
+            margin-bottom: 2rem;
+            opacity: 0.9;
+            line-height: 1.6;
+        }
+        
+        .progress-section {
+            width: 100%;
+            max-width: 300px;
+            margin: 2rem auto;
+        }
+        
+        .progress-container {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 25px;
+            padding: 0.3rem;
+            margin-bottom: 1rem;
+            backdrop-filter: blur(10px);
+        }
+        
+        .progress-bar {
+            background: linear-gradient(90deg, #ffc107, #ff8c00);
+            height: 15px;
+            border-radius: 25px;
+            width: 78%;
+            animation: progressPulse 3s ease-in-out infinite;
+        }
+        
+        .progress-text {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #ffc107;
+        }
+        
+        .features-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1rem;
+            margin: 2rem 0;
+            width: 100%;
+            max-width: 350px;
+        }
+        
+        .feature-card {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 15px;
+            padding: 1.5rem;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: transform 0.3s ease;
+        }
+        
+        .feature-card:active {
+            transform: scale(0.98);
+        }
+        
+        .feature-icon {
+            font-size: 2rem;
+            color: #ffc107;
+            margin-bottom: 0.8rem;
+        }
+        
+        .feature-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+        
+        .feature-desc {
+            font-size: 0.9rem;
+            opacity: 0.8;
+            line-height: 1.4;
+        }
+        
+        .contact-card {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 15px;
+            padding: 1.5rem;
+            margin: 2rem 0;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            width: 100%;
+            max-width: 350px;
+        }
+        
+        .contact-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .contact-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 0.8rem;
+            font-size: 0.95rem;
+        }
+        
+        .contact-item i {
+            margin-right: 0.8rem;
+            width: 18px;
+            color: #ffc107;
+        }
+        
+        .home-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 1rem 2rem;
+            border-radius: 50px;
+            font-weight: 600;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            margin-top: 1rem;
+        }
+        
+        .home-btn:hover,
+        .home-btn:active {
+            background: rgba(255, 255, 255, 0.3);
+            border-color: rgba(255, 255, 255, 0.5);
+            color: white;
+            transform: translateY(-2px);
+        }
+        
+        .floating-icons {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            overflow: hidden;
+        }
+        
+        .floating-icon {
+            position: absolute;
+            color: rgba(255, 255, 255, 0.1);
+            animation: float 8s ease-in-out infinite;
+        }
+        
+        .floating-icon:nth-child(1) {
+            top: 15%;
+            left: 10%;
+            font-size: 2rem;
+            animation-delay: 0s;
+        }
+        
+        .floating-icon:nth-child(2) {
+            top: 25%;
+            right: 15%;
+            font-size: 1.5rem;
+            animation-delay: 2s;
+        }
+        
+        .floating-icon:nth-child(3) {
+            bottom: 30%;
+            left: 15%;
+            font-size: 1.8rem;
+            animation-delay: 4s;
+        }
+        
+        .floating-icon:nth-child(4) {
+            bottom: 20%;
+            right: 10%;
+            font-size: 1.3rem;
+            animation-delay: 6s;
+        }
+        
+        @keyframes bounce {
+            0%, 20%, 50%, 80%, 100% {
+                transform: translateY(0);
+            }
+            40% {
+                transform: translateY(-15px);
+            }
+            60% {
+                transform: translateY(-8px);
+            }
+        }
+        
+        @keyframes progressPulse {
+            0% { width: 75%; }
+            50% { width: 82%; }
+            100% { width: 78%; }
+        }
+        
+        @keyframes float {
+            0%, 100% {
+                transform: translateY(0px) rotate(0deg);
+                opacity: 0.1;
+            }
+            50% {
+                transform: translateY(-15px) rotate(180deg);
+                opacity: 0.2;
+            }
+        }
+        
+        /* 小屏幕适配 */
+        @media (max-width: 480px) {
+            .main-title {
+                font-size: 2rem;
+            }
+            
+            .main-icon {
+                font-size: 4rem;
+            }
+            
+            .subtitle {
+                font-size: 1rem;
+            }
+            
+            .mobile-construction {
+                padding: 1.5rem 1rem;
+            }
+        }
+        
+        /* 超小屏幕适配 */
+        @media (max-width: 360px) {
+            .main-title {
+                font-size: 1.8rem;
+            }
+            
+            .main-icon {
+                font-size: 3.5rem;
+            }
+            
+            .feature-card,
+            .contact-card {
+                padding: 1.2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="mobile-construction">
+        <!-- 背景网格 -->
+        <div class="construction-bg"></div>
+        
+        <!-- 浮动图标 -->
+        <div class="floating-icons">
+            <i class="fas fa-cog floating-icon"></i>
+            <i class="fas fa-tools floating-icon"></i>
+            <i class="fas fa-hammer floating-icon"></i>
+            <i class="fas fa-wrench floating-icon"></i>
+        </div>
+        
+        <!-- 主要内容 -->
+        <div class="content-wrapper">
+            <!-- 主图标 -->
+            <div class="main-icon">
+                <i class="fas fa-hard-hat"></i>
+            </div>
+            
+            <!-- 标题 -->
+            <h1 class="main-title">网站建设中</h1>
+            <p class="subtitle">
+                福建师范大学广东校友会官网正在进行全面升级，
+                我们将为您带来更好的移动端体验
+            </p>
+            
+            <!-- 进度条 -->
+            <div class="progress-section">
+                <div class="progress-container">
+                    <div class="progress-bar"></div>
+                </div>
+                <div class="progress-text">建设进度：78%</div>
+            </div>
+            
+            <!-- 功能特色 -->
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-mobile-alt"></i>
+                    </div>
+                    <div class="feature-title">移动优先设计</div>
+                    <div class="feature-desc">专为手机用户优化的界面和交互体验</div>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-rocket"></i>
+                    </div>
+                    <div class="feature-title">极速加载</div>
+                    <div class="feature-desc">优化代码结构，提升页面加载速度</div>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-shield-alt"></i>
+                    </div>
+                    <div class="feature-title">安全保障</div>
+                    <div class="feature-desc">采用最新安全技术，保护用户隐私</div>
+                </div>
+            </div>
+            
+            <!-- 联系信息 -->
+            <div class="contact-card">
+                <div class="contact-title">
+                    <i class="fas fa-envelope me-2"></i>联系我们
+                </div>
+                <div class="contact-item">
+                    <i class="fas fa-phone"></i>
+                    <span>联系电话：400-123-4567</span>
+                </div>
+                <div class="contact-item">
+                    <i class="fas fa-envelope"></i>
+                    <span>邮箱：info@conference.edu.cn</span>
+                </div>
+            </div>
+            
+            <!-- 返回按钮 -->
+            <a href="../home.html" class="home-btn">
+                <i class="fas fa-home me-2"></i>返回首页
+            </a>
+        </div>
+    </div>
+
+    <!-- JavaScript -->
+    <script>
+        // 动态进度更新
+        function updateProgress() {
+            const progressBar = document.querySelector('.progress-bar');
+            const progressText = document.querySelector('.progress-text');
+            
+            let progress = 78;
+            setInterval(() => {
+                progress += (Math.random() - 0.5) * 3;
+                progress = Math.max(75, Math.min(85, progress));
+                
+                progressBar.style.width = progress + '%';
+                progressText.textContent = `建设进度：${Math.round(progress)}%`;
+            }, 3000);
+        }
+        
+        // 页面加载动画
+        document.addEventListener('DOMContentLoaded', function() {
+            updateProgress();
+            
+            const content = document.querySelector('.content-wrapper');
+            content.style.opacity = '0';
+            content.style.transform = 'translateY(30px)';
+            
+            setTimeout(() => {
+                content.style.transition = 'all 0.8s ease-out';
+                content.style.opacity = '1';
+                content.style.transform = 'translateY(0)';
+            }, 200);
+        });
+        
+        // 触摸反馈
+        document.querySelectorAll('.feature-card, .home-btn').forEach(element => {
+            element.addEventListener('touchstart', function() {
+                this.style.transform = 'scale(0.98)';
+            });
+            
+            element.addEventListener('touchend', function() {
+                this.style.transform = 'scale(1)';
+            });
+        });
+    </script>
+</body>
+</html>
