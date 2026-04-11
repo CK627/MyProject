@@ -1,0 +1,20 @@
+# 忽略文件与目录
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Qoder & AI Assistants
+.qoder/
+.agent
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+
+# 日志
+logs/
+*.log

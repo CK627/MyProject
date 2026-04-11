@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebMailMonitor Log</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        /* Variables */
+        :root {
+            --bg-color: #1e1e1e;
+            --header-bg: #252526;
+            --border-color: #333;
+            --text-color: #d4d4d4;
+            --accent-color: #61afef;
+            --success-color: #98c379;
+            --error-color: #e06c75;
+            --time-color: #56b6c2;
+            --next-color: #e5c07b;
+            --domain-color: #c678dd;
+            --hover-bg: #2a2d2e;
+        }
+
+        /* Base Reset & Layout */
+        body { 
+            background-color: var(--bg-color); 
+            color: var(--text-color); 
+            font-family: 'Consolas', 'Monaco', monospace; 
+            margin: 0; 
+            padding: 0; 
+            overflow: hidden; 
+            height: 100vh; 
+            display: flex; 
+            flex-direction: column; 
+        }
+        
+        /* Header */
+        header { 
+            background-color: var(--header-bg); 
+            padding: 0 20px; 
+            border-bottom: 1px solid var(--border-color); 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            height: 50px; 
+            flex-shrink: 0; 
+            z-index: 10; 
+        }
+        h1 { margin: 0; font-size: 16px; color: var(--accent-color); font-weight: 600; }
+        
+        /* Header Controls */
+        .header-controls { display: flex; align-items: center; gap: 15px; }
+        .toggle-btn { 
+            background-color: transparent; 
+            border: 1px solid #444; 
+            color: #888; 
+            padding: 4px 10px; 
+            border-radius: 4px; 
+            font-size: 12px; 
+            cursor: pointer; 
+            transition: all 0.2s; 
+        }
+        .toggle-btn:hover { border-color: #666; color: #ccc; }
+        .toggle-btn.active { background-color: var(--accent-color); border-color: var(--accent-color); color: white; }
+
+        .status-bar { 
+            font-size: 12px; 
+            color: #aaa; 
+            display: flex; 
+            align-items: center; 
+            gap: 10px; 
+            background: rgba(0,0,0,0.2); 
+            padding: 4px 10px; 
+            border-radius: 4px; 
+        }
+        .indicator { width: 8px; height: 8px; border-radius: 50%; transition: all 0.3s; }
+        .indicator.live { background-color: var(--success-color); box-shadow: 0 0 5px var(--success-color); }
+        .indicator.history { background-color: var(--next-color); }
+        
+        /* Table Header */
+        .table-header { 
+            background-color: #2d2d2d; 
+            border-bottom: 1px solid var(--border-color); 
+            font-weight: bold; 
+            color: #858585; 
+            font-size: 14px; 
+            height: 36px; 
+            flex-shrink: 0; 
+            padding: 0 15px; 
+        }
+        
+        /* Log Container */
+        #log-container { 
+            flex: 1; 
+            overflow-y: auto; 
+            overflow-x: hidden; 
+            padding-bottom: 40px; 
+            position: relative; 
+            scroll-behavior: smooth; 
+        }
+        
+        /* Log Entries */
+        .log-entry { 
+            border-bottom: 1px solid #2c2c2c; 
+            font-size: 14px; 
+            line-height: 1.6; 
+            padding: 10px 15px;
+            transition: background 0.1s; 
+        }
+        .log-entry:hover { background-color: var(--hover-bg); }
+        
+        /* Grid System - Flex Layout Approach */
+        .grid-row { 
+            display: flex; 
+            gap: 15px; 
+            align-items: center; 
+            padding: 8px 15px; 
+            text-align: center;
+            justify-content: flex-start; 
+        }
+        
+        /* Columns - Flex Basis */
+        .col-time { 
+            flex: 0 0 80px; 
+            color: var(--time-color); 
+            text-align: center;
+        }
+        
+        .col-status { 
+            flex: 0 0 50px; 
+            font-weight: bold; 
+            border-radius: 3px; 
+            padding: 2px 4px; 
+            font-size: 12px; 
+            text-align: center;
+        }
+        
+        .col-status.ok { color: var(--bg-color); background-color: var(--success-color); }
+        .col-status.error { color: var(--bg-color); background-color: var(--error-color); }
+        
+        .col-msg { 
+            flex: 0 1 200px; 
+            color: #abb2bf; 
+            white-space: nowrap; 
+            overflow: hidden; 
+            text-overflow: ellipsis; 
+            text-align: center;
+        }
+        
+        .col-next { 
+            flex: 0 0 80px; 
+            color: var(--next-color); 
+            font-size: 14px; 
+            text-align: center;
+        }
+        
+        .col-domain { 
+            flex: 0 1 300px; 
+            color: var(--domain-color); 
+            font-size: 14px; 
+            white-space: nowrap; 
+            overflow: hidden; 
+            text-overflow: ellipsis; 
+            text-align: center;
+        }
+        
+        /* Header specific overrides */
+        .table-header .col-time,
+        .table-header .col-status,
+        .table-header .col-msg,
+        .table-header .col-next,
+        .table-header .col-domain { text-align: center; }
+        
+        /* Scroll To Bottom Button */
+        .scroll-tip { 
+            position: absolute; 
+            bottom: 20px; 
+            right: 20px; 
+            background: var(--accent-color); 
+            color: white; 
+            padding: 8px 15px; 
+            border-radius: 20px; 
+            font-size: 12px; 
+            cursor: pointer; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3); 
+            transition: all 0.2s; 
+            opacity: 0.9; 
+            z-index: 100; 
+            border: none; 
+            font-weight: bold; 
+            display: none; /* Hidden by default */
+        }
+        .scroll-tip.visible { display: block; }
+        .scroll-tip:hover { opacity: 1; transform: translateY(-2px); }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .grid-row { grid-template-columns: 90px 60px 1fr 90px; }
+            .col-domain { display: none; }
+            .table-header .col-domain { display: none; }
+        }
+        @media (max-width: 600px) {
+            .grid-row { grid-template-columns: 80px 50px 1fr; }
+            .col-next { display: none; }
+            .col-domain { display: none; }
+            .table-header .col-next, .table-header .col-domain { display: none; }
+        }
+        
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-color); }
+        ::-webkit-scrollbar-thumb { background: #424242; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #4f4f4f; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1 id="page-title">WebMailMonitor</h1>
+        <div class="header-controls">
+            <button id="toggle-btn" class="toggle-btn">只看最新</button>
+            <div class="status-bar">
+                <div id="status-indicator" class="indicator live"></div>
+                <span id="status-text">实时监控</span>
+            </div>
+        </div>
+    </header>
+    
+    <div class="table-header grid-row">
+        <span class="col-time">时间</span>
+        <span class="col-status" style="background: none; color: inherit; padding: 0;">状态</span>
+        <span class="col-msg">消息</span>
+        <span class="col-next">下次检测</span>
+        <span class="col-domain">域名</span>
+    </div>
+    
+    <div id="log-container">
+        <!-- Logs will be inserted here -->
+    </div>
+    
+    <div id="scroll-tip" class="scroll-tip">↓ 返回实时视图</div>
+
+    <script>
+        // State
+        const state = {
+            logs: [],
+            isHistoryMode: false,
+            lastLogRaw: '',
+            today: new Date().toISOString().split('T')[0]
+        };
+
+        // DOM Elements
+        const els = {
+            container: document.getElementById('log-container'),
+            toggleBtn: document.getElementById('toggle-btn'),
+            statusIndicator: document.getElementById('status-indicator'),
+            statusText: document.getElementById('status-text'),
+            scrollTip: document.getElementById('scroll-tip'),
+            title: document.getElementById('page-title')
+        };
+
+        // Update Title with Date
+        els.title.textContent = `WebMailMonitor (${state.today})`;
+
+        // Helper: Parse Log Line
+        function parseLog(line) {
+            const parts = line.split('-');
+            if (parts.length < 3) return { raw: line, parsed: false };
+            return {
+                time: parts[0],
+                status: parts[1],
+                msg: parts[2],
+                next: parts[3] || '',
+                domain: parts.slice(4).join('-').trim(),
+                raw: line,
+                parsed: true,
+                isOk: parts[1] === '200'
+            };
+        }
+
+        // Helper: Create Log Element
+        function createLogElement(log) {
+            const div = document.createElement('div');
+            div.className = 'log-entry grid-row';
+            
+            if (log.parsed) {
+                div.innerHTML = `
+                    <span class="col-time">${log.time}</span>
+                    <span class="col-status ${log.isOk ? 'ok' : 'error'}">${log.status}</span>
+                    <span class="col-msg" title="${log.msg}">${log.msg}</span>
+                    <span class="col-next">${log.next}</span>
+                    <span class="col-domain" title="${log.domain}">${log.domain}</span>
+                `;
+            } else {
+                div.innerHTML = `<div style="grid-column: 1 / -1;">${log.raw}</div>`;
+            }
+            return div;
+        }
+
+        // Core: Render Function
+        function render() {
+            // Determine which logs to show
+            const logsToShow = state.isHistoryMode ? state.logs : state.logs.slice(-5);
+            
+            // Clear container (Simple and robust for small lists, optimization possible but maybe not needed for < 1000 items)
+            // For better performance in history mode, we could diff, but innerHTML is fast enough for text.
+            els.container.innerHTML = '';
+            
+            if (state.isHistoryMode) {
+                const historyMsg = document.createElement('div');
+                historyMsg.className = 'history-loader'; // Reusing style
+                historyMsg.textContent = `--- 历史记录已加载 (${state.logs.length} 条) ---`;
+                historyMsg.style.textAlign = 'center';
+                historyMsg.style.padding = '10px';
+                historyMsg.style.color = '#5c6370';
+                historyMsg.style.fontSize = '12px';
+                historyMsg.style.borderBottom = '1px solid #2c2c2c';
+                els.container.appendChild(historyMsg);
+            }
+
+            // Create fragment for batch insertion
+            const fragment = document.createDocumentFragment();
+            logsToShow.forEach(log => {
+                fragment.appendChild(createLogElement(log));
+            });
+            els.container.appendChild(fragment);
+        }
+
+        // Action: Switch to History Mode
+        function enableHistoryMode() {
+            if (state.isHistoryMode) return;
+            state.isHistoryMode = true;
+            
+            // Update UI
+            updateUIState();
+            
+            // Render All Logs
+            render();
+            
+            // Scroll to bottom (initial view of history)
+            // We use setTimeout to ensure layout is done
+            setTimeout(() => {
+                els.container.scrollTop = els.container.scrollHeight;
+            }, 0);
+        }
+
+        // Action: Switch to Live Mode
+        function enableLiveMode() {
+            if (!state.isHistoryMode) return;
+            state.isHistoryMode = false;
+            
+            // Update UI
+            updateUIState();
+            
+            // Render only last 5
+            render();
+            
+            // Force scroll to bottom
+            els.container.scrollTop = els.container.scrollHeight;
+        }
+
+        // Action: Toggle
+        function toggleMode() {
+            if (state.isHistoryMode) {
+                enableLiveMode();
+            } else {
+                enableHistoryMode();
+            }
+        }
+
+        // Helper: Update UI Buttons/Indicators
+        function updateUIState() {
+            if (state.isHistoryMode) {
+                els.toggleBtn.textContent = '只看最新';
+                els.toggleBtn.classList.add('active');
+                els.statusIndicator.className = 'indicator history';
+                els.statusText.textContent = '历史模式';
+                els.scrollTip.classList.add('visible');
+            } else {
+                els.toggleBtn.textContent = '显示全部';
+                els.toggleBtn.classList.remove('active');
+                els.statusIndicator.className = 'indicator live';
+                els.statusText.textContent = '实时监控';
+                els.scrollTip.classList.remove('visible');
+            }
+        }
+
+        // API: Fetch Logs
+        async function fetchLogs() {
+            try {
+                const response = await fetch('/api/logs');
+                const data = await response.json();
+                const newLogs = data.logs.map(parseLog);
+                
+                if (newLogs.length > 0) {
+                    const latest = newLogs[newLogs.length - 1];
+                    
+                    // Check if we have new data
+                    if (latest.raw !== state.lastLogRaw) {
+                        state.logs = newLogs;
+                        state.lastLogRaw = latest.raw;
+                        
+                        // Update View
+                        if (state.isHistoryMode) {
+                            // In history mode, we update the data (so if user scrolls down they see it),
+                            // BUT WE DO NOT FORCE SCROLL.
+                            // To be safe and simple: let's re-render. 
+                            // Re-rendering might reset scroll position if we are not careful?
+                            // No, replacing innerHTML usually resets scroll unless we handle it.
+                            
+                            // Optimization: In history mode, simple re-render might jump user.
+                            // Let's record scroll position.
+                            const currentScrollTop = els.container.scrollTop;
+                            const currentScrollHeight = els.container.scrollHeight;
+                            const isAtBottom = (currentScrollHeight - els.container.clientHeight - currentScrollTop) < 20;
+                            
+                            render();
+                            
+                            // Restore position
+                            if (isAtBottom) {
+                                els.container.scrollTop = els.container.scrollHeight;
+                            } else {
+                                els.container.scrollTop = currentScrollTop;
+                            }
+                            
+                        } else {
+                            // Live Mode: Always render and scroll to bottom
+                            render();
+                            els.container.scrollTop = els.container.scrollHeight;
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error("Fetch error", e);
+            }
+        }
+
+        // Event Listeners
+        els.toggleBtn.addEventListener('click', toggleMode);
+        els.scrollTip.addEventListener('click', enableLiveMode);
+
+        // Init
+        fetchLogs();
+        setInterval(fetchLogs, 2000); // Poll every 2s
+
+    </script>
+</body>
+</html>
