@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" href="images/favicon.ico" type="image/x-icon">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="宁波旅游详情">
+  <title>详情 — 宁波旅游</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/common.css?v=20260220b">
+  <link rel="stylesheet" href="css/detail.css">
+</head>
+<body>
+
+  <!-- 加载状态 -->
+  <div class="detail-loading" id="detailLoading">
+    <div class="detail-loading__spinner"></div>
+    <p>加载中...</p>
+  </div>
+
+  <!-- 详情 Hero -->
+  <section class="detail-hero" id="detailHero" style="display:none;">
+    <div class="detail-hero__blur">
+      <img id="heroImageBlur" src="" alt="">
+    </div>
+    <div class="detail-hero__bg">
+      <img id="heroImage" src="" alt="">
+    </div>
+    <div class="detail-hero__overlay"></div>
+    <div class="detail-hero__content">
+      <span class="detail-hero__badge" id="heroCategory"></span>
+      <h1 class="detail-hero__title" id="heroTitle"></h1>
+      <p class="detail-hero__subtitle" id="heroDesc"></p>
+    </div>
+  </section>
+
+  <!-- 详情主体 -->
+  <div class="detail-main" id="detailMain" style="display:none;">
+    <!-- 信息条 -->
+    <div class="detail-info-bar" id="infoBar"></div>
+
+    <!-- 返回按钮 -->
+    <a href="scenic.html" class="detail-back" id="backLink">← 返回列表</a>
+
+    <!-- 详情内容 -->
+    <div id="detailContent"></div>
+
+    <!-- 留言区域 -->
+    <div class="comment-section">
+      <div class="comment-section__header">
+        <h2 class="comment-section__title">留言互动</h2>
+        <span class="comment-section__count" id="commentCount">0 条留言</span>
+      </div>
+
+      <!-- 留言表单 -->
+      <form class="comment-form" id="commentForm">
+        <div class="comment-form__row">
+          <input type="text" class="comment-form__input" id="commentName" placeholder="您的昵称" maxlength="50" required>
+        </div>
+        <div class="comment-form__row">
+          <textarea class="comment-form__textarea" id="commentContent" placeholder="分享您的感受和体验..." maxlength="500" required></textarea>
+          <div class="comment-form__counter"><span id="commentCharCount">0</span>/500</div>
+        </div>
+        <button type="submit" class="comment-form__submit">提交留言</button>
+      </form>
+
+      <!-- 留言列表 -->
+      <div class="comment-list" id="commentList">
+        <div class="comment-empty" id="commentEmpty">
+          <p>暂无留言，快来发表第一条留言吧！</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/common.js?v=20260220b"></script>
+  <script src="js/detail.js"></script>
+</body>
+</html>
