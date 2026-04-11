@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<!-- 告诉浏览器：这是最新的 HTML5 网页 -->
+<html>
+<head>
+    <!-- 这一行很重要，不然中文可能会变成乱码（方块或问号） -->
+    <meta charset="UTF-8">
+</head>
+<body>
+    <!-- 
+        第 14 行：这个是文件选择按钮
+        type="file"：表示我们要让用户选文件
+        id="fileInput"：给它起个名字叫 fileInput，方便后面 JS 代码（第 26 行）找到它
+    -->
+    <input type="file" id="fileInput">
+    
+    <!-- 
+        第 20 行：这是一个空盒子，用来把结果显示在屏幕上
+        id="result"：给它起个名字叫 result，方便后面（第 29 行）找到它
+    -->
+    <div id="result"></div>
+
+    <!-- 下面就是 JavaScript 代码了，它是网页的大脑，负责处理逻辑 -->
+    <script>
+        // document.getElementById：就像是在仓库里按名字找东西
+        // 第 26 行：找到那个文件选择按钮（对应第 14 行），把它存到 fileInput 变量里
+        // var 是定义一个变量，fileInput 是变量名
+        var fileInput = document.getElementById('fileInput');
+        
+        // 第 30 行：找到那个显示结果的空盒子（对应第 20 行），把它存到 resultDiv 变量里
+        // var 是定义一个变量，resultDiv 是变量名
+        var resultDiv = document.getElementById('result');
+
+        // onchange：意思就是“当这里发生变化的时候”
+        // 第 34 行：当用户选好了一个文件后，会自动执行下面大括号里的代码
+        fileInput.onchange = function(event) {
+            
+            // event.target.files[0]：拿到用户刚才选的那个文件
+            // 第 38 行：定义 file 变量，就像是从购物篮里拿出第一个商品
+            // (这个变量会在第 119 行检查大小，第 135 行进行切片)
+            var file = event.target.files[0];
+
+            // 如果用户打开了选择框但没选文件（点了取消），那就啥也不干，直接结束
+            if (!file) return;
+
+            // offset：这是一个记号，记录我们读到文件的哪里了
+            // 第 45 行：一开始是从头读，所以是 0
+            // (这个变量会在第 76 行使用，第 115 行更新，第 135 行作为切片起点)
+            var offset = 0; 
+
+            // FileReader：这是浏览器专门用来读书（读取文件）的工具人
+            // 第 49 行：我们雇佣一个新工具人，叫 reader
+            // (这个工具人会在第 139 行开始工作)
+            var reader = new FileReader();
+
+            // reader.onload：告诉工具人，等你读完一段内容后，要干什么
+            // 第 53 行：当第 139 行的读取任务完成后，会自动跳到这里执行
+            reader.onload = function(e) {
+                
+                // e.target.result：这就是读出来的具体内容（一堆二进制数据）
+                // 第 57 行：定义 buffer 变量（缓冲区），存放刚才读到的那一块原始数据
+                var buffer = e.target.result;
+
+                // new Uint8Array：把那一堆二进制数据，变成我们能看懂的数字列表
+                // 就像把一本书拆成一个个字，每个字都是 0 到 255 之间的数字（字节）
+                // 第 62 行：定义 bytes 变量（字节数组），方便我们一个个检查
+                var bytes = new Uint8Array(buffer); 
+
+                // for 循环：像流水线一样，一个一个检查这些数字
+                // 第 66 行：定义变量 i（index 索引），从 0 开始数
+                for (var i = 0; i < bytes.length; i++) {
+                    
+                    // 检查当前这个数字（bytes[i]）是不是 0
+                    if (bytes[i] !== 0) {
+                        
+                        // 找到了！
+                        
+                        // globalPos（第 76 行）：算出这个数字在整个大文件里的绝对位置
+                        // var 是定义一个新变量，globalPos 是变量名（Global Position 全局位置）
+                        // 计算方法：offset（之前已经读过的总长度，来自第 45 行） + i（当前这块小切片里的第几个）
+                        var globalPos = offset + i; 
+                        
+                        // sector（第 82 行）：算出扇区号
+                        // var 定义变量 sector（扇区）
+                        // Math.floor：向下取整（例如 2.9 变成 2），去掉小数部分
+                        // globalPos / 512：假设每 512 个字节是一个房间（扇区），除以 512 就能知道是第几个房间
+                        var sector = Math.floor(globalPos / 512);
+
+                        // sectorHex（第 88 行）：把扇区号变成十六进制字符串
+                        // var 定义变量 sectorHex（Hexadecimal 十六进制）
+                        // .toString(16)：把数字变成十六进制（像 10 变成 A）
+                        // .toUpperCase()：把小写字母变成大写（像 a 变成 A）
+                        var sectorHex = sector.toString(16).toUpperCase();
+
+                        // offsetHex（第 92 行）：把具体的总位置也变成十六进制字符串
+                        // var 定义变量 offsetHex（偏移量的十六进制表示）
+                        // globalPos 来自第 76 行
+                        var offsetHex = globalPos.toString(16).toUpperCase();
+
+                        // 补零操作
+                        while (offsetHex.length < 9) {
+                            offsetHex = '0' + offsetHex;
+                        }
+
+                        // 第 100 行：把结果写到页面上的空盒子里（写入第 30 行定义的 resultDiv）
+                        resultDiv.innerText = '扇区: ' + sectorHex + '\n偏移: ' + offsetHex;
+                        
+                        // return：任务完成，收工！后面的代码都不用执行了
+                        return;
+                    }
+                }
+
+                // 如果代码跑到这里，说明这一段检查完了，全是 0
+                
+                // 第 115 行：把 offset 加上刚才读的长度，更新进度
+                // (这样下次切片就会从新位置开始，对应第 135 行)
+                offset += bytes.length;
+
+                // 看看文件是不是还没读完
+                // 第 119 行：如果 offset 小于文件总大小（file.size，来自第 38 行）
+                if (offset < file.size) {
+                    // 第 121 行：喊一声：继续读下一块！
+                    // (这会跳转到第 132 行定义的函数)
+                    readNextChunk();
+                } else {
+                    // 如果读完了整个文件都没找到
+                    // 第 125 行：在页面上写“未发现”（写入第 30 行定义的 resultDiv）
+                    resultDiv.innerText = '未发现';
+                }
+            };
+
+            // readNextChunk：这是一个自定义的命令，用来读下一小块内容
+            // 第 132 行：这个函数会被第 121 行和第 144 行调用
+            function readNextChunk() {
+                // file.slice：切披萨
+                // 第 135 行：定义 slice 变量（切片），从 offset（第 45/115 行）开始，切 1MB 下来
+                var slice = file.slice(offset, offset + 1024 * 1024);
+
+                // 第 139 行：让工具人 reader（第 49 行）开始读这块切下来的披萨
+                // (读完后，会自动触发第 53 行的 reader.onload)
+                reader.readAsArrayBuffer(slice);
+            }
+
+            // 这里是整个流程的起点
+            // 第 144 行：手动喊一声：开始读第一块！
+            // (跳转到第 132 行执行)
+            readNextChunk();
+        };
+    </script>
+</body>
+</html>

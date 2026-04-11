@@ -1,0 +1,13 @@
+# 忽略文件与目录
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Qoder & AI Assistants
+.qoder/
+.agent
+
+# Node.js / NPM (若未来引入)
+node_modules/
+package-lock.json

@@ -1,0 +1,33 @@
+<!-- 1.2.5 阶段目标：【结构重组与极简主义】 -->
+
+<!-- 【减少原因 1】：移除所有 HTML 标签骨架 -->
+<!-- 现代浏览器允许只写一个 <input> 标签，会自动补全 <html>, <head>, <body> -->
+
+<!-- 【减少原因 2】：使用逗号表达式串联语句 -->
+<!-- var a=1, b=2; r.onload=..., r.readAsArrayBuffer(...) -->
+<!-- 这种写法可以让所有代码在逻辑上属于“一条语句”，去除了分号和换行的强制要求 -->
+
+<!-- 【减少原因 3】：极简的 for 循环写法 -->
+<!-- for(var b=...,i=0; i<b.length; ) -->
+<!-- 将变量初始化放进 for 头部，去除了循环体内的 i++ (放入 if 条件中 if(b[i++])) -->
+
+<input type=file onchange="
+var f=this.files[0],o=0,r=new FileReader;
+r.onload=e=>{
+    // 在 for 循环头部直接声明 Uint8Array，节省一行
+    for(var b=new Uint8Array(e.target.result),i=0;i<b.length;)
+        // i++ 放在条件里，每判断一次自动加 1
+        if(b[i++]){
+            // 修正索引（因为 i 已经加了 1，所以要减回来）
+            var p=o+i-1;
+            // padStart(9,0) 的第二个参数可以是数字，会自动转字符串
+            document.body.innerText='扇区: '+(p>>9).toString(16).toUpperCase()+'\n偏移: '+p.toString(16).toUpperCase().padStart(9,0);
+            return
+        }
+    // 使用逗号连接操作，而不是分号
+    o+=b.length,
+    o<f.size?r.readAsArrayBuffer(f.slice(o,o+1e6)):document.body.innerText='未发现'
+},
+// 逗号连接，启动第一次读取
+r.readAsArrayBuffer(f.slice(0,1e6))
+">

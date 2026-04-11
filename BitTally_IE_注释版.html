@@ -1,0 +1,66 @@
+<meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+<!-- 
+    IE 专用极简版（注释版）
+    这个版本专门针对 IE10+ 浏览器进行了优化，结构与 BitTally_IE.html 完全一致，
+    但添加了详细注释帮助理解。
+-->
+
+<input type="file" onchange="
+    // 【变量说明】
+    // t (target): 事件源，兼容 IE 的 event.srcElement (IE 中 event.target 可能未定义)
+    // f (file): 用户选中的文件对象
+    // o (offset): 当前读取的文件偏移量，初始为 0
+    // r (reader): FileReader 对象，用于读取文件内容
+    var t = event.target || event.srcElement, 
+        f = t.files[0], 
+        o = 0, 
+        r = new FileReader;
+
+    // 如果用户没选文件，直接返回
+    if(!f) return;
+
+    // 定义读取完成后的回调函数 (onload)
+    // IE 不支持箭头函数 (=>)，所以必须用 function(e){}
+    r.onload = function(e) {
+        // b (bytes): 读取到的二进制数据，转为 Uint8Array 方便一个个字节检查
+        // (e.target || e.srcElement): 再次兼容 IE 获取事件源
+        var b = new Uint8Array((e.target || e.srcElement).result);
+
+        // 遍历当前读取到的这一块数据
+        for(var i = 0; i < b.length; i++)
+            // if(b[i]): 如果当前字节不是 0 (即找到了非零数据)
+            // JS 中非 0 即为 true
+            if(b[i]) {
+                // p (position): 计算该字节在整个文件中的绝对位置
+                var p = o + i, 
+                    // s (sector): 计算扇区号。位运算 >> 9 等同于 Math.floor(p / 512)
+                    s = (p >> 9).toString(16).toUpperCase(), 
+                    // h (hex): 计算偏移量的十六进制表示
+                    h = p.toString(16).toUpperCase();
+
+                // while 循环补零：IE 不支持 ES6 的 padStart 方法
+                // 所以必须用传统的 while 循环在前面补 '0'，直到长度达到 9 位
+                while(h.length < 9) h = '0' + h;
+
+                // 直接输出结果到页面 body，覆盖原有内容
+                // innerText 兼容 IE (textContent 在老 IE 中可能不支持)
+                document.body.innerText = '扇区: ' + s + '\n偏移: ' + h;
+                return
+            }
+        
+        // 如果这一块没找到，把偏移量 o 加上当前块的长度
+        o += b.length;
+
+        // 三元运算符判断：如果偏移量 o 小于文件总大小 (f.size)
+        o < f.size ? 
+            // 继续读取下一块 (1e6 = 1000000 字节，约 1MB)
+            // IE10+ 支持标准的 slice 方法，不需要 mozSlice/webkitSlice
+            r.readAsArrayBuffer(f.slice(o, o + 1e6)) : 
+            // 否则（读完了），显示未发现
+            document.body.innerText = '未发现'
+    };
+
+    // 启动第一次读取 (读取前 1MB)
+    r.readAsArrayBuffer(f.slice(0, 1e6))
+">

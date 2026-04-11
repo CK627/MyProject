@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<body>
+    <input type="file" id="f">
+    <div id="r"></div>
+    <script>
+        document.getElementById('f').onchange = function(e) {
+            // 1.2.3 阶段目标：【控制流简化与语法糖】
+            
+            // 【减少原因 1】：变量合并声明
+            // var a=1, b=2; 这种写法比 var a=1; var b=2; 更紧凑
+            var f = e.target.files[0], o = 0, r = new FileReader();
+            
+            r.onload = function(x) {
+                var b = new Uint8Array(x.target.result);
+                for (var i = 0; i < b.length; i++) {
+                    // 【减少原因 2】：隐式类型转换
+                    // if (b[i]) 等同于 if (b[i] !== 0)
+                    // 在 JS 中，0 是 false，非 0 是 true，所以直接判断 b[i] 即可
+                    if (b[i]) { 
+                        var p = o + i;
+                        // 这里我们直接将 s 和 off 的计算内联到字符串拼接中
+                        document.getElementById('r').innerText = '扇区: ' + (p >> 9).toString(16).toUpperCase() + '\n偏移: ' + p.toString(16).toUpperCase().padStart(9, '0');
+                        return;
+                    }
+                }
+                o += b.length;
+                
+                // 【减少原因 3】：三元运算符替代 if/else
+                // 条件 ? 成立时执行 : 不成立时执行
+                // 1e6 (10^6 = 1,000,000) 近似替代 1048576 (1MB)，对于分片读取来说，大小只要合理即可，无需精确到字节
+                // 1e6 比 1048576 少了好几个字符
+                o < f.size ? r.readAsArrayBuffer(f.slice(o, o + 1e6)) : document.getElementById('r').innerText = '未发现';
+            };
+            r.readAsArrayBuffer(f.slice(0, 1e6));
+        };
+    </script>
+</body>
+</html>

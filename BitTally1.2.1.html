@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<body>
+    <input type="file" id="f">
+    <div id="r"></div>
+    <script>
+        // 1.2.1 阶段目标：【变量名简化与合并】
+        // 减少了长变量名，去除了冗余的中间变量
+        // fileInput -> f
+        // resultDiv -> r
+        // offset -> o
+        // reader -> r (注意这里复用了r变量名，虽然不推荐但为了短)
+        
+        document.getElementById('f').onchange = function(e) {
+            var f = e.target.files[0];
+            if (!f) return;
+            var o = 0; 
+            var r = new FileReader();
+            
+            r.onload = function(x) {
+                var b = new Uint8Array(x.target.result);
+                for (var i = 0; i < b.length; i++) {
+                    if (b[i] !== 0) {
+                        var p = o + i; 
+                        var s = Math.floor(p / 512).toString(16).toUpperCase();
+                        var off = p.toString(16).toUpperCase();
+                        
+                        // 依然使用传统的 while 循环补零
+                        while (off.length < 9) off = '0' + off;
+                        
+                        document.getElementById('r').innerText = '扇区: ' + s + '\n偏移: ' + off;
+                        return;
+                    }
+                }
+                o += b.length;
+                if (o < f.size) {
+                    r.readAsArrayBuffer(f.slice(o, o + 1048576));
+                } else {
+                    document.getElementById('r').innerText = '未发现';
+                }
+            };
+            r.readAsArrayBuffer(f.slice(0, 1048576));
+        };
+    </script>
+</body>
+</html>

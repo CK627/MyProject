@@ -1,0 +1,18 @@
+<meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge">
+<input type="file" onchange="
+var t=event.target||event.srcElement,f=t.files[0],o=0,r=new FileReader;
+if(!f)return;
+r.onload=function(e){
+    var b=new Uint8Array((e.target||e.srcElement).result);
+    for(var i=0;i<b.length;i++)
+        if(b[i]){
+            var p=o+i,s=(p>>9).toString(16).toUpperCase(),h=p.toString(16).toUpperCase();
+            while(h.length<9)h='0'+h;
+            document.body.innerText='扇区: '+s+'\n偏移: '+h;
+            return
+        }
+    o+=b.length;
+    o<f.size?r.readAsArrayBuffer(f.slice(o,o+1e6)):document.body.innerText='未发现'
+};
+r.readAsArrayBuffer(f.slice(0,1e6))
+">

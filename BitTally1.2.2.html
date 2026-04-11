@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<body>
+    <input type="file" id="f">
+    <div id="r"></div>
+    <script>
+        document.getElementById('f').onchange = function(e) {
+            var f = e.target.files[0], o = 0, r = new FileReader();
+            
+            r.onload = function(x) {
+                var b = new Uint8Array(x.target.result);
+                for (var i = 0; i < b.length; i++) {
+                    if (b[i] !== 0) {
+                        var p = o + i;
+                        
+                        // 1.2.2 阶段目标：【使用位运算和 ES6 新特性】
+                        
+                        // 【减少原因 1】：位运算替代数学函数
+                        // p >> 9 等同于 Math.floor(p / 512)
+                        // 二进制右移 9 位相当于除以 2^9 (512) 并取整
+                        // 代码量减少：Math.floor(p / 512) -> p >> 9
+                        var s = (p >> 9).toString(16).toUpperCase();
+                        
+                        // 【减少原因 2】：padStart 替代 while 循环
+                        // padStart(9, '0') 是 ES6 字符串新方法
+                        // 一行代码搞定补零，替代了 3 行 while 循环
+                        var off = p.toString(16).toUpperCase().padStart(9, '0');
+                        
+                        document.getElementById('r').innerText = '扇区: ' + s + '\n偏移: ' + off;
+                        return;
+                    }
+                }
+                o += b.length;
+                if (o < f.size) {
+                    r.readAsArrayBuffer(f.slice(o, o + 1048576));
+                } else {
+                    document.getElementById('r').innerText = '未发现';
+                }
+            };
+            r.readAsArrayBuffer(f.slice(0, 1048576));
+        };
+    </script>
+</body>
+</html>

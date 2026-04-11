@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<body>
+    <!-- 1.2.4 阶段目标：【极致内联 (Code Golf 风格)】 -->
+    <!-- 这一步实现了最终的代码量最小化 -->
+    
+    <!-- 【减少原因 1】：内联事件处理 -->
+    <!-- 直接将 JS 写在 onchange 属性里，移除了 <script> 标签 -->
+    <!-- 移除了 document.getElementById('f').onchange 这样的DOM操作代码 -->
+    <!-- this.files[0] 直接指向当前 input 元素的文件列表，无需 e.target -->
+    
+    <!-- 【减少原因 2】：移除显示容器 -->
+    <!-- 移除了 <div id="r">，直接使用 document.body.innerText 覆盖整个页面内容 -->
+    <!-- 省去了一个 HTML 标签和一次 getElementById 查找 -->
+    
+    <!-- 【减少原因 3】：箭头函数 -->
+    <!-- r.onload=e=>{} 替代 r.onload=function(e){} -->
+    <!-- ES6 箭头函数语法更简洁 -->
+    
+    <input type="file" onchange="
+        var f=this.files[0],o=0,r=new FileReader();
+        r.onload=e=>{
+            var b=new Uint8Array(e.target.result);
+            for(var i=0;i<b.length;i++)
+                if(b[i]){
+                    var p=o+i;
+                    document.body.innerText='扇区: '+(p>>9).toString(16).toUpperCase()+'\n偏移: '+p.toString(16).toUpperCase().padStart(9,'0');
+                    return;
+                }
+            o+=b.length;
+            o<f.size?r.readAsArrayBuffer(f.slice(o,o+1e6)):document.body.innerText='未发现'
+        };
+        r.readAsArrayBuffer(f.slice(0,1e6))">
+</body>
+</html>

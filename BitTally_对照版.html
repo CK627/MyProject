@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+</head>
+<body>
+    <input type="file" id="fileInput">
+    <div id="result"></div>
+
+    <script>
+        var fileInput = document.getElementById('fileInput');
+        var resultDiv = document.getElementById('result');
+
+        fileInput.onchange = function(event) {
+            var file = event.target.files[0];
+            if (!file) return;
+
+            var offset = 0; 
+            var reader = new FileReader();
+
+            reader.onload = function(e) {
+                var buffer = e.target.result;
+                var bytes = new Uint8Array(buffer); 
+
+                for (var i = 0; i < bytes.length; i++) {
+                    if (bytes[i] !== 0) {
+                        var globalPos = offset + i; 
+                        var sector = Math.floor(globalPos / 512);
+                        var sectorHex = sector.toString(16).toUpperCase();
+                        var offsetHex = globalPos.toString(16).toUpperCase();
+
+                        while (offsetHex.length < 9) {
+                            offsetHex = '0' + offsetHex;
+                        }
+
+                        resultDiv.innerText = '扇区: ' + sectorHex + '\n偏移: ' + offsetHex;
+                        return;
+                    }
+                }
+                
+                offset += bytes.length;
+
+                if (offset < file.size) {
+                    readNextChunk();
+                } else {
+                    resultDiv.innerText = '未发现';
+                }
+            };
+
+            function readNextChunk() {
+                var slice = file.slice(offset, offset + 1024 * 1024);
+                reader.readAsArrayBuffer(slice);
+            }
+
+            readNextChunk();
+        };
+    </script>
+</body>
+</html>
