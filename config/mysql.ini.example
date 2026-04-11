@@ -1,0 +1,15 @@
+[database]
+host = <DB_HOST>
+user = <DB_USER>
+password = "<DB_PASSWORD>"
+database = <DB_NAME>
+port = <DB_PORT>
+charset = utf8
+
+[connection]
+; 连接超时时间（秒）
+timeout = 30
+; 是否启用持久连接
+persistent = false
+; 最大连接数
+max_connections = 100
