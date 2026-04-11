@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="images/favicon.ico" type="image/x-icon">
+  <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+  <meta name="description" content="衢江文化旅游信息平台 - 详情页">
+  <title>详情 - 衢江文化旅游信息平台</title>
+  <link rel="stylesheet" href="css/common.css">
+  <link rel="stylesheet" href="css/detail.css">
+</head>
+<body>
+  <div id="app">
+    <site-header></site-header>
+
+    <!-- 详情横幅 -->
+    <section class="detail-banner" v-if="item">
+      <img :src="item.banner || item.img" :alt="item.name" class="detail-banner-bg">
+      <div class="detail-banner-overlay"></div>
+      <div class="detail-banner-content">
+        <span class="detail-tag">{{ item.tag }}</span>
+        <h1>{{ item.name }}</h1>
+        <p v-if="item.subtitle">{{ item.subtitle }}</p>
+      </div>
+    </section>
+
+    <!-- 加载中 -->
+    <section class="page-section" v-if="!item && !error">
+      <div class="container">
+        <div class="loading">加载中...</div>
+      </div>
+    </section>
+
+    <!-- 错误提示 -->
+    <section class="page-section" v-if="error">
+      <div class="container">
+        <div class="error-box">
+          <h2>未找到内容</h2>
+          <p>{{ error }}</p>
+          <a href="index.html" class="btn btn-primary">返回首页</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- 详情内容 - 三栏布局 -->
+    <section class="page-section detail-content" v-if="item">
+      <div class="container">
+        <div class="detail-layout-three">
+          <!-- 左侧：相关推荐 -->
+          <aside class="detail-left" v-if="relatedItems.length">
+            <div class="sidebar-card">
+              <h4>相关推荐</h4>
+              <div class="related-list">
+                <div class="related-item" v-for="r in relatedItems" :key="r.id" @click="goDetail(r)">
+                  <img :src="r.img" :alt="r.name" class="related-img">
+                  <div class="related-info">
+                    <span class="related-tag">{{ r.tag }}</span>
+                    <span class="related-name">{{ r.name }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <a :href="backUrl" class="btn btn-outline btn-block">← 返回列表</a>
+          </aside>
+
+          <!-- 中间：主内容区 -->
+          <div class="detail-main">
+            <!-- 图片画廊 -->
+            <div class="detail-gallery" v-if="item.gallery && item.gallery.length">
+              <div class="gallery-main">
+                <img :src="currentImage" :alt="item.name" class="gallery-main-img">
+              </div>
+              <div class="gallery-thumbs" v-if="item.gallery.length > 1">
+                <div class="gallery-thumb" v-for="(img, i) in item.gallery" :key="i"
+                     :class="{ active: currentImageIndex === i }"
+                     @click="currentImageIndex = i">
+                  <img :src="img" :alt="item.name + ' 图片' + (i+1)">
+                </div>
+              </div>
+            </div>
+
+            <!-- 视频区域 -->
+            <div class="detail-video" v-if="item.video">
+              <h3>🎬 视频介绍</h3>
+              <div class="video-wrapper">
+                <video :src="item.video" controls :poster="item.img"></video>
+              </div>
+            </div>
+
+            <!-- 详细介绍 -->
+            <div class="detail-intro">
+              <h3>📖 详细介绍</h3>
+              <div class="intro-content" v-html="formatContent(item.detail || item.desc)"></div>
+            </div>
+
+            <!-- 特色亮点 -->
+            <div class="detail-highlights" v-if="item.highlights && item.highlights.length">
+              <h3>✨ 特色亮点</h3>
+              <ul class="highlights-list">
+                <li v-for="h in item.highlights" :key="h">{{ h }}</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- 右侧：侧边栏 -->
+          <aside class="detail-sidebar">
+            <!-- 基本信息 -->
+            <div class="sidebar-card">
+              <h4>基本信息</h4>
+              <ul class="info-list">
+                <li v-if="item.address"><span class="info-label">📍 地址</span><span>{{ item.address }}</span></li>
+                <li v-if="item.openTime"><span class="info-label">🕐 开放时间</span><span>{{ item.openTime }}</span></li>
+                <li v-if="item.ticket"><span class="info-label">🎫 门票</span><span>{{ item.ticket }}</span></li>
+                <li v-if="item.phone"><span class="info-label">📞 电话</span><span>{{ item.phone }}</span></li>
+                <li v-if="item.duration"><span class="info-label">⏱️ 时长</span><span>{{ item.duration }}</span></li>
+                <li v-if="item.difficulty"><span class="info-label">💪 难度</span><span>{{ item.difficulty }}</span></li>
+              </ul>
+            </div>
+
+            <!-- 交通指南 -->
+            <div class="sidebar-card" v-if="item.traffic">
+              <h4>交通指南</h4>
+              <p class="traffic-info">{{ item.traffic }}</p>
+            </div>
+
+            <!-- 温馨提示 -->
+            <div class="sidebar-card" v-if="item.tips">
+              <h4>温馨提示</h4>
+              <p class="tips-info">{{ item.tips }}</p>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <site-footer></site-footer>
+    <button class="back-to-top">↑</button>
+  </div>
+
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/common.js"></script>
+  <script src="js/detail.js"></script>
+</body>
+</html>

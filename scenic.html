@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="images/favicon.ico" type="image/x-icon">
+  <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+  <meta name="description" content="衢江景点大全 - 探索天脊龙门、乌溪江、紫微山等自然风光与人文古迹">
+  <title>景点推荐 - 衢江文化旅游信息平台</title>
+  <link rel="canonical" href="scenic.html">
+  <link rel="stylesheet" href="css/common.css">
+  <link rel="stylesheet" href="css/scenic.css">
+</head>
+<body>
+  <div id="app">
+    <site-header current="scenic"></site-header>
+
+    <!-- 页面横幅 -->
+    <section class="page-banner">
+      <img src="images/scenic/banner.jpg" alt="衢江景点" class="page-banner-bg"
+           onerror="this.style.display='none'">
+      <div class="page-banner-content">
+        <h1>景点推荐</h1>
+        <p>山水之美与人文之韵，尽在衢江</p>
+      </div>
+    </section>
+
+    <!-- 选项卡切换 -->
+    <section class="page-section">
+      <div class="container">
+        <div class="tabs">
+          <button class="tab-btn" :class="{ active: activeTab === 'all' }"
+                  @click="activeTab = 'all'">全部景点</button>
+          <button class="tab-btn" :class="{ active: activeTab === 'nature' }"
+                  @click="activeTab = 'nature'">自然风光</button>
+          <button class="tab-btn" :class="{ active: activeTab === 'culture' }"
+                  @click="activeTab = 'culture'">人文古迹</button>
+        </div>
+
+        <!-- 自然风光 -->
+        <div id="nature" v-if="activeTab === 'all' || activeTab === 'nature'">
+          <div class="category-header" v-if="activeTab === 'all'">
+            <h2>🏔️ 自然风光</h2>
+          </div>
+          <div class="grid-4">
+            <spot-card v-for="item in nature" :key="item.id" :item="item" type="scenic"></spot-card>
+          </div>
+        </div>
+
+        <!-- 人文古迹 -->
+        <div id="culture" v-if="activeTab === 'all' || activeTab === 'culture'"
+             :style="activeTab === 'all' ? 'margin-top: 48px' : ''">
+          <div class="category-header" v-if="activeTab === 'all'">
+            <h2>🏛️ 人文古迹</h2>
+          </div>
+          <div class="grid-4">
+            <spot-card v-for="item in culture" :key="item.id" :item="item" type="scenic"></spot-card>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <site-footer></site-footer>
+    <button class="back-to-top">↑</button>
+  </div>
+
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/common.js"></script>
+  <script src="js/scenic.js"></script>
+</body>
+</html>

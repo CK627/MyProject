@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="images/favicon.ico" type="image/x-icon">
+  <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+  <meta name="description" content="衢江美食推荐 - 衢州烤饼、三头一掌、清水鱼等地道浙西风味">
+  <title>美食推荐 - 衢江文化旅游信息平台</title>
+  <link rel="canonical" href="food.html">
+  <link rel="stylesheet" href="css/common.css">
+  <link rel="stylesheet" href="css/food.css">
+</head>
+<body>
+  <div id="app">
+    <site-header current="food"></site-header>
+
+    <section class="page-banner">
+      <img src="images/food/banner.jpg" alt="衢江美食" class="page-banner-bg"
+           onerror="this.style.display='none'">
+      <div class="page-banner-content">
+        <h1>美食推荐</h1>
+        <p>舌尖上的衢江，品味地道浙西风味</p>
+      </div>
+    </section>
+
+    <section class="page-section">
+      <div class="container">
+        <div class="tabs">
+          <button class="tab-btn" :class="{ active: activeTab === 'all' }"
+                  @click="activeTab = 'all'">全部美食</button>
+          <button class="tab-btn" :class="{ active: activeTab === 'snacks' }"
+                  @click="activeTab = 'snacks'">特色小吃</button>
+          <button class="tab-btn" :class="{ active: activeTab === 'dishes' }"
+                  @click="activeTab = 'dishes'">地方菜肴</button>
+        </div>
+
+        <div id="snacks" v-if="activeTab === 'all' || activeTab === 'snacks'">
+          <div class="category-header" v-if="activeTab === 'all'">
+            <h2>🥟 特色小吃</h2>
+          </div>
+          <div class="grid-4">
+            <spot-card v-for="item in snacks" :key="item.id" :item="item" type="food"></spot-card>
+          </div>
+        </div>
+
+        <div id="dishes" v-if="activeTab === 'all' || activeTab === 'dishes'"
+             :style="activeTab === 'all' ? 'margin-top: 48px' : ''">
+          <div class="category-header" v-if="activeTab === 'all'">
+            <h2>🍲 地方菜肴</h2>
+          </div>
+          <div class="grid-4">
+            <spot-card v-for="item in dishes" :key="item.id" :item="item" type="food"></spot-card>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <site-footer></site-footer>
+    <button class="back-to-top">↑</button>
+  </div>
+
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/common.js"></script>
+  <script src="js/food.js"></script>
+</body>
+</html>

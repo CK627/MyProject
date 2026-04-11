@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="images/favicon.ico" type="image/x-icon">
+  <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+  <meta name="description" content="衢江旅游线路推荐 - 一日游、深度游精选线路，带你畅游衢江山水人文">
+  <title>旅游线路 - 衢江文化旅游信息平台</title>
+  <link rel="canonical" href="route.html">
+  <link rel="stylesheet" href="css/common.css">
+  <link rel="stylesheet" href="css/route.css">
+</head>
+<body>
+  <div id="app">
+    <site-header current="route"></site-header>
+
+    <section class="page-banner">
+      <img src="images/route/banner.jpg" alt="衢江旅游线路" class="page-banner-bg"
+           onerror="this.style.display='none'">
+      <div class="page-banner-content">
+        <h1>旅游线路</h1>
+        <p>精心规划的旅行线路，让你畅游衢江不走弯路</p>
+      </div>
+    </section>
+
+    <section class="page-section">
+      <div class="container">
+        <div class="tabs">
+          <button class="tab-btn" :class="{ active: activeTab === 'all' }"
+                  @click="activeTab = 'all'">全部线路</button>
+          <button class="tab-btn" :class="{ active: activeTab === 'oneday' }"
+                  @click="activeTab = 'oneday'">一日游</button>
+          <button class="tab-btn" :class="{ active: activeTab === 'deep' }"
+                  @click="activeTab = 'deep'">深度游</button>
+        </div>
+
+        <!-- 一日游 -->
+        <div id="oneday" v-if="activeTab === 'all' || activeTab === 'oneday'">
+          <div class="category-header" v-if="activeTab === 'all'">
+            <h2>⛰️ 一日游线路</h2>
+          </div>
+          <div class="route-list">
+            <a :href="'detail.html?type=route&id=' + r.id" class="route-card" v-for="r in oneDay" :key="r.id">
+              <div class="route-card-img">
+                <img :data-src="r.img" :alt="r.name" class="card-img"
+                     src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+                <div class="route-badge">{{ r.duration }}</div>
+              </div>
+              <div class="route-card-body">
+                <h3 class="card-title">{{ r.name }}</h3>
+                <p class="card-desc" style="-webkit-line-clamp:3">{{ r.desc }}</p>
+                <div class="route-meta">
+                  <span class="route-difficulty">难度: {{ r.difficulty }}</span>
+                </div>
+                <div class="route-highlights">
+                  <span v-for="h in r.highlights" :key="h" class="route-tag">{{ h }}</span>
+                </div>
+              </div>
+            </a>
+          </div>
+        </div>
+
+        <!-- 深度游 -->
+        <div id="deep" v-if="activeTab === 'all' || activeTab === 'deep'"
+             :style="activeTab === 'all' ? 'margin-top: 48px' : ''">
+          <div class="category-header" v-if="activeTab === 'all'">
+            <h2>🗺️ 深度游线路</h2>
+          </div>
+          <div class="route-list">
+            <a :href="'detail.html?type=route&id=' + r.id" class="route-card" v-for="r in deep" :key="r.id">
+              <div class="route-card-img">
+                <img :data-src="r.img" :alt="r.name" class="card-img"
+                     src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+                <div class="route-badge">{{ r.duration }}</div>
+              </div>
+              <div class="route-card-body">
+                <h3 class="card-title">{{ r.name }}</h3>
+                <p class="card-desc" style="-webkit-line-clamp:3">{{ r.desc }}</p>
+                <div class="route-meta">
+                  <span class="route-difficulty">难度: {{ r.difficulty }}</span>
+                </div>
+                <div class="route-highlights">
+                  <span v-for="h in r.highlights" :key="h" class="route-tag">{{ h }}</span>
+                </div>
+              </div>
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <site-footer></site-footer>
+    <button class="back-to-top">↑</button>
+  </div>
+
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/common.js"></script>
+  <script src="js/route.js"></script>
+</body>
+</html>

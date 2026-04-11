@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="images/favicon.ico" type="image/x-icon">
+  <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+  <meta name="description" content="衢江民俗文化 - 南孔祭典、立春祭、剪纸竹编等非遗文化与民间技艺">
+  <title>民俗文化 - 衢江文化旅游信息平台</title>
+  <link rel="canonical" href="culture.html">
+  <link rel="stylesheet" href="css/common.css">
+  <link rel="stylesheet" href="css/culture.css">
+</head>
+<body>
+  <div id="app">
+    <site-header current="culture"></site-header>
+
+    <section class="page-banner">
+      <img src="images/culture/banner.jpg" alt="衢江民俗文化" class="page-banner-bg"
+           onerror="this.style.display='none'">
+      <div class="page-banner-content">
+        <h1>民俗文化</h1>
+        <p>千年传承的民间智慧，感受衢江文化的深厚积淀</p>
+      </div>
+    </section>
+
+    <section class="page-section">
+      <div class="container">
+        <div class="tabs">
+          <button class="tab-btn" :class="{ active: activeTab === 'all' }"
+                  @click="activeTab = 'all'">全部内容</button>
+          <button class="tab-btn" :class="{ active: activeTab === 'festivals' }"
+                  @click="activeTab = 'festivals'">传统节日</button>
+          <button class="tab-btn" :class="{ active: activeTab === 'crafts' }"
+                  @click="activeTab = 'crafts'">民间技艺</button>
+        </div>
+
+        <div id="festivals" v-if="activeTab === 'all' || activeTab === 'festivals'">
+          <div class="category-header" v-if="activeTab === 'all'">
+            <h2>🏮 传统节日</h2>
+          </div>
+          <div class="grid-3">
+            <spot-card v-for="item in festivals" :key="item.id" :item="item" type="culture"></spot-card>
+          </div>
+        </div>
+
+        <div id="crafts" v-if="activeTab === 'all' || activeTab === 'crafts'"
+             :style="activeTab === 'all' ? 'margin-top: 48px' : ''">
+          <div class="category-header" v-if="activeTab === 'all'">
+            <h2>✂️ 民间技艺</h2>
+          </div>
+          <div class="grid-3">
+            <spot-card v-for="item in crafts" :key="item.id" :item="item" type="culture"></spot-card>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <site-footer></site-footer>
+    <button class="back-to-top">↑</button>
+  </div>
+
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/common.js"></script>
+  <script src="js/culture.js"></script>
+</body>
+</html>

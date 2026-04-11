@@ -1,0 +1,5 @@
+/* 民俗页样式 */
+
+.culture-card .card-body {
+  padding: var(--space-lg);
+}

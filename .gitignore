@@ -1,0 +1,12 @@
+# 忽略文件与目录
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Qoder 缓存
+.qoder/
+
+# 如果后续加入了 npm
+node_modules/
+package-lock.json
