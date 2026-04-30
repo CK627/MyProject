@@ -172,7 +172,7 @@ export interface Post {
   id: number;
   user_id: number;
   content: string;
-  images?: string[];
+  images?: string;
   likes_count: number;
   comments_count: number;
   shares_count: number;
@@ -212,6 +212,7 @@ export interface ReviewStats {
   pending: number;
   approved: number;
   rejected: number;
+  pending_reports?: number;
 }
 
 // 评论（增强版）
@@ -299,6 +300,11 @@ export const postsApi = {
       method: 'POST',
       body: JSON.stringify(data),
     });
+  },
+  
+  // 删除帖子
+  deletePost: async (postId: number): Promise<void> => {
+    await request(`/posts/${postId}`, { method: 'DELETE' });
   },
   
   // 点赞
@@ -398,6 +404,28 @@ export const postsApi = {
   // 获取审核统计
   getReviewStats: async (): Promise<ReviewStats> => {
     return request<ReviewStats>('/posts/review/stats');
+  },
+  
+  // 举报相关
+  reportPost: async (postId: number, reason: string): Promise<any> => {
+    return request('/admin/reports', {
+      method: 'POST',
+      body: JSON.stringify({
+        target_type: 'post',
+        target_id: postId,
+        reason: reason
+      })
+    });
+  },
+  
+  // 审核员获取举报列表
+  getReviewReports: async (status = 'pending', page = 1, pageSize = 20): Promise<any[]> => {
+    return request(`/posts/review/reports?status=${status}&page=${page}&page_size=${pageSize}`);
+  },
+  
+  // 审核员处理举报
+  resolveReviewReport: async (reportId: number, action: 'approve' | 'reject'): Promise<void> => {
+    await request(`/posts/review/reports/${reportId}/resolve?action=${action}`, { method: 'POST' });
   },
 };
 
@@ -600,6 +628,14 @@ export const walletApi = {
   // 确认充值
   confirmRecharge: async (orderNo: string): Promise<void> => {
     await request(`/wallet/recharge/${orderNo}/confirm`, { method: 'POST' });
+  },
+  
+  // 转账
+  transfer: async (toUserId: number, amount: number, description?: string): Promise<void> => {
+    await request('/wallet/transfer', {
+      method: 'POST',
+      body: JSON.stringify({ to_user_id: toUserId, amount, description }),
+    });
   },
 };
 

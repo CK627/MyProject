@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
@@ -15,6 +15,7 @@ from ..core.security import verify_password, get_password_hash, create_access_to
 from ..core.deps import get_current_user
 from ..core.email import send_password_reset_email
 from ..core.oauth import exchange_github_code, get_github_user_info
+from ..config import settings
 
 router = APIRouter(prefix="/auth", tags=["认证"])
 
@@ -189,6 +190,7 @@ async def logout(
 @router.post("/forgot-password", response_model=SuccessResponse, summary="忘记密码")
 async def forgot_password(
     data: ResetPasswordRequest,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """发送密码重置邮件"""
@@ -204,9 +206,13 @@ async def forgot_password(
         user.password_reset_token = token
         user.password_reset_expires = datetime.utcnow() + timedelta(minutes=30)
         db.commit()
+        
+        # 尝试从请求中获取前端源地址，否则回退到配置
+        origin = request.headers.get("origin")
+        frontend_url = origin if origin else settings.FRONTEND_URL
 
         # 发送邮件
-        send_password_reset_email(user.email, token)
+        send_password_reset_email(user.email, token, frontend_url)
 
     # 无论用户是否存在都返回相同消息，防止邮箱探测
     return SuccessResponse(message="如果该邮箱已注册，重置链接已发送到您的邮箱")

@@ -75,7 +75,7 @@ BACKEND_CONFIG = {
     "DB_ECHO": False,  # 是否打印SQL语句
     
     # ========== JWT配置 ==========
-    "JWT_SECRET_KEY": "your-secret-key-change-in-production",  # ⚠️ 生产环境必须修改
+    "JWT_SECRET_KEY": "<JWT_SECRET_KEY>",
     "JWT_ALGORITHM": "HS256",
     "JWT_EXPIRE_MINUTES": 10080,  # 7天
     

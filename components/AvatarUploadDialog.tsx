@@ -4,7 +4,7 @@ import React, { useState, useRef } from 'react'
 import { X, Upload, Loader2, ImageIcon } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { filesApi, usersApi } from '@/lib/api'
+import { usersApi } from '@/lib/api'
 
 interface AvatarUploadDialogProps {
   isOpen: boolean
@@ -39,31 +39,53 @@ export function AvatarUploadDialog({ isOpen, onClose, onSuccess, currentAvatar }
     setError('')
     setSelectedFile(file)
 
-    // 预览图片
+    // 预览并压缩图片 (最大 300x300)
     const reader = new FileReader()
     reader.onload = (e) => {
-      setPreview(e.target?.result as string)
+      const img = new Image()
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        const MAX_SIZE = 300
+        let width = img.width
+        let height = img.height
+
+        if (width > height) {
+          if (width > MAX_SIZE) {
+            height *= MAX_SIZE / width
+            width = MAX_SIZE
+          }
+        } else {
+          if (height > MAX_SIZE) {
+            width *= MAX_SIZE / height
+            height = MAX_SIZE
+          }
+        }
+
+        canvas.width = width
+        canvas.height = height
+        const ctx = canvas.getContext('2d')
+        ctx?.drawImage(img, 0, 0, width, height)
+        
+        // 压缩质量为 0.8 的 JPEG
+        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.8)
+        setPreview(compressedBase64)
+      }
+      img.src = e.target?.result as string
     }
     reader.readAsDataURL(file)
   }
 
   const handleUpload = async () => {
-    if (!selectedFile) return
+    if (!selectedFile || !preview) return
 
     try {
       setUploading(true)
       setError('')
 
-      // 上传文件
-      const uploadResult = await filesApi.uploadFile(selectedFile)
+      // Update user avatar directly with base64 data
+      await usersApi.updateMyProfile({ avatar: preview })
       
-      // 获取文件URL
-      const avatarUrl = filesApi.getFileUrl(uploadResult.file_id)
-      
-      // 更新用户头像
-      await usersApi.updateMyProfile({ avatar: avatarUrl })
-      
-      onSuccess(avatarUrl)
+      onSuccess(preview)
       handleClose()
     } catch (err: any) {
       setError(err.message || '上传失败')

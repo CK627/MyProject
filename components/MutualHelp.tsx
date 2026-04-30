@@ -24,7 +24,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { tasksApi, Task as ApiTask, TaskApplication, getToken, authApi, userLikeApi } from '@/lib/api'
@@ -41,6 +41,7 @@ interface Task {
   author: {
     id: number
     name: string
+    avatar?: string
     rating: number
   }
   assigneeId?: number  // 接单者ID
@@ -445,6 +446,7 @@ export function MutualHelp() {
                     
                     <div className="flex items-center gap-2">
                       <Avatar className="w-8 h-8">
+                        {task.author.avatar && <AvatarImage src={task.author.avatar} alt={task.author.name} />}
                         <AvatarFallback className="text-xs">{task.author.name.slice(0, 1)}</AvatarFallback>
                       </Avatar>
                       <div className="text-sm">
@@ -628,10 +630,11 @@ export function MutualHelp() {
                       <div key={app.id} className="p-3 bg-muted rounded-lg">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
-                            <div className="relative">
-                              <Avatar className="w-10 h-10">
-                                <AvatarFallback>{app.applicant?.name?.slice(0, 1) || '?'}</AvatarFallback>
-                              </Avatar>
+                              <div className="relative">
+                                <Avatar className="w-10 h-10">
+                                  {app.applicant?.avatar && <AvatarImage src={app.applicant.avatar} alt={app.applicant.name} />}
+                                  <AvatarFallback>{app.applicant?.name?.slice(0, 1) || '?'}</AvatarFallback>
+                                </Avatar>
                               {index === 0 && (
                                 <div className="absolute -top-1 -right-1 w-5 h-5 bg-yellow-500 rounded-full flex items-center justify-center">
                                   <Star className="w-3 h-3 text-white fill-white" />
@@ -739,6 +742,8 @@ export function MutualHelp() {
                   <label className="text-sm font-medium text-muted-foreground">发布者</label>
                   <div className="mt-1 flex items-center gap-2">
                     <Avatar className="w-8 h-8">
+                      {/* @ts-ignore */}
+                      {selectedTask.author.avatar && <AvatarImage src={selectedTask.author.avatar} alt={selectedTask.author.name} />}
                       <AvatarFallback className="text-xs">{selectedTask.author.name.slice(0, 1)}</AvatarFallback>
                     </Avatar>
                     <div>

@@ -137,11 +137,12 @@ async def confirm_recharge(
     # Create transaction record
     transaction = Transaction(
         wallet_id=wallet.id,
+        user_id=current_user.id,
         amount=recharge.amount,
+        balance_after=wallet.balance,
         type="recharge",
         status="completed",
-        description=f"充值 - {recharge.payment_method}",
-        related_id=recharge.id
+        description=f"充值 - {recharge.payment_method}"
     )
     db.add(transaction)
     
@@ -176,8 +177,11 @@ async def transfer(
         )
     
     # Check sender balance
+    from decimal import Decimal
+    amount_decimal = Decimal(str(transfer_data.amount))
+    
     sender_wallet = db.query(Wallet).filter(Wallet.user_id == current_user.id).first()
-    if not sender_wallet or sender_wallet.balance < transfer_data.amount:
+    if not sender_wallet or sender_wallet.balance < amount_decimal:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="余额不足"
@@ -191,26 +195,35 @@ async def transfer(
         db.flush()
     
     # Transfer
-    sender_wallet.balance -= transfer_data.amount
-    recipient_wallet.balance += transfer_data.amount
+    from decimal import Decimal
+    
+    amount_decimal = Decimal(str(transfer_data.amount))
+    sender_wallet.balance -= amount_decimal
+    recipient_wallet.balance += amount_decimal
     
     # Create transaction records
     description = transfer_data.description or f"转账给{recipient.name}"
     
     sender_transaction = Transaction(
         wallet_id=sender_wallet.id,
-        amount=transfer_data.amount,
+        user_id=current_user.id,
+        amount=-amount_decimal,
+        balance_after=sender_wallet.balance,
         type="transfer_out",
         status="completed",
-        description=description
+        description=description,
+        related_user_id=recipient.id
     )
     
     recipient_transaction = Transaction(
         wallet_id=recipient_wallet.id,
-        amount=transfer_data.amount,
+        user_id=recipient.id,
+        amount=amount_decimal,
+        balance_after=recipient_wallet.balance,
         type="transfer_in",
         status="completed",
-        description=f"来自{current_user.name}的转账"
+        description=f"来自{current_user.name}的转账",
+        related_user_id=current_user.id
     )
     
     db.add_all([sender_transaction, recipient_transaction])

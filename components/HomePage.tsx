@@ -310,6 +310,7 @@ export function HomePage({ onNavigate, user }: HomePageProps) {
                     onClick={() => onNavigate('help')}
                   >
                     <Avatar className="w-10 h-10">
+                      {task.publisher?.avatar && <AvatarImage src={task.publisher.avatar} alt={task.publisher.name} />}
                       <AvatarFallback className="bg-gradient-to-br from-primary to-secondary text-primary-foreground">
                         {task.publisher?.name?.slice(0, 1) || '匿'}
                       </AvatarFallback>

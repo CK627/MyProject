@@ -7,6 +7,7 @@ from .user import UserBrief
 
 class TaskCategory(str, Enum):
     delivery = "delivery"
+    purchase = "purchase"
     study = "study"
     errand = "errand"
     other = "other"

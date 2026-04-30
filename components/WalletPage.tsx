@@ -13,14 +13,15 @@ import {
   ChevronRight,
   TrendingUp,
   TrendingDown,
-  Loader2
+  Loader2,
+  X
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { walletApi, Wallet as ApiWallet, Transaction as ApiTransaction, getToken } from '@/lib/api'
+import { walletApi, usersApi, Wallet as ApiWallet, Transaction as ApiTransaction, getToken } from '@/lib/api'
 
 interface Transaction {
   id: number
@@ -85,6 +86,9 @@ export function WalletPage() {
   const [error, setError] = useState('')
   const [showRecharge, setShowRecharge] = useState(false)
   const [showTransfer, setShowTransfer] = useState(false)
+  const [showAllTransactions, setShowAllTransactions] = useState(false)
+  const [allTransactions, setAllTransactions] = useState<Transaction[]>([])
+  const [allTxLoading, setAllTxLoading] = useState(false)
   const [rechargeAmount, setRechargeAmount] = useState('')
   const [transferData, setTransferData] = useState({ to: '', amount: '' })
   const [submitting, setSubmitting] = useState(false)
@@ -125,8 +129,62 @@ export function WalletPage() {
       setShowRecharge(false)
       setRechargeAmount('')
       loadWallet() // 刷新钱包
+      
+      setError('充值成功')
+      setTimeout(() => setError(''), 2000)
     } catch (err: any) {
       setError(err.message || '充值失败')
+      setTimeout(() => setError(''), 3000)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // 加载全部交易记录
+  const loadAllTransactions = async () => {
+    try {
+      setAllTxLoading(true)
+      const txResponse = await walletApi.getTransactions(1, 100) // 简单起见，这里拉取前100条作为"全部"
+      setAllTransactions(txResponse.items.map(convertTransaction))
+      setShowAllTransactions(true)
+    } catch (err: any) {
+      setError(err.message || '加载交易记录失败')
+      setTimeout(() => setError(''), 3000)
+    } finally {
+      setAllTxLoading(false)
+    }
+  }
+
+  // 转账
+  const handleTransfer = async () => {
+    if (!transferData.to || !transferData.amount || Number(transferData.amount) <= 0) return
+    
+    try {
+      setSubmitting(true)
+      setError('')
+      
+      // 先搜索用户，根据用户名或学号匹配转账对象
+      const users = await usersApi.searchUsers(transferData.to)
+      if (users.length === 0) {
+        throw new Error('未找到该转账对象')
+      }
+      
+      // 取第一个匹配的用户作为转账对象
+      const toUserId = users[0].id
+      
+      // 执行转账
+      await walletApi.transfer(toUserId, Number(transferData.amount))
+      
+      setShowTransfer(false)
+      setTransferData({ to: '', amount: '' })
+      loadWallet() // 刷新钱包
+      
+      // 成功提示 (使用 alert 或者通过 setError 设置临时成功的状态，这里简单处理一下错误提示作为通用弹窗)
+      setError('转账成功')
+      setTimeout(() => setError(''), 2000)
+    } catch (err: any) {
+      setError(err.message || '转账失败')
+      setTimeout(() => setError(''), 3000)
     } finally {
       setSubmitting(false)
     }
@@ -192,6 +250,7 @@ export function WalletPage() {
                 onClick={() => {
                   if (action.label === '充值') setShowRecharge(true)
                   if (action.label === '转账') setShowTransfer(true)
+                  if (action.label === '账单') loadAllTransactions()
                 }}
               >
                 <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${action.color} flex items-center justify-center`}>
@@ -210,7 +269,8 @@ export function WalletPage() {
               <History className="w-5 h-5 text-primary" />
               交易记录
             </CardTitle>
-            <Button variant="ghost" size="sm">
+            <Button variant="ghost" size="sm" onClick={loadAllTransactions} disabled={allTxLoading}>
+              {allTxLoading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : null}
               查看全部 <ChevronRight className="w-4 h-4 ml-1" />
             </Button>
           </CardHeader>
@@ -250,18 +310,23 @@ export function WalletPage() {
         {showRecharge && (
           <div className="fixed inset-0 bg-foreground/50 flex items-center justify-center z-50 p-4">
             <Card className="w-full max-w-sm animate-scale-in">
-              <CardHeader>
-                <CardTitle>充值</CardTitle>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle>模拟充值</CardTitle>
+                <Button variant="ghost" size="icon" onClick={() => setShowRecharge(false)}>
+                  <X className="w-4 h-4" />
+                </Button>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <label className="text-sm font-medium text-foreground">充值金额</label>
+                  <label className="text-sm font-medium text-foreground">自定义充值金额 (模拟)</label>
                   <Input
                     type="number"
-                    placeholder="请输入金额"
+                    placeholder="请输入任意金额..."
                     value={rechargeAmount}
                     onChange={(e) => setRechargeAmount(e.target.value)}
                     className="mt-1"
+                    min="0.01"
+                    step="0.01"
                   />
                 </div>
                 <div className="grid grid-cols-3 gap-2">
@@ -275,13 +340,10 @@ export function WalletPage() {
                     </Button>
                   ))}
                 </div>
-                <div className="flex gap-2">
-                  <Button variant="outline" className="flex-1" onClick={() => setShowRecharge(false)}>
-                    取消
-                  </Button>
-                  <Button variant="gradient" className="flex-1" onClick={handleRecharge} disabled={submitting}>
+                <div className="flex gap-2 pt-2">
+                  <Button variant="gradient" className="w-full" onClick={handleRecharge} disabled={submitting}>
                     {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                    {submitting ? '处理中...' : '确认充值'}
+                    {submitting ? '处理中...' : '确认充值 (模拟)'}
                   </Button>
                 </div>
               </CardContent>
@@ -293,8 +355,11 @@ export function WalletPage() {
         {showTransfer && (
           <div className="fixed inset-0 bg-foreground/50 flex items-center justify-center z-50 p-4">
             <Card className="w-full max-w-sm animate-scale-in">
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle>转账</CardTitle>
+                <Button variant="ghost" size="icon" onClick={() => setShowTransfer(false)}>
+                  <X className="w-4 h-4" />
+                </Button>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
@@ -314,16 +379,64 @@ export function WalletPage() {
                     value={transferData.amount}
                     onChange={(e) => setTransferData({ ...transferData, amount: e.target.value })}
                     className="mt-1"
+                    min="0.01"
+                    step="0.01"
                   />
                 </div>
-                <div className="flex gap-2">
-                  <Button variant="outline" className="flex-1" onClick={() => setShowTransfer(false)}>
-                    取消
-                  </Button>
-                  <Button variant="gradient" className="flex-1">
-                    确认转账
+                <div className="flex gap-2 pt-2">
+                  <Button variant="gradient" className="w-full" onClick={handleTransfer} disabled={submitting}>
+                    {submitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                    {submitting ? '处理中...' : '确认转账'}
                   </Button>
                 </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* 全部交易记录弹窗 */}
+        {showAllTransactions && (
+          <div className="fixed inset-0 bg-foreground/50 flex items-center justify-center z-50 p-4">
+            <Card className="w-full max-w-lg animate-scale-in max-h-[80vh] flex flex-col">
+              <CardHeader className="flex flex-row items-center justify-between border-b border-border pb-4">
+                <div className="flex items-center gap-3">
+                  <CardTitle>全部交易记录</CardTitle>
+                  <Badge variant="secondary" className="font-normal">{allTransactions.length}条记录</Badge>
+                </div>
+                <Button variant="ghost" size="icon" onClick={() => setShowAllTransactions(false)}>
+                  <X className="w-4 h-4" />
+                </Button>
+              </CardHeader>
+              <CardContent className="flex-1 overflow-y-auto p-4 space-y-3">
+                {allTransactions.length > 0 ? allTransactions.map((transaction) => (
+                  <div
+                    key={transaction.id}
+                    className="flex items-center justify-between p-4 rounded-xl bg-card border border-border shadow-sm hover:shadow-md transition-shadow"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center text-2xl">
+                        {transaction.icon}
+                      </div>
+                      <div>
+                        <p className="font-medium text-foreground text-base">{transaction.title}</p>
+                        <p className="text-sm text-muted-foreground">{transaction.date}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className={`font-bold text-lg ${transaction.amount > 0 ? 'text-success' : 'text-foreground'}`}>
+                        {transaction.amount > 0 ? '+' : ''}¥{Math.abs(transaction.amount).toFixed(2)}
+                      </p>
+                      <Badge variant={transaction.status === 'completed' ? 'secondary' : 'outline'} className="text-xs mt-1">
+                        {transaction.status === 'completed' ? '已完成' : '处理中'}
+                      </Badge>
+                    </div>
+                  </div>
+                )) : (
+                  <div className="text-center py-12 text-muted-foreground flex flex-col items-center">
+                    <History className="w-12 h-12 mb-4 opacity-20" />
+                    <p>暂无交易记录</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -332,7 +445,9 @@ export function WalletPage() {
         )}
 
         {error && (
-          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-destructive text-destructive-foreground px-4 py-2 rounded-lg shadow-lg z-50">
+          <div className={`fixed bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 rounded-lg shadow-lg z-50 ${
+            error.includes('成功') ? 'bg-green-500 text-white' : 'bg-destructive text-destructive-foreground'
+          }`}>
             {error}
           </div>
         )}

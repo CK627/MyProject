@@ -6,7 +6,7 @@ setlocal enabledelayedexpansion
 ::  install.bat
 :: ============================================================
 
-set "PROJECT_DIR=%~dp0"
+set "PROJECT_DIR=%~dp0..\.."
 if "%PROJECT_DIR:~-1%"=="\" set "PROJECT_DIR=%PROJECT_DIR:~0,-1%"
 set "BACKEND_DIR=%PROJECT_DIR%\backend"
 
@@ -106,17 +106,17 @@ if not exist "venv" (
 
 echo    Upgrading pip...
 call venv\Scripts\activate.bat
-python -m pip install --upgrade pip -q
+python -m pip install --upgrade pip -q -i https://mirrors.aliyun.com/pypi/simple/
 
 echo    Installing bcrypt (binary wheel)...
-pip install --only-binary :all: bcrypt>=4.2.0 -q 2>nul
+pip install --only-binary :all: bcrypt>=4.2.0 -q -i https://mirrors.aliyun.com/pypi/simple/ 2>nul
 if %errorlevel% neq 0 (
     echo    [!] Binary install failed, trying normal install...
-    pip install bcrypt>=4.2.0 -q
+    pip install bcrypt>=4.2.0 -q -i https://mirrors.aliyun.com/pypi/simple/
 )
 
 echo    Installing backend dependencies...
-pip install -r requirements.txt -q
+pip install -r requirements.txt -q -i https://mirrors.aliyun.com/pypi/simple/
 if %errorlevel% neq 0 (
     echo    [X] Backend dependency install failed
     echo.
@@ -149,15 +149,15 @@ echo.
 :: ----------------------------------------------------------
 echo [4/6] Database configuration...
 
-set "CONFIG_FILE=%BACKEND_DIR%\app\config.py"
+set "ENV_FILE=%BACKEND_DIR%\.env"
 
 :: Check if config already exists
 set "NEED_CONFIG=0"
-if not exist "%CONFIG_FILE%" set "NEED_CONFIG=1"
+if not exist "%ENV_FILE%" set "NEED_CONFIG=1"
 
-if exist "%CONFIG_FILE%" (
-    echo    Config file found: %CONFIG_FILE%
-    set /p "RECONFIG=   Reconfigure database? (y/N): "
+if exist "%ENV_FILE%" (
+    echo    Config file found: %ENV_FILE%
+    set /p "RECONFIG=   Reconfigure database env variables? (y/N): "
     if /i "!RECONFIG!"=="y" set "NEED_CONFIG=1"
 )
 
@@ -192,18 +192,40 @@ if "!JWT_KEY!"=="" (
     call deactivate
 )
 
-:: Write config using the bundled Python helper script
+:: Write config directly to .env
 cd /d "%BACKEND_DIR%"
-call venv\Scripts\activate.bat
 
-python "%PROJECT_DIR%\_write_config.py" "!DB_HOST!" "!DB_PORT!" "!DB_USER!" "!DB_PASSWORD!" "!DB_NAME!" "!JWT_KEY!" "%CONFIG_FILE%"
+(
+    echo DB_HOST=!DB_HOST!
+    echo DB_PORT=!DB_PORT!
+    echo DB_USER=!DB_USER!
+    echo DB_PASSWORD=!DB_PASSWORD!
+    echo DB_NAME=!DB_NAME!
+    echo.
+    echo SECRET_KEY=!JWT_KEY!
+    echo ALGORITHM=HS256
+    echo ACCESS_TOKEN_EXPIRE_MINUTES=1440
+    echo.
+    echo REDIS_HOST=localhost
+    echo REDIS_PORT=6379
+    echo REDIS_DB=0
+    echo.
+    echo DEBUG=False
+    echo API_PREFIX=/api/v1
+    echo FRONTEND_URL=http://localhost:3000
+    echo.
+    echo SMTP_HOST=
+    echo SMTP_PORT=587
+    echo SMTP_USER=
+    echo SMTP_PASSWORD=
+    echo SMTP_FROM_EMAIL=
+) > "%ENV_FILE%"
+
 if %errorlevel% neq 0 (
-    echo    [X] Failed to write config file
-    call deactivate
+    echo    [X] Failed to write .env file
     pause
     exit /b 1
 )
-call deactivate
 
 echo    [OK] Database config updated
 :skip_db_config
@@ -218,7 +240,8 @@ cd /d "%PROJECT_DIR%"
 
 if not exist "node_modules" (
     echo    Running npm install...
-    call npm install
+call npm config set registry https://registry.npmmirror.com
+call npm install
     if %errorlevel% neq 0 (
         echo    [X] Frontend dependency install failed
         pause

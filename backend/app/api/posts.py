@@ -7,12 +7,13 @@ from math import ceil
 from ..database import get_db
 from ..models.models import (
     User, Post, PostTag, PostLike, PostComment, UserProfile,
-    CommentLike, CommentDislike, CommentReviewerDelete, Notification
+    CommentLike, CommentDislike, CommentReviewerDelete, Notification, Report
 )
 from ..schemas.post import (
     PostCreate, PostUpdate, PostResponse, PostListResponse,
     CommentCreate, CommentResponse, PostTagResponse
 )
+from ..schemas.message import ReportResponse
 from ..schemas.common import SuccessResponse
 from ..core.deps import get_current_user, get_current_admin_user
 
@@ -112,7 +113,7 @@ async def get_posts(
     db: Session = Depends(get_db)
 ):
     """获取帖子列表"""
-    query = db.query(Post).filter(Post.status == "approved")
+    query = db.query(Post).filter(Post.status.in_(["published", "approved"]))
     
     if tag_id:
         query = query.join(PostTag).filter(PostTag.id == tag_id)
@@ -545,12 +546,100 @@ async def get_review_stats(
     pending_count = db.query(Post).filter(Post.status == "pending").count()
     approved_count = db.query(Post).filter(Post.status == "approved").count()
     rejected_count = db.query(Post).filter(Post.status == "rejected").count()
+    pending_report_count = db.query(Report).filter(Report.status == "pending", Report.target_type == "post").count()
     
     return {
         "pending": pending_count,
         "approved": approved_count,
-        "rejected": rejected_count
+        "rejected": rejected_count,
+        "pending_reports": pending_report_count
     }
+
+
+@router.get("/review/reports", response_model=list[ReportResponse], summary="获取帖子举报列表")
+async def get_review_reports(
+    status: Optional[str] = "pending",
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """获取帖子举报列表"""
+    if not is_user_reviewer(current_user, db):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="需要审核员权限"
+        )
+    
+    query = db.query(Report).filter(Report.target_type == "post")
+    if status:
+        query = query.filter(Report.status == status)
+    
+    reports = query.options(
+        joinedload(Report.reporter)
+    ).order_by(desc(Report.created_at)).offset(
+        (page - 1) * page_size
+    ).limit(page_size).all()
+    
+    return reports
+
+
+@router.post("/review/reports/{report_id}/resolve", response_model=SuccessResponse, summary="处理帖子举报")
+async def resolve_review_report(
+    report_id: int,
+    action: str = Query(..., description="处理动作: approve, reject"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """处理帖子举报（审核员）"""
+    if not is_user_reviewer(current_user, db):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="需要审核员权限"
+        )
+        
+    report = db.query(Report).filter(Report.id == report_id, Report.target_type == "post").first()
+    if not report:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="举报不存在"
+        )
+    
+    if report.status != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="该举报已处理"
+        )
+    
+    if action == "approve":
+        report.status = "resolved"
+        post = db.query(Post).filter(Post.id == report.target_id).first()
+        if post:
+            post.status = "hidden"
+            
+            # 可选：扣除被举报者的信誉分
+            profile = db.query(UserProfile).filter(UserProfile.user_id == post.user_id).first()
+            if profile:
+                profile.credit_score = max(0, profile.credit_score - 5)
+                
+            # 发送通知给发帖人
+            notification = Notification(
+                user_id=post.user_id,
+                type="post_hidden",
+                title="您的帖子被举报并隐藏",
+                content=f"您的帖子因为被举报「{report.reason}」且经审核属实，已被隐藏。信誉分-5。",
+                related_id=post.id
+            )
+            db.add(notification)
+    else:
+        report.status = "rejected"
+    
+    from datetime import datetime
+    report.handled_by = current_user.id
+    report.handled_at = datetime.utcnow()
+    
+    db.commit()
+    return SuccessResponse(message="举报已处理")
 
 
 # ============ 评论增强功能 API ============

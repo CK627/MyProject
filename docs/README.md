@@ -6,6 +6,18 @@
 
 Smart Campus Platform 是一个现代化的智慧校园服务平台，旨在为高校师生提供一站式的数字化校园体验。平台涵盖社交互动、任务协作、信息发布、即时通讯等核心功能，采用前后端分离架构，具备完善的安全控制和审核治理机制。
 
+## 本次文档更新（对比旧版）
+
+| 模块 | 旧版文档问题/缺失 | 本次更新内容 |
+|:-----|:-----------------|:-------------|
+| 用户体系 | 将 reviewer 作为用户角色枚举，和实际模型不一致 | 修正为 reviewer 为“信誉分达标后的权限身份”，用户角色仅包含 student/teacher/admin |
+| 认证系统 | “找回/重置密码”仅有描述，缺少后端核心实现代码段；GitHub 回调代码段与实际实现略有出入 | 补充 forgot-password/reset-password 关键代码段；同步 GitHub OAuth 回调实现细节 |
+| 信誉系统 | 缺少互赞相关接口的完整闭环描述 | 增补 like/unlike/like-status/profile 等接口与核心逻辑说明 |
+| 互助任务 | 申请列表排序逻辑未体现 priority_score 回填 | 同步 tasks.py 实际实现（包含 priority_score 字段回填） |
+| 即时通讯 | 消息推送示例未体现“发送者自身多端同步” | 同步 messages.py：消息通过 WebSocket 同时推送给接收者与发送者 |
+| 文件管理 | 将“硬链接”作为已实现特性，但代码实际为“Hash 去重 + 引用计数 + 延迟清理” | 修正文档表述；同步 FileStorageManager 的实际实现片段 |
+| 安全/运维 | “HTTPS 强制 / 密钥轮换”等在架构图中被描述为已实现 | 调整为部署建议，不在“已实现能力”中宣称 |
+
 ### 功能架构图
 
 ```mermaid
@@ -35,12 +47,12 @@ graph TD
     G --> G1[文件上传]
     G --> G2[文件下载]
     G --> G3[IndexedDB缓存]
-    G --> G4[软删除]
-    G --> G5[自动清理]
+    G --> G4[引用计数]
+    G --> G5[延迟清理]
     H --> H1[JWT鉴权]
     H --> H2[CORS限制]
-    H --> H3[HTTPS强制]
-    H --> H4[密钥轮换]
+    H --> H3[bcrypt密码加密]
+    H --> H4[邮件重置密码]
 ```
 
 ---
@@ -89,43 +101,15 @@ graph TD
 ```
 SmartCampusServicePlatform/
 ├── app/                        # Next.js 前端应用
+│   ├── auth/
+│   │   └── github/
+│   │       └── callback/
+│   │           └── page.tsx     # GitHub OAuth 回调页面
+│   ├── reset-password/
+│   │   └── page.tsx            # 重置密码页面
 │   ├── globals.css            # 全局样式
 │   ├── layout.tsx             # 根布局
 │   └── page.tsx               # 主页面
-├── backend/                    # FastAPI 后端服务
-│   ├── app/
-│   │   ├── api/               # API路由模块
-│   │   │   ├── auth.py        # 认证接口
-│   │   │   ├── users.py       # 用户管理
-│   │   │   ├── posts.py       # 校园墙
-│   │   │   ├── tasks.py       # 互帮互助
-│   │   │   ├── wallet.py      # 钱包系统
-│   │   │   ├── friends.py     # 好友系统
-│   │   │   ├── messages.py    # 消息通知
-│   │   │   ├── announcements.py # 公告系统
-│   │   │   ├── school.py      # 学校信息
-│   │   │   ├── files.py       # 文件管理
-│   │   │   ├── activity.py    # 活跃度
-│   │   │   └── admin.py       # 管理后台
-│   │   ├── core/              # 核心功能
-│   │   │   ├── security.py    # 安全工具
-│   │   │   └── deps.py        # 依赖注入
-│   │   ├── models/            # 数据模型
-│   │   │   ├── models.py      # SQLAlchemy模型
-│   │   │   └── file_storage.py # 文件存储模型
-│   │   ├── schemas/           # Pydantic模式
-│   │   ├── tasks/             # 定时任务
-│   │   │   ├── file_cleanup.py # 文件清理
-│   │   │   └── user_activity_checker.py # 活跃度检查
-│   │   ├── websocket/         # WebSocket处理
-│   │   │   ├── connection_manager.py # 连接管理
-│   │   │   └── routes.py      # WS路由
-│   │   ├── utils/             # 工具函数
-│   │   ├── config.py          # 配置管理
-│   │   ├── database.py        # 数据库连接
-│   │   └── main.py            # 应用入口
-│   ├── storage/               # 文件存储目录
-│   └── requirements.txt       # Python依赖
 ├── components/                 # React组件
 │   ├── ui/                    # 基础UI组件
 │   ├── LoginPage.tsx          # 登录页
@@ -138,11 +122,56 @@ SmartCampusServicePlatform/
 │   ├── WalletPage.tsx         # 钱包页面
 │   └── ...                    # 其他组件
 ├── lib/                        # 工具库
-│   └── api.ts                 # API服务层
+│   ├── api.ts                 # API服务层
+│   ├── websocket.ts           # 前端 WebSocket 管理器
+│   ├── messageStorage.ts      # IndexedDB 消息缓存
+│   └── ...                    # 其他工具模块
+├── backend/                    # FastAPI 后端服务
+│   ├── app/
+│   │   ├── api/               # API路由模块
+│   │   │   ├── auth.py        # 认证接口（含 GitHub OAuth/找回密码/点赞）
+│   │   │   ├── users.py       # 用户管理
+│   │   │   ├── posts.py       # 校园墙（评论拉踩/审核员投票）
+│   │   │   ├── tasks.py       # 互帮互助（冻结/结算/优先分排序）
+│   │   │   ├── wallet.py      # 钱包系统
+│   │   │   ├── friends.py     # 好友系统（在线好友）
+│   │   │   ├── messages.py    # 消息接口（多端同步推送）
+│   │   │   ├── announcements.py # 公告系统（含阅读状态）
+│   │   │   ├── school.py      # 学校信息
+│   │   │   ├── files.py       # 文件管理（Hash去重/引用计数/清理）
+│   │   │   ├── user_activity.py # 活跃度
+│   │   │   └── admin.py       # 管理后台
+│   │   ├── core/              # 核心能力（安全/邮件/OAuth等）
+│   │   ├── models/            # 数据模型
+│   │   ├── schemas/           # Pydantic schemas
+│   │   ├── tasks/             # 定时任务（文件清理/活跃度检查）
+│   │   ├── utils/             # 工具（文件管理等）
+│   │   ├── websocket/         # WebSocket（连接管理/路由）
+│   │   ├── config.py          # 后端配置（BaseSettings）
+│   │   ├── database.py        # 数据库连接
+│   │   └── main.py            # 应用入口（API_PREFIX=/api/v1）
+│   ├── storage/               # 后端文件存储目录（分层哈希）
+│   ├── .env.example           # 后端环境变量示例
+│   ├── requirements.txt       # Python依赖
+│   └── campus.db              # 开发数据库（示例/本地）
+├── docs/                       # 毕设/文档
+│   ├── README.md
+│   ├── 摘要.md
+│   ├── 1.md
+│   ├── 2.md
+│   ├── 3.md
+│   ├── 4.md
+│   └── 结论.md
+├── scripts/                    # 一键脚本（按平台区分）
+│   ├── MacOS/
+│   ├── Linux/
+│   └── Windows/
 ├── config.ts                   # 前端统一配置
-├── start.sh                   # 启动脚本
-├── stop.sh                    # 停止脚本
-└── .env.example               # 环境变量示例
+├── package.json
+├── next.config.mjs
+├── tailwind.config.ts
+├── .env.local.example          # 前端环境变量示例
+└── README.md                   # 项目根说明
 ```
 
 ---
@@ -151,9 +180,9 @@ SmartCampusServicePlatform/
 
 ### 1. 用户认证系统
 
-#### 1.1 用户注册与登录
+#### 1.1 用户注册、登录与找回密码
 
-支持邮箱注册，密码使用bcrypt加密存储，JWT令牌认证。
+支持邮箱注册，密码使用bcrypt加密存储，JWT令牌认证。同时集成了 **GitHub OAuth** 第三方登录，并支持基于邮件发送重置链接的密码找回功能。
 
 **后端实现 - 用户注册** (`backend/app/api/auth.py`):
 
@@ -193,6 +222,145 @@ async def register(
     db.commit()
     
     return new_user
+```
+
+**后端实现 - GitHub OAuth登录** (`backend/app/api/auth.py`):
+
+```python
+@router.post("/github/callback", response_model=Token, summary="GitHub OAuth回调")
+async def github_callback(
+    data: GitHubCallbackRequest,
+    db: Session = Depends(get_db)
+):
+    """处理GitHub OAuth授权回调"""
+    try:
+        # 用授权码换取access_token并获取GitHub用户信息
+        access_token = await exchange_github_code(data.code)
+        github_user = await get_github_user_info(access_token)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"GitHub登录失败: {str(e)}"
+        )
+
+    github_id = github_user["github_id"]
+    email = github_user["email"]
+    name = github_user["name"]
+    avatar_url = github_user.get("avatar_url")
+
+    # 先按github_id查找
+    user = db.query(User).filter(User.github_id == github_id).first()
+
+    if not user:
+        # 按email查找
+        user = db.query(User).filter(User.email == email).first()
+        if user:
+            # 已有账号，绑定github_id
+            if user.github_id and user.github_id != github_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="该邮箱已绑定其他GitHub账号"
+                )
+            user.github_id = github_id
+            if avatar_url and not user.avatar:
+                user.avatar = avatar_url
+        else:
+            # 自动注册新用户
+            user = User(
+                email=email,
+                password_hash=None,
+                name=name,
+                github_id=github_id,
+                avatar=avatar_url,
+                role="student",
+                status="active"
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+
+            # 创建钱包
+            wallet = Wallet(user_id=user.id, balance=0.0, frozen_amount=0.0)
+            db.add(wallet)
+
+    if user.status == "banned":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="账户已被禁用"
+        )
+
+    # 更新登录状态
+    user.last_login = datetime.utcnow()
+    user.online_status = 'online'
+    user.last_active = datetime.utcnow()
+    db.commit()
+
+    # 生成JWT
+    jwt_token = create_access_token(
+        data={
+            "sub": str(user.id),
+            "email": user.email,
+            "role": user.role.value if hasattr(user.role, 'value') else user.role
+        }
+    )
+    return Token(access_token=jwt_token, token_type="bearer")
+```
+
+**后端实现 - 忘记密码（发送重置邮件）** (`backend/app/api/auth.py`):
+
+```python
+@router.post("/forgot-password", response_model=SuccessResponse, summary="忘记密码")
+async def forgot_password(
+    data: ResetPasswordRequest,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """发送密码重置邮件"""
+    user = db.query(User).filter(User.email == data.email).first()
+
+    if user:
+        # OAuth用户无需密码重置
+        if user.github_id and not user.password_hash:
+            return SuccessResponse(message="该账号使用GitHub登录，无需重置密码")
+
+        token = generate_reset_token()
+        user.password_reset_token = token
+        user.password_reset_expires = datetime.utcnow() + timedelta(minutes=30)
+        db.commit()
+
+        origin = request.headers.get("origin")
+        frontend_url = origin if origin else settings.FRONTEND_URL
+        send_password_reset_email(user.email, token, frontend_url)
+
+    return SuccessResponse(message="如果该邮箱已注册，重置链接已发送到您的邮箱")
+```
+
+**后端实现 - 重置密码（通过 token 设置新密码）** (`backend/app/api/auth.py`):
+
+```python
+@router.post("/reset-password", response_model=SuccessResponse, summary="重置密码")
+async def reset_password(
+    data: ResetPasswordConfirm,
+    db: Session = Depends(get_db)
+):
+    """通过重置token设置新密码"""
+    user = db.query(User).filter(User.password_reset_token == data.token).first()
+
+    if not user:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="无效的重置链接")
+
+    if not user.password_reset_expires or user.password_reset_expires < datetime.utcnow():
+        user.password_reset_token = None
+        user.password_reset_expires = None
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="重置链接已过期，请重新申请")
+
+    user.password_hash = get_password_hash(data.new_password)
+    user.password_reset_token = None
+    user.password_reset_expires = None
+    db.commit()
+
+    return SuccessResponse(message="密码重置成功，请使用新密码登录")
 ```
 
 **后端实现 - JWT令牌生成** (`backend/app/core/security.py`):
@@ -258,14 +426,15 @@ const handleSubmit = async (e: React.FormEvent) => {
 
 #### 1.2 用户角色与权限
 
-系统支持四种用户角色：
+系统支持三种用户角色（与数据模型 `UserRole` 一致）：
 
-| 角色 | 枚举值 | 说明 | 权限 |
-|------|--------|------|------|
-| 学生 | `student` | 默认角色 | 基础功能 |
-| 教师 | `teacher` | 教职工 | 扩展功能 |
-| 审核员 | `reviewer` | 内容审核 | 审核权限（信誉分>98自动获得） |
-| 管理员 | `admin` | 系统管理 | 全部权限 |
+| 角色 | 枚举值 | 说明 |
+|------|--------|------|
+| 学生 | `student` | 默认角色 |
+| 教师 | `teacher` | 教职工 |
+| 管理员 | `admin` | 系统管理 |
+
+审核员（Reviewer）不是 `UserRole` 中的固定角色，而是依据信誉分自动获得的“权限身份”（见 2.2 与校园墙模块中的 `is_user_reviewer` 实现）。
 
 **数据模型定义** (`backend/app/models/models.py`):
 
@@ -284,16 +453,21 @@ class User(Base):
     __tablename__ = "users"
     
     id = Column(Integer, primary_key=True, index=True, comment="用户ID")
-    email = Column(String(255), unique=True, index=True, nullable=False, comment="邮箱")
-    password_hash = Column(String(255), nullable=False, comment="密码哈希值")
+    email = Column(String(255), unique=True, index=True, nullable=False, comment="邮箱，唯一标识")
+    password_hash = Column(String(255), nullable=True, comment="密码哈希值，OAuth用户可为空")
     name = Column(String(100), nullable=False, comment="用户姓名")
     phone = Column(String(20), comment="手机号码")
-    avatar = Column(String(500), comment="头像URL")
-    role = Column(Enum(UserRole), default=UserRole.student, comment="用户角色")
-    status = Column(Enum(UserStatus), default=UserStatus.active, comment="账户状态")
-    online_status = Column(String(20), default='offline', comment="在线状态")
+    avatar = Column(Text(length=4294967295), comment="头像Base64或URL")
+    role = Column(Enum(UserRole), default=UserRole.student, comment="用户角色：student/teacher/admin")
+    status = Column(Enum(UserStatus), default=UserStatus.active, comment="账户状态：active/inactive/banned")
+    online_status = Column(String(20), default='offline', comment="在线状态: online/away/offline")
     last_active = Column(DateTime, comment="最后活跃时间")
     created_at = Column(DateTime, server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), comment="更新时间")
+    last_login = Column(DateTime, comment="最后登录时间")
+    github_id = Column(String(100), nullable=True, unique=True, index=True, comment="GitHub OAuth用户ID")
+    password_reset_token = Column(String(255), nullable=True, comment="密码重置token")
+    password_reset_expires = Column(DateTime, nullable=True, comment="密码重置token过期时间")
     
     # 关系
     profile = relationship("UserProfile", back_populates="user", uselist=False)
@@ -305,12 +479,72 @@ class User(Base):
 
 ### 2. 信誉系统
 
-#### 2.1 信誉分机制
+#### 2.1 信誉分与获赞机制
 
-每个用户有一个信誉分（初始60分），通过以下方式变化：
+每个用户有一个信誉分（初始60分）及获赞数，通过以下方式变化：
 
 - **增加信誉**: 完成任务、获得好评
 - **减少信誉**: 违规被删除评论（-2~-10分）、被举报处理
+- **用户点赞**: 其他用户可以为该用户点赞，增加其档案中的 `like_count`，进一步提升用户在社区内的受欢迎度。
+
+**后端实现 - 用户点赞功能** (`backend/app/api/auth.py`):
+
+```python
+@router.post("/users/{user_id}/like", response_model=SuccessResponse, summary="点赞用户")
+async def like_user(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """给用户点赞"""
+    if user_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="不能给自己点赞"
+        )
+    
+    # 检查目标用户是否存在
+    target_user = db.query(User).filter(User.id == user_id).first()
+    if not target_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="用户不存在"
+        )
+    
+    # 检查是否已点赞
+    existing_like = db.query(UserLike).filter(
+        UserLike.from_user_id == current_user.id,
+        UserLike.to_user_id == user_id
+    ).first()
+    
+    if existing_like:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="已经点赞过了"
+        )
+    
+    # 添加点赞记录
+    new_like = UserLike(from_user_id=current_user.id, to_user_id=user_id)
+    db.add(new_like)
+    
+    # 更新被点赞用户的点赞数
+    target_profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+    if target_profile:
+        target_profile.like_count = (target_profile.like_count or 0) + 1
+    else:
+        # 如果用户没有profile，创建一个
+        target_profile = UserProfile(user_id=user_id, like_count=1, credit_score=60)
+        db.add(target_profile)
+    
+    db.commit()
+    return SuccessResponse(message="点赞成功")
+```
+
+**其他相关接口**（同属 `backend/app/api/auth.py`，路由前缀 `/auth`）：
+
+- `DELETE /auth/users/{user_id}/like`：取消点赞（同步减少 `like_count`）
+- `GET /auth/users/{user_id}/like-status`：查询是否已点赞
+- `GET /auth/users/{user_id}/profile`：获取信誉分、好评率与优先分等档案信息
 
 **用户档案模型** (`backend/app/models/models.py`):
 
@@ -318,17 +552,27 @@ class User(Base):
 class UserProfile(Base):
     __tablename__ = "user_profiles"
     
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True)
+    id = Column(Integer, primary_key=True, index=True, comment="用户资料ID")
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, comment="关联用户ID")
     student_id = Column(String(50), comment="学号")
     department = Column(String(100), comment="院系")
     major = Column(String(100), comment="专业")
+    enroll_year = Column(Integer, comment="入学年份")
+    bio = Column(Text, comment="个人简介")
+    gender = Column(String(10), comment="性别")
+    birthday = Column(DateTime, comment="生日")
+    dormitory = Column(String(100), comment="宿舍")
+    rating = Column(DECIMAL(3, 2), default=5.00, comment="用户评分")
+    total_tasks_completed = Column(Integer, default=0, comment="完成任务总数")
+    total_tasks_published = Column(Integer, default=0, comment="发布任务总数")
     
     # 信誉系统字段
     credit_score = Column(Integer, default=60, comment="信誉分，初始60分（及格）")
     like_count = Column(Integer, default=0, comment="获赞数")
-    total_reviews = Column(Integer, default=0, comment="被评价总数")
+    total_reviews = Column(Integer, default=0, comment="被评价总数，用于计算好评率")
     positive_reviews = Column(Integer, default=0, comment="好评数")
+    created_at = Column(DateTime, server_default=func.now(), comment="创建时间")
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), comment="更新时间")
     
     @property
     def approval_rate(self):
@@ -345,7 +589,7 @@ class UserProfile(Base):
 
 #### 2.2 审核员权限自动获取
 
-信誉分超过98分的用户自动获得审核员权限：
+信誉分超过阈值（默认 98 分）的用户自动获得审核员权限。该机制不改变 `User.role`，而是在需要审核员权限的接口中进行权限判断；核心实现位于校园墙模块 [posts.py](file:///Users/jj/Documents/MyCode/SmartCampusServicePlatform/backend/app/api/posts.py)：
 
 ```python
 # 审核员所需的最低信誉分
@@ -518,6 +762,8 @@ async def reviewer_delete_comment(
 
 发布任务时自动冻结悬赏金额：
 
+**后端实现 - 任务发布功能** (`backend/app/api/tasks.py`):
+
 ```python
 @router.post("", response_model=TaskResponse, summary="发布任务")
 async def create_task(
@@ -530,7 +776,10 @@ async def create_task(
     wallet = db.query(Wallet).filter(Wallet.user_id == current_user.id).first()
     reward_amount = Decimal(str(task_data.reward))
     if not wallet or wallet.balance < reward_amount:
-        raise HTTPException(status_code=400, detail="余额不足，请先充值")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="余额不足，请先充值"
+        )
     
     # Freeze the reward amount
     wallet.balance -= reward_amount
@@ -545,11 +794,13 @@ async def create_task(
         deadline=task_data.deadline,
         publisher_id=current_user.id,
         status="open",
-        private_info=task_data.private_info  # 私密信息（快递码等）
+        private_info=task_data.private_info  # 私密信息
     )
     
     db.add(new_task)
     db.commit()
+    db.refresh(new_task)
+    
     return new_task
 ```
 
@@ -557,17 +808,23 @@ async def create_task(
 
 申请者按优先分排序，优先分 = (信誉分 + 好评率*100) / 2：
 
+**后端实现 - 任务申请者排序** (`backend/app/api/tasks.py`):
+
 ```python
-@router.get("/{task_id}/applications", summary="获取申请列表")
+@router.get("/{task_id}/applications", response_model=list[ApplicationResponse], summary="获取申请列表")
 async def get_applications(
     task_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """获取任务申请列表，按优先分排序"""
-    applications = db.query(TaskApplication).filter(
-        TaskApplication.task_id == task_id
-    ).all()
+    task = db.query(HelpTask).filter(HelpTask.id == task_id).first()
+    if not task or task.publisher_id != current_user.id:
+        raise HTTPException(status_code=403, detail="只有任务发布者可以查看申请")
+        
+    applications = db.query(TaskApplication).options(
+        joinedload(TaskApplication.applicant)
+    ).filter(TaskApplication.task_id == task_id).all()
     
     def get_priority_score(application):
         profile = db.query(UserProfile).filter(
@@ -588,13 +845,21 @@ async def get_applications(
     # 按优先分降序排序
     applications_sorted = sorted(applications, key=get_priority_score, reverse=True)
     
+    # 为每个申请补充优先分（便于前端直接展示）
+    for app in applications_sorted:
+        app.priority_score = get_priority_score(app)
+    
     return applications_sorted
 ```
 
 #### 4.3 任务完成与奖励发放
 
+当任务发布者确认任务完成后，系统会自动解冻悬赏金额，并结算至接单者的钱包余额中：
+
+**后端实现 - 任务完成并转账** (`backend/app/api/tasks.py`):
+
 ```python
-@router.post("/{task_id}/complete", summary="完成任务")
+@router.post("/{task_id}/complete", response_model=SuccessResponse, summary="完成任务")
 async def complete_task(
     task_id: int,
     current_user: User = Depends(get_current_user),
@@ -603,37 +868,45 @@ async def complete_task(
     """确认任务完成（发布者操作）"""
     task = db.query(HelpTask).filter(HelpTask.id == task_id).first()
     
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    
     if task.publisher_id != current_user.id:
         raise HTTPException(status_code=403, detail="只有任务发布者可以确认完成")
+    
+    if task.status not in ["assigned", "in_progress"]:
+        raise HTTPException(status_code=400, detail="任务状态不正确")
     
     # Transfer reward
     publisher_wallet = db.query(Wallet).filter(Wallet.user_id == current_user.id).first()
     assignee_wallet = db.query(Wallet).filter(Wallet.user_id == task.assignee_id).first()
     reward_amount = Decimal(str(task.reward))
     
-    # 从冻结金额扣除
-    publisher_wallet.frozen_amount -= reward_amount
+    if publisher_wallet:
+        publisher_wallet.frozen_amount -= reward_amount
     
-    # 发放给接单者
-    assignee_wallet.balance += reward_amount
-    assignee_wallet.total_income = (assignee_wallet.total_income or Decimal('0')) + reward_amount
-    
-    # Create transaction record
-    transaction = Transaction(
-        wallet_id=assignee_wallet.id,
-        user_id=task.assignee_id,
-        type=TransactionType.task_reward,
-        amount=task.reward,
-        balance_after=assignee_wallet.balance,
-        description=f"任务奖励：{task.title}",
-        status="completed"
-    )
-    db.add(transaction)
+    if assignee_wallet:
+        assignee_wallet.balance += reward_amount
+        assignee_wallet.total_income = (assignee_wallet.total_income or Decimal('0')) + reward_amount
+        
+        # Create transaction record
+        transaction = Transaction(
+            wallet_id=assignee_wallet.id,
+            user_id=task.assignee_id,
+            type=TransactionType.task_reward,
+            amount=task.reward,
+            balance_after=assignee_wallet.balance,
+            related_task_id=task.id,
+            description=f"任务奖励：{task.title}",
+            status="completed"
+        )
+        db.add(transaction)
     
     task.status = "completed"
     task.completed_at = datetime.utcnow()
     
     db.commit()
+    
     return SuccessResponse(message="任务完成，奖励已发放")
 ```
 
@@ -657,18 +930,28 @@ class ConnectionManager:
             self.active_connections[user_id] = set()
         
         self.active_connections[user_id].add(websocket)
-    
+
+    def disconnect(self, websocket: WebSocket, user_id: int):
+        """断开WebSocket连接"""
+        if user_id in self.active_connections:
+            self.active_connections[user_id].discard(websocket)
+            if not self.active_connections[user_id]:
+                del self.active_connections[user_id]
+
     async def send_personal_message(self, message: dict, user_id: int):
-        """发送消息给指定用户的所有连接"""
+        """发送消息给指定用户的所有连接（支持多端同步）"""
         if user_id not in self.active_connections:
             return
-        
+
+        disconnected = set()
         for websocket in self.active_connections[user_id]:
             try:
                 await websocket.send_json(message)
-            except Exception as e:
-                # Handle disconnected connections
-                pass
+            except Exception:
+                disconnected.add(websocket)
+
+        for websocket in disconnected:
+            self.disconnect(websocket, user_id)
     
     def is_user_online(self, user_id: int) -> bool:
         """检查用户是否在线"""
@@ -688,28 +971,22 @@ async def send_message(
     db: Session = Depends(get_db)
 ):
     """发送消息"""
-    # Check if blocked
-    blocked = db.query(Blacklist).filter(
-        Blacklist.user_id == message_data.receiver_id,
-        Blacklist.blocked_user_id == current_user.id
-    ).first()
-    
-    if blocked:
-        raise HTTPException(status_code=403, detail="对方已将你拉黑，无法发送消息")
-    
+    # ... 省略：自发消息校验、接收者存在性校验、拉黑校验 ...
+    receiver = db.query(User).filter(User.id == message_data.receiver_id).first()
+    msg_type = message_data.type.value if hasattr(message_data.type, 'value') else message_data.type
+
     message = Message(
         sender_id=current_user.id,
         receiver_id=message_data.receiver_id,
         content=message_data.content,
-        message_type=message_data.type,
+        message_type=msg_type,
         is_read=False
     )
-    
+
     db.add(message)
     db.commit()
     db.refresh(message)
-    
-    # 通过WebSocket推送消息给接收者
+
     ws_message = {
         "type": "new_message",
         "data": {
@@ -717,21 +994,24 @@ async def send_message(
             "sender_id": message.sender_id,
             "receiver_id": message.receiver_id,
             "content": message.content,
+            "message_type": message.message_type,
+            "is_read": message.is_read,
             "created_at": message.created_at.isoformat(),
-            "sender": {
-                "id": current_user.id,
-                "name": current_user.name,
-                "avatar": current_user.avatar
-            }
+            "sender": {"id": current_user.id, "name": current_user.name, "avatar": current_user.avatar},
+            "receiver": {"id": receiver.id, "name": receiver.name, "avatar": receiver.avatar}
         }
     }
-    
+
+    # 推送给接收者与发送者（发送者多端同步，会话列表可实时更新）
     await manager.send_personal_message(ws_message, message_data.receiver_id)
-    
+    await manager.send_personal_message(ws_message, current_user.id)
+
     return message
 ```
 
-#### 5.3 在线状态检测
+#### 5.3 在线状态检测（在线好友）
+
+在线好友列表接口位于好友模块 [friends.py](file:///Users/jj/Documents/MyCode/SmartCampusServicePlatform/backend/app/api/friends.py)（`/friends/online`），内部同时参考 WebSocket 连接池与数据库的 `online_status/last_active`：
 
 ```python
 @router.get("/online", summary="获取在线好友ID列表")
@@ -942,7 +1222,7 @@ async def upload_file(
     """
     上传文件到服务器
     - 自动去重(相同文件只存储一次)
-    - 支持硬链接引用计数
+    - 引用计数与延迟清理（引用归零进入软删除队列，定时任务清理物理文件）
     """
     try:
         file_data = await file.read()
@@ -967,9 +1247,127 @@ async def upload_file(
         raise HTTPException(status_code=500, detail=f"文件上传失败: {str(e)}")
 ```
 
+**后端实现 - Hash 去重与引用计数** (`backend/app/utils/file_manager.py`):
+
+```python
+class FileStorageManager:
+    def _calculate_hash(self, file_data: bytes) -> str:
+        return hashlib.sha256(file_data).hexdigest()
+
+    def _get_storage_path(self, file_hash: str) -> Path:
+        # 使用哈希前4位分层: ab/cd/abcdef...
+        return self.base_path / file_hash[:2] / file_hash[2:4] / file_hash
+
+    async def save_file(self, file_data: bytes, message_id: int, mime_type: str, db: Session) -> FileMetadata:
+        file_hash = self._calculate_hash(file_data)
+
+        existing = db.query(FileMetadata).filter(FileMetadata.file_hash == file_hash).first()
+        if existing:
+            existing.reference_count += 1
+            existing.last_accessed = datetime.utcnow()
+            db.add(FileReference(file_id=existing.id, message_id=message_id))
+            db.commit()
+            db.refresh(existing)
+            return existing
+        # ... 新文件写盘并创建 FileMetadata/FileReference ...
+```
+
 ---
 
-### 9. 前端API服务层
+### 9. 公告系统
+
+#### 9.1 公告发布与展示
+
+平台支持管理员发布公告（通知、活动、警告等类型），支持置顶功能。公告对所有用户（包括未登录用户）可见，用户登录后可以记录阅读状态：
+
+**后端实现 - 公告列表获取** (`backend/app/api/announcements.py`):
+
+```python
+@router.get("/public", response_model=AnnouncementListResponse, summary="获取公开公告列表")
+async def get_public_announcements(
+    type: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db)
+):
+    """获取公开公告列表（无需登录）"""
+    query = db.query(Announcement).filter(Announcement.status == "published")
+    
+    if type:
+        query = query.filter(Announcement.type == type)
+    
+    total = query.count()
+    total_pages = ceil(total / page_size)
+    
+    # Order by is_pinned first, then by publish_date
+    announcements = query.order_by(
+        desc(Announcement.is_pinned),
+        desc(Announcement.publish_date)
+    ).offset((page - 1) * page_size).limit(page_size).all()
+    
+    return AnnouncementListResponse(
+        items=announcements,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages
+    )
+```
+
+#### 9.2 阅读状态追踪
+
+系统记录用户的公告阅读状态，确保重要通知能够被有效传达：
+
+**后端实现 - 阅读记录模型** (`backend/app/models/models.py`):
+
+```python
+class AnnouncementRead(Base):
+    __tablename__ = "announcement_reads"
+    id = Column(Integer, primary_key=True, index=True)
+    announcement_id = Column(Integer, ForeignKey("announcements.id", ondelete="CASCADE"))
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    read_at = Column(DateTime, server_default=func.now())
+```
+
+**后端实现 - 标记公告已读** (`backend/app/api/announcements.py`):
+
+```python
+@router.post("/{announcement_id}/read", response_model=SuccessResponse, summary="标记为已读")
+async def mark_as_read(
+    announcement_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """标记公告为已读"""
+    announcement = db.query(Announcement).filter(
+        Announcement.id == announcement_id
+    ).first()
+    
+    if not announcement:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="公告不存在"
+        )
+    
+    existing_read = db.query(AnnouncementRead).filter(
+        AnnouncementRead.announcement_id == announcement_id,
+        AnnouncementRead.user_id == current_user.id
+    ).first()
+    
+    if not existing_read:
+        read_record = AnnouncementRead(
+            announcement_id=announcement_id,
+            user_id=current_user.id
+        )
+        db.add(read_record)
+        db.commit()
+    
+    return SuccessResponse(message="已标记为已读")
+```
+
+---
+
+### 10. 前端API服务层
 
 **统一的API请求封装** (`lib/api.ts`):
 
@@ -1024,6 +1422,9 @@ export const authApi = {
   register: async (data: RegisterRequest): Promise<User> => {...},
   getCurrentUser: async (): Promise<User> => {...},
   changePassword: async (oldPassword: string, newPassword: string): Promise<void> => {...},
+  forgotPassword: async (email: string): Promise<void> => {...},
+  resetPassword: async (token: string, newPassword: string): Promise<void> => {...},
+  githubCallback: async (code: string): Promise<TokenResponse> => {...},
 };
 
 export const postsApi = {
@@ -1081,8 +1482,11 @@ cd SmartCampusServicePlatform
 ### 2. 配置环境变量
 
 ```bash
-cp .env.example .env
-# 编辑 .env 文件
+# 前端（Next.js）
+cp .env.local.example .env.local
+
+# 后端（FastAPI）
+cp backend/.env.example backend/.env
 ```
 
 ### 3. 安装依赖
@@ -1101,7 +1505,14 @@ pip install -r requirements.txt
 ### 4. 启动服务
 
 ```bash
-./start.sh
+# macOS
+./scripts/MacOS/start.sh
+
+# Windows（PowerShell/CMD）
+./scripts/Windows/start.bat
+
+# Linux（CentOS 7 示例）
+./scripts/Linux/start-CentOS7.sh
 ```
 
 或手动启动:
@@ -1127,20 +1538,33 @@ npm run dev
 
 ### 环境变量
 
+**前端（Next.js）**
+
+| 变量名 | 说明 | 默认值（见 config.ts） |
+|--------|------|------------------------|
+| `NEXT_PUBLIC_API_BASE_URL` | 后端 API 基础地址 | http://localhost:8000 |
+| `NEXT_PUBLIC_APP_URL` | 前端应用地址 | http://localhost:3000 |
+| `JWT_SECRET_KEY` | 前端配置中使用的 JWT 密钥名（仅用于前端配置展示；后端实际读取 `SECRET_KEY`） | <JWT_SECRET_KEY> |
+
+**后端（FastAPI）**（见 [config.py](file:///Users/jj/Documents/MyCode/MyProject/SmartCampusServicePlatform/backend/app/config.py)）
+
 | 变量名 | 说明 | 默认值 |
 |--------|------|--------|
-| `NEXT_PUBLIC_API_BASE_URL` | API基础地址 | http://localhost:8000 |
-| `NEXT_PUBLIC_APP_URL` | 前端应用地址 | http://localhost:3000 |
-| `DATABASE_URL` | 数据库连接URL | sqlite:///./smart_campus.db |
-| `JWT_SECRET_KEY` | JWT密钥 | (需修改) |
-| `STORAGE_PATH` | 文件存储路径 | ./storage/files |
-| `CORS_ORIGINS` | CORS允许源 | http://localhost:3000 |
-| `REDIS_HOST` | Redis主机 | localhost |
-| `REDIS_PORT` | Redis端口 | 6379 |
+| `DB_HOST` | 数据库主机 | <DB_HOST> |
+| `DB_PORT` | 数据库端口 | 3306 |
+| `DB_USER` | 数据库用户名 | <DB_USER> |
+| `DB_PASSWORD` | 数据库密码 | <DB_PASSWORD> |
+| `DB_NAME` | 数据库名 | <DB_NAME> |
+| `SECRET_KEY` | JWT 签名密钥 | <SECRET_KEY> |
+| `ALGORITHM` | JWT 算法 | HS256 |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | Token 过期时间（分钟） | 1440 |
+| `FRONTEND_URL` | 前端地址（用于密码重置邮件链接拼接） | http://localhost:3000 |
+| `SMTP_HOST` `SMTP_PORT` `SMTP_USER` `SMTP_PASSWORD` `SMTP_FROM_EMAIL` | 邮件服务配置 | (空/默认) |
+| `GITHUB_CLIENT_ID` `GITHUB_CLIENT_SECRET` `GITHUB_REDIRECT_URI` | GitHub OAuth 登录 | (空/默认) |
 
 ### 功能开关
 
-在 `config.ts` 中可配置以下功能开关:
+在 `config.ts` 中可配置以下功能开关（其中 `enableRateLimit`、`enableAuditLog` 属于预留项，后端未提供完整实现时不应在生产环境依赖该开关）:
 
 ```typescript
 features: {
@@ -1165,6 +1589,7 @@ business: {
     defaultRole: 'student',
     roles: ['student', 'teacher', 'admin', 'reviewer']
   },
+  // 注意：reviewer 在后端不是 UserRole 枚举值，而是“信誉分达标后获得的权限身份”
   post: {
     maxContentLength: 5000,
     maxImagesCount: 9,
@@ -1195,7 +1620,7 @@ business: {
 
 ### 生产环境检查清单
 
-- [ ] 修改 `JWT_SECRET_KEY` 为安全的随机字符串
+- [ ] 修改后端 `SECRET_KEY` 为安全的随机字符串（JWT签名密钥）
 - [ ] 配置生产数据库 (PostgreSQL/MySQL)
 - [ ] 启用 HTTPS
 - [ ] 配置 CORS 白名单

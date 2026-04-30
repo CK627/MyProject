@@ -22,6 +22,7 @@
 
 set -e
 
+
 # ---------- 颜色定义 ----------
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -39,7 +40,7 @@ if [ "$EUID" -ne 0 ]; then
     fail "请使用 root 权限运行: sudo ./install-CentOS7.sh"
 fi
 
-PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 PYTHON_VERSION="3.10.14"
 OPENSSL_VERSION="1.1.1w"
 NODE_VERSION="20.18.3"
@@ -224,10 +225,10 @@ fi
 
 # 激活虚拟环境并安装依赖
 source venv/bin/activate
-pip install --upgrade pip > /dev/null 2>&1
+pip install --upgrade pip -i https://mirrors.aliyun.com/pypi/simple/ > /dev/null 2>&1
 # greenlet 1.1.3 有预编译 wheel，避免 GCC 4.8 C++11 兼容性问题
-pip install greenlet==1.1.3 > /dev/null 2>&1
-pip install -r requirements.txt > /dev/null 2>&1
+pip install greenlet==1.1.3 -i https://mirrors.aliyun.com/pypi/simple/ > /dev/null 2>&1
+pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/ > /dev/null 2>&1
 
 success "后端 Python 依赖安装完成"
 
@@ -244,6 +245,7 @@ deactivate
 info "[7/9] 安装前端 npm 依赖..."
 
 cd "$PROJECT_DIR"
+npm config set registry https://registry.npmmirror.com
 npm install > /dev/null 2>&1
 success "前端 npm 依赖安装完成"
 

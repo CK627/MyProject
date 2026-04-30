@@ -13,7 +13,7 @@ import {
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
 import { messagesApi, Conversation, getToken } from '@/lib/api'
 import { wsManager, WebSocketMessage } from '@/lib/websocket'
@@ -282,6 +282,7 @@ export function Messages({ initialFriendId, initialFriendName }: MessagesProps =
                       >
                         <div className="relative">
                           <Avatar className="w-12 h-12 flex-shrink-0">
+                            {conv.user.avatar && <AvatarImage src={conv.user.avatar} alt={conv.user.name} />}
                             <AvatarFallback className="bg-gradient-to-br from-primary to-secondary text-primary-foreground">
                               {conv.user.name.slice(0, 1)}
                             </AvatarFallback>

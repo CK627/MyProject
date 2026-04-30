@@ -8,7 +8,7 @@
 
 set -e
 
-PROJECT_DIR=$(cd "$(dirname "$0")" && pwd)
+PROJECT_DIR=$(cd "$(dirname "$0")/../.." && pwd)
 BACKEND_DIR="$PROJECT_DIR/backend"
 
 echo "========================================"
@@ -78,8 +78,8 @@ fi
 source venv/bin/activate
 
 echo "   安装后端依赖..."
-pip install --upgrade pip -q
-pip install -r requirements.txt -q
+pip install --upgrade pip -q -i https://mirrors.aliyun.com/pypi/simple/
+pip install -r requirements.txt -q -i https://mirrors.aliyun.com/pypi/simple/
 
 echo "   ✓ 后端依赖安装完成"
 deactivate
@@ -90,75 +90,59 @@ echo ""
 # ----------------------------------------------------------
 echo "[4/6] 配置数据库连接..."
 
-CONFIG_FILE="$BACKEND_DIR/app/config.py"
+ENV_FILE="$BACKEND_DIR/.env"
+DO_CONFIG="y"
 
-if [ -f "$CONFIG_FILE" ]; then
-    echo "   检测到已有配置文件: $CONFIG_FILE"
-    read -p "   是否重新配置数据库? (y/N): " RECONFIG
-    if [ "$RECONFIG" = "y" ] || [ "$RECONFIG" = "Y" ]; then
-        read -p "   数据库地址 [localhost]: " INPUT_DB_HOST
-        DB_HOST=${INPUT_DB_HOST:-localhost}
-
-        read -p "   数据库端口 [3306]: " INPUT_DB_PORT
-        DB_PORT=${INPUT_DB_PORT:-3306}
-
-        read -p "   数据库用户 [root]: " INPUT_DB_USER
-        DB_USER=${INPUT_DB_USER:-root}
-
-        read -sp "   数据库密码: " DB_PASSWORD
-        echo ""
-
-        read -p "   数据库名称 [smart_campus]: " INPUT_DB_NAME
-        DB_NAME=${INPUT_DB_NAME:-smart_campus}
-
-        read -p "   JWT密钥 [自动生成]: " INPUT_JWT_KEY
-        JWT_KEY=${INPUT_JWT_KEY:-$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")}
-
-        cat > "$CONFIG_FILE" << PYEOF
-from pydantic_settings import BaseSettings
-from functools import lru_cache
-
-class Settings(BaseSettings):
-    # 数据库配置
-    DB_HOST: str = "$DB_HOST"
-    DB_PORT: int = $DB_PORT
-    DB_USER: str = "$DB_USER"
-    DB_PASSWORD: str = "$DB_PASSWORD"
-    DB_NAME: str = "$DB_NAME"
-
-    # JWT配置
-    SECRET_KEY: str = "$JWT_KEY"
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
-
-    # Redis配置
-    REDIS_HOST: str = "localhost"
-    REDIS_PORT: int = 6379
-    REDIS_DB: int = 0
-
-    # 应用配置
-    DEBUG: bool = False
-    API_PREFIX: str = "/api/v1"
-
-    @property
-    def DATABASE_URL(self) -> str:
-        return f"mysql+pymysql://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}?charset=utf8mb4"
-
-    class Config:
-        env_file = ".env"
-
-@lru_cache()
-def get_settings():
-    return Settings()
-
-settings = get_settings()
-PYEOF
-        echo "   ✓ 数据库配置已更新"
-    else
+if [ -f "$ENV_FILE" ]; then
+    echo "   检测到已有环境配置文件: $ENV_FILE"
+    read -p "   是否重新配置数据库环境变量? (y/N): " RECONFIG
+    if [ "$RECONFIG" != "y" ] && [ "$RECONFIG" != "Y" ]; then
+        DO_CONFIG="n"
         echo "   跳过，使用现有配置"
     fi
-else
-    echo "   ✗ 未找到配置文件，请手动配置 $CONFIG_FILE"
+fi
+
+if [ "$DO_CONFIG" = "y" ]; then
+    read -p "   数据库地址 [localhost]: " INPUT_DB_HOST
+    DB_HOST=${INPUT_DB_HOST:-localhost}
+
+    read -p "   数据库端口 [3306]: " INPUT_DB_PORT
+    DB_PORT=${INPUT_DB_PORT:-3306}
+
+    read -p "   数据库用户 [root]: " INPUT_DB_USER
+    DB_USER=${INPUT_DB_USER:-root}
+
+    read -sp "   数据库密码: " DB_PASSWORD
+    echo ""
+
+    read -p "   数据库名称 [smart_campus]: " INPUT_DB_NAME
+    DB_NAME=${INPUT_DB_NAME:-smart_campus}
+
+    read -p "   JWT密钥 [自动生成]: " INPUT_JWT_KEY
+    JWT_KEY=${INPUT_JWT_KEY:-$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")}
+
+    cat > "$ENV_FILE" << EOF
+DB_HOST=$DB_HOST
+DB_PORT=$DB_PORT
+DB_USER=$DB_USER
+DB_PASSWORD=$DB_PASSWORD
+DB_NAME=$DB_NAME
+
+SECRET_KEY=$JWT_KEY
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=1440
+
+DEBUG=False
+API_PREFIX=/api/v1
+FRONTEND_URL=http://localhost:3000
+
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASSWORD=
+SMTP_FROM_EMAIL=
+EOF
+    echo "   ✓ 数据库环境变量 (.env) 已更新"
 fi
 echo ""
 
@@ -172,6 +156,7 @@ cd "$PROJECT_DIR"
 # 如果 node_modules 不存在或 package-lock 不存在，重新安装
 if [ ! -d "node_modules" ]; then
     echo "   执行 npm install ..."
+    npm config set registry https://registry.npmmirror.com
     npm install
 else
     echo "   node_modules 已存在，跳过安装"

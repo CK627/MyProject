@@ -7,9 +7,10 @@ from ..config import settings
 logger = logging.getLogger(__name__)
 
 
-def send_password_reset_email(to_email: str, reset_token: str) -> bool:
+def send_password_reset_email(to_email: str, reset_token: str, frontend_url: str = None) -> bool:
     """发送密码重置邮件"""
-    reset_link = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
+    base_url = frontend_url if frontend_url else settings.FRONTEND_URL
+    reset_link = f"{base_url}/reset-password?token={reset_token}"
 
     subject = "智慧校园平台 - 密码重置"
 

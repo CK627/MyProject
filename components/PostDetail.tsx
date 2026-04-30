@@ -34,7 +34,8 @@ import {
   friendsApi,
   messagesApi,
   Friend,
-  authApi
+  authApi,
+  User as ApiUser
 } from '@/lib/api'
 
 interface PostDetailProps {
@@ -70,6 +71,7 @@ export function PostDetail({ postId, onBack }: PostDetailProps) {
   
   // 当前用户状态
   const [currentUserId, setCurrentUserId] = useState<number | null>(null)
+  const [currentUser, setCurrentUser] = useState<ApiUser | null>(null)
   const [isReviewer, setIsReviewer] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   
@@ -99,6 +101,9 @@ export function PostDetail({ postId, onBack }: PostDetailProps) {
   const [friendSearch, setFriendSearch] = useState('')
   const [sharingTo, setSharingTo] = useState<number | null>(null)
 
+  // 图片放大预览
+  const [previewImage, setPreviewImage] = useState<string | null>(null)
+
   // 加载帖子数据
   useEffect(() => {
     loadPost()
@@ -113,6 +118,7 @@ export function PostDetail({ postId, onBack }: PostDetailProps) {
         authApi.getCurrentUser(),
         postsApi.checkReviewerStatus()
       ])
+      setCurrentUser(user)
       setCurrentUserId(user.id)
       setIsReviewer(reviewerStatus.is_reviewer)
       setIsAdmin(reviewerStatus.is_admin)
@@ -125,7 +131,23 @@ export function PostDetail({ postId, onBack }: PostDetailProps) {
     setLoading(true)
     try {
       const postData = await postsApi.getPost(postId)
-      setPost(postData)
+      
+      // Parse images from string to array if needed
+      let parsedImages: string[] = []
+      try {
+        if (postData.images) {
+          parsedImages = JSON.parse(postData.images as unknown as string)
+        }
+      } catch (e) {
+        console.error('Failed to parse post images', e)
+      }
+      
+      const enrichedPostData = {
+        ...postData,
+        images: parsedImages as any // Temporarily cast to any to satisfy the interface if it expects string
+      }
+      
+      setPost(enrichedPostData)
       setLikesCount(postData.likes_count)
       
       // 检查点赞状态
@@ -452,10 +474,19 @@ export function PostDetail({ postId, onBack }: PostDetailProps) {
             <p className="text-foreground text-lg leading-relaxed mb-6">{post.content}</p>
             
             {/* 图片展示 */}
-            {post.images && post.images.length > 0 && (
+            {post.images && (post.images as unknown as string[]).length > 0 && (
               <div className="grid grid-cols-2 gap-2 mb-6">
-                {post.images.map((img, idx) => (
-                  <img key={idx} src={img} alt="" className="rounded-lg w-full h-48 object-cover" />
+                {(post.images as unknown as string[]).map((img, idx) => (
+                  <img 
+                    key={idx} 
+                    src={img} 
+                    alt="" 
+                    className="rounded-lg w-full h-48 object-cover cursor-pointer transition-transform hover:scale-105" 
+                    onDoubleClick={(e) => {
+                      e.stopPropagation()
+                      setPreviewImage(img)
+                    }}
+                  />
                 ))}
               </div>
             )}
@@ -512,6 +543,7 @@ export function PostDetail({ postId, onBack }: PostDetailProps) {
             {/* 发表评论 */}
             <div className="flex gap-3">
               <Avatar className="w-10 h-10">
+                {currentUser?.avatar && <AvatarImage src={currentUser.avatar} alt="我" />}
                 <AvatarFallback className="bg-primary/10">我</AvatarFallback>
               </Avatar>
               <div className="flex-1 space-y-2">
@@ -758,6 +790,34 @@ export function PostDetail({ postId, onBack }: PostDetailProps) {
               </div>
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {/* 图片预览弹窗 */}
+      {previewImage && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setPreviewImage(null)}
+        >
+          <div className="relative w-full max-w-4xl max-h-screen p-4 flex items-center justify-center">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="absolute top-4 right-4 text-white hover:bg-white/20 z-10"
+              onClick={(e) => {
+                e.stopPropagation()
+                setPreviewImage(null)
+              }}
+            >
+              <X className="w-6 h-6" />
+            </Button>
+            <img 
+              src={previewImage} 
+              alt="Preview" 
+              className="max-w-full max-h-[90vh] object-contain rounded-lg"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
         </div>
       )}
 

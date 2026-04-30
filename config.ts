@@ -56,12 +56,12 @@ export const config = {
     
     // 数据库配置
     database: {
-      type: 'postgresql',
-      host: process.env.DB_HOST || 'localhost',
-      port: parseInt(process.env.DB_PORT || '5432'),
-      username: process.env.DB_USERNAME || 'postgres',
-      password: process.env.DB_PASSWORD || 'password',
-      database: process.env.DB_NAME || 'smart_campus',
+      type: 'mysql',
+      host: process.env.DB_HOST || '<DB_HOST>',
+      port: parseInt(process.env.DB_PORT || '3306'),
+      username: process.env.DB_USER || '<DB_USER>',
+      password: process.env.DB_PASSWORD || '<DB_PASSWORD>',
+      database: process.env.DB_NAME || '<DB_NAME>',
       
       // SQLite配置(如使用SQLite)
       sqliteUrl: process.env.DATABASE_URL || 'sqlite:///./smart_campus.db'
@@ -69,7 +69,7 @@ export const config = {
     
     // JWT配置
     jwt: {
-      secretKey: process.env.JWT_SECRET_KEY || 'your-secret-key-change-in-production',
+      secretKey: process.env.JWT_SECRET_KEY || '<JWT_SECRET_KEY>',
       algorithm: 'HS256',
       expireMinutes: 60 * 24 * 7 // 7天
     },
@@ -115,11 +115,11 @@ export const config = {
     
     // 邮件配置(如需要)
     email: {
-      smtpHost: process.env.SMTP_HOST || 'smtp.gmail.com',
+      smtpHost: process.env.SMTP_HOST || '<SMTP_HOST>',
       smtpPort: parseInt(process.env.SMTP_PORT || '587'),
       smtpUser: process.env.SMTP_USER || '',
       smtpPassword: process.env.SMTP_PASSWORD || '',
-      fromAddress: process.env.EMAIL_FROM || 'noreply@smartcampus.com'
+      fromAddress: process.env.EMAIL_FROM || '<SMTP_FROM_EMAIL>'
     }
   },
 

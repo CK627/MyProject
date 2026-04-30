@@ -62,6 +62,7 @@ async def get_file(
         file_path = file_manager.get_file_path(file_id, db)
         
         if not file_path or not Path(file_path).exists():
+            print(f"File not found: {file_path}") # Debug log
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="文件不存在"

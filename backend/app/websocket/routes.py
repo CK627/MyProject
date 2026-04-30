@@ -4,11 +4,12 @@ WebSocket路由
 """
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, status
 from sqlalchemy.orm import Session
+import logging
+import time
+
 from ..database import get_db
 from ..models.models import User
-
 from .connection_manager import manager
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,3 @@ async def websocket_endpoint(
             await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
         except:
             pass
-
-
-import time

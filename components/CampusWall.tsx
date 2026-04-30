@@ -28,13 +28,15 @@ import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { 
   postsApi, 
+  authApi,
   Post as ApiPost, 
   getToken, 
   ReviewerStatus, 
   ReviewStats,
   friendsApi,
   messagesApi,
-  Friend
+  Friend,
+  User
 } from '@/lib/api'
 
 interface Post {
@@ -83,6 +85,15 @@ function formatTime(dateStr: string): string {
 
 // 转换API数据到本地格式
 function convertPost(apiPost: ApiPost): Post {
+  let imagesList: string[] = []
+  try {
+    if (apiPost.images) {
+      imagesList = JSON.parse(apiPost.images as unknown as string)
+    }
+  } catch (e) {
+    console.error('解析帖子图片出错', e)
+  }
+
   return {
     id: apiPost.id,
     author: {
@@ -92,7 +103,7 @@ function convertPost(apiPost: ApiPost): Post {
       department: '校园用户'
     },
     content: apiPost.content,
-    images: apiPost.images,
+    images: imagesList,
     likes: apiPost.likes_count,
     comments: apiPost.comments_count,
     shares: apiPost.shares_count,
@@ -137,6 +148,45 @@ export function CampusWall({ onNavigate }: CampusWallProps) {
   const [friendsLoading, setFriendsLoading] = useState(false)
   const [friendSearch, setFriendSearch] = useState('')
   const [sharingTo, setSharingTo] = useState<number | null>(null)
+
+  // 新增图片状态
+  const [selectedImages, setSelectedImages] = useState<string[]>([])
+  const [uploadingImages, setUploadingImages] = useState(false)
+  const [currentUser, setCurrentUser] = useState<User | null>(null)
+  
+  // 图片放大预览
+  const [previewImage, setPreviewImage] = useState<string | null>(null)
+  
+  // 帖子操作菜单
+  const [activeMenuId, setActiveMenuId] = useState<number | null>(null)
+
+  // 监听点击外部关闭菜单
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      // 检查点击是否在菜单或按钮内
+      const target = e.target as Element;
+      if (!target.closest('.post-menu-container')) {
+        setActiveMenuId(null);
+      }
+    };
+    
+    // 使用 capture 阶段来捕获点击事件，防止被其他 stopPropagation 阻止
+    document.addEventListener('click', handleClickOutside, true);
+    return () => document.removeEventListener('click', handleClickOutside, true);
+  }, []);
+
+  const handleDeletePost = async (postId: number) => {
+    if (!confirm('确定要删除这条动态吗？')) return
+    
+    try {
+      await postsApi.deletePost(postId)
+      setPosts(posts.filter(p => p.id !== postId))
+      setSuccessMessage('删除成功')
+      setTimeout(() => setSuccessMessage(''), 3000)
+    } catch (err: any) {
+      setError(err.message || '删除失败')
+    }
+  }
   
   // 审核相关状态
   const [isReviewer, setIsReviewer] = useState(false)
@@ -145,10 +195,33 @@ export function CampusWall({ onNavigate }: CampusWallProps) {
   const [reviewStats, setReviewStats] = useState<ReviewStats | null>(null)
   const [reviewLoading, setReviewLoading] = useState(false)
   const [processingId, setProcessingId] = useState<number | null>(null)
+  
+  // 举报相关状态
+  const [reportModalPost, setReportModalPost] = useState<Post | null>(null)
+  const [reportReason, setReportReason] = useState('')
+  const [reporting, setReporting] = useState(false)
+  
+  // 审核员举报管理状态
+  const [reviewTab, setReviewTab] = useState<'posts' | 'reports'>('posts')
+  const [pendingReports, setPendingReports] = useState<any[]>([])
+  const [reportsLoading, setReportsLoading] = useState(false)
 
-  // 加载帖子和检查审核员权限
   useEffect(() => {
     loadPosts()
+  }, [activeFilter])
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        if (getToken()) {
+          const user = await authApi.getCurrentUser()
+          setCurrentUser(user)
+        }
+      } catch (err) {
+        console.error('获取用户信息失败', err)
+      }
+    }
+    fetchUser()
     checkReviewerStatus()
   }, [])
 
@@ -216,6 +289,65 @@ export function CampusWall({ onNavigate }: CampusWallProps) {
       console.error('Failed to load pending posts:', err)
     } finally {
       setReviewLoading(false)
+    }
+  }
+
+  const loadPendingReports = async () => {
+    setReportsLoading(true)
+    try {
+      const reports = await postsApi.getReviewReports('pending', 1, 50)
+      setPendingReports(reports)
+      loadReviewStats()
+    } catch (err: any) {
+      setError('加载举报列表失败')
+      console.error('Failed to load pending reports:', err)
+    } finally {
+      setReportsLoading(false)
+    }
+  }
+
+  // 提交举报
+  const handleReportPost = async () => {
+    if (!reportModalPost || !reportReason.trim()) {
+      setError('请填写举报理由')
+      return
+    }
+    
+    setReporting(true)
+    try {
+      await postsApi.reportPost(reportModalPost.id, reportReason)
+      setSuccessMessage('举报提交成功，等待审核员处理')
+      setTimeout(() => setSuccessMessage(''), 3000)
+      setReportModalPost(null)
+      setReportReason('')
+    } catch (err: any) {
+      setError(err.message || '举报提交失败')
+    } finally {
+      setReporting(false)
+    }
+  }
+
+  // 处理举报
+  const handleResolveReport = async (reportId: number, action: 'approve' | 'reject') => {
+    setProcessingId(reportId)
+    try {
+      await postsApi.resolveReviewReport(reportId, action)
+      setPendingReports(pendingReports.filter(r => r.id !== reportId))
+      loadReviewStats()
+      setSuccessMessage(action === 'approve' ? '举报已通过，帖子已隐藏' : '举报已拒绝')
+      setTimeout(() => setSuccessMessage(''), 3000)
+      
+      // 如果举报通过，需要从前台的帖子列表中移除该帖子
+      if (action === 'approve') {
+        const report = pendingReports.find(r => r.id === reportId)
+        if (report) {
+          setPosts(posts.filter(p => p.id !== report.target_id))
+        }
+      }
+    } catch (err: any) {
+      setError(err.message || '操作失败')
+    } finally {
+      setProcessingId(null)
     }
   }
 
@@ -305,8 +437,80 @@ export function CampusWall({ onNavigate }: CampusWallProps) {
     }
   }
 
+  // 处理图片上传
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    if (files.length === 0) return
+
+    // 限制最多9张图
+    if (selectedImages.length + files.length > 9) {
+      setError('最多只能上传9张图片')
+      return
+    }
+
+    setUploadingImages(true)
+    setError('')
+
+    try {
+      // 循环压缩图片转 base64
+      const base64Images = await Promise.all(files.map(file => {
+        return new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = (e) => {
+            const img = new Image()
+            img.onload = () => {
+              const canvas = document.createElement('canvas')
+              // 适当降低尺寸以符合大文本存储需求，同时保持清晰度
+              const MAX_SIZE = 800
+              let width = img.width
+              let height = img.height
+
+              if (width > height) {
+                if (width > MAX_SIZE) {
+                  height *= MAX_SIZE / width
+                  width = MAX_SIZE
+                }
+              } else {
+                if (height > MAX_SIZE) {
+                  width *= MAX_SIZE / height
+                  height = MAX_SIZE
+                }
+              }
+
+              canvas.width = width
+              canvas.height = height
+              const ctx = canvas.getContext('2d')
+              ctx?.drawImage(img, 0, 0, width, height)
+              
+              // 压缩为 JPEG, 质量0.7
+              resolve(canvas.toDataURL('image/jpeg', 0.7))
+            }
+            img.onerror = reject
+            img.src = e.target?.result as string
+          }
+          reader.onerror = reject
+          reader.readAsDataURL(file)
+        })
+      }))
+
+      setSelectedImages(prev => [...prev, ...base64Images])
+    } catch (err: any) {
+      setError('图片处理失败')
+      console.error(err)
+    } finally {
+      setUploadingImages(false)
+      // 清空 input 使得同一张图可以再次选择
+      e.target.value = ''
+    }
+  }
+
+  // 移除图片
+  const removeImage = (index: number) => {
+    setSelectedImages(prev => prev.filter((_, i) => i !== index))
+  }
+
   const handlePost = async () => {
-    if (!newPost.trim()) return
+    if (!newPost.trim() && selectedImages.length === 0) return
     if (!getToken()) {
       setError('请先登录')
       return
@@ -317,10 +521,12 @@ export function CampusWall({ onNavigate }: CampusWallProps) {
     try {
       await postsApi.createPost({
         content: newPost,
-        is_anonymous: false
+        is_anonymous: false,
+        images: selectedImages.length > 0 ? JSON.stringify(selectedImages) : undefined
       })
       
       setNewPost('')
+      setSelectedImages([])
       setSuccessMessage('发布成功！帖子正在等待审核，审核通过后将显示在校园墙上。')
       setTimeout(() => setSuccessMessage(''), 5000)
     } catch (err: any) {
@@ -366,6 +572,7 @@ export function CampusWall({ onNavigate }: CampusWallProps) {
   const toggleReviewPanel = () => {
     if (!showReviewPanel) {
       loadPendingPosts()
+      loadPendingReports()
     }
     setShowReviewPanel(!showReviewPanel)
   }
@@ -408,6 +615,7 @@ export function CampusWall({ onNavigate }: CampusWallProps) {
                   </div>
                   <div className="flex gap-4 text-sm">
                     <span className="text-amber-600">待审核: {reviewStats?.pending || 0}</span>
+                    <span className="text-amber-600">待处理举报: {reviewStats?.pending_reports || 0}</span>
                     <span className="text-green-600">已通过: {reviewStats?.approved || 0}</span>
                     <span className="text-red-600">已拒绝: {reviewStats?.rejected || 0}</span>
                   </div>
@@ -420,72 +628,202 @@ export function CampusWall({ onNavigate }: CampusWallProps) {
               </CardContent>
             </Card>
 
+            {/* 标签切换 */}
+            <div className="flex border-b border-border mb-4">
+              <button
+                className={`py-2 px-4 text-sm font-medium transition-colors border-b-2 ${
+                  reviewTab === 'posts'
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
+                }`}
+                onClick={() => setReviewTab('posts')}
+              >
+                待审核动态
+                {reviewStats && reviewStats.pending > 0 && (
+                  <span className="ml-2 bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full">{reviewStats.pending}</span>
+                )}
+              </button>
+              <button
+                className={`py-2 px-4 text-sm font-medium transition-colors border-b-2 ${
+                  reviewTab === 'reports'
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
+                }`}
+                onClick={() => setReviewTab('reports')}
+              >
+                待处理举报
+                {reviewStats && reviewStats.pending_reports && reviewStats.pending_reports > 0 ? (
+                  <span className="ml-2 bg-amber-100 text-amber-700 text-xs px-2 py-0.5 rounded-full">{reviewStats.pending_reports}</span>
+                ) : null}
+              </button>
+            </div>
+
             {/* 待审核列表 */}
-            {reviewLoading ? (
-              <div className="flex justify-center py-12">
-                <Loader2 className="w-8 h-8 animate-spin text-primary" />
-              </div>
-            ) : pendingPosts.length === 0 ? (
-              <Card className="border-0 shadow-md p-8 text-center text-muted-foreground">
-                <CheckCircle className="w-12 h-12 mx-auto mb-4 text-green-500" />
-                <p>暂无待审核内容</p>
-              </Card>
-            ) : (
-              <div className="space-y-4">
-                {pendingPosts.map((post) => (
-                  <Card key={post.id} className="border-0 shadow-md border-l-4 border-l-amber-500">
-                    <CardHeader className="pb-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <Avatar className="w-10 h-10">
-                            <AvatarFallback className="bg-gradient-to-br from-primary to-secondary text-primary-foreground">
-                              {post.author.name.slice(0, 1)}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <p className="font-medium text-foreground">{post.author.name}</p>
-                            <p className="text-xs text-muted-foreground">{post.time}</p>
+            {reviewTab === 'posts' && (
+              reviewLoading ? (
+                <div className="flex justify-center py-12">
+                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                </div>
+              ) : pendingPosts.length === 0 ? (
+                <Card className="border-0 shadow-md p-8 text-center text-muted-foreground">
+                  <CheckCircle className="w-12 h-12 mx-auto mb-4 text-green-500" />
+                  <p>暂无待审核内容</p>
+                </Card>
+              ) : (
+                <div className="space-y-4">
+                  {pendingPosts.map((post) => (
+                    <Card key={post.id} className="border-0 shadow-md border-l-4 border-l-amber-500">
+                      <CardHeader className="pb-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <Avatar className="w-10 h-10">
+                              {post.author.avatar && <AvatarImage src={post.author.avatar} alt={post.author.name} />}
+                              <AvatarFallback className="bg-gradient-to-br from-primary to-secondary text-primary-foreground">
+                                {post.author.name.slice(0, 1)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <p className="font-medium text-foreground">{post.author.name}</p>
+                              <p className="text-xs text-muted-foreground">{post.time}</p>
+                            </div>
+                          </div>
+                          <StatusBadge status={post.status} />
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <p className="text-foreground mb-4 leading-relaxed">{post.content}</p>
+                        
+                        {/* 图片展示区 */}
+                        {post.images && post.images.length > 0 && (
+                          <div className="mt-3 mb-4 flex flex-wrap gap-2">
+                            {post.images.map((img, idx) => (
+                              <div key={idx} className="w-24 h-24 sm:w-32 sm:h-32 rounded-md overflow-hidden border border-border cursor-pointer">
+                                <img 
+                                  src={img} 
+                                  alt={`post-image-${idx}`} 
+                                  className="w-full h-full object-cover transition-transform hover:scale-105" 
+                                  onDoubleClick={(e) => {
+                                    e.stopPropagation()
+                                    setPreviewImage(img)
+                                  }}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="flex gap-2">
+                          <Button
+                            variant="default"
+                            size="sm"
+                            className="flex-1 bg-green-600 hover:bg-green-700"
+                            onClick={() => handleApprove(post.id)}
+                            disabled={processingId === post.id}
+                          >
+                            {processingId === post.id ? (
+                              <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                            ) : (
+                              <CheckCircle className="w-4 h-4 mr-1" />
+                            )}
+                            通过
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            className="flex-1"
+                            onClick={() => handleReject(post.id)}
+                            disabled={processingId === post.id}
+                          >
+                            {processingId === post.id ? (
+                              <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                            ) : (
+                              <XCircle className="w-4 h-4 mr-1" />
+                            )}
+                            拒绝
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )
+            )}
+
+            {/* 待处理举报列表 */}
+            {reviewTab === 'reports' && (
+              reportsLoading ? (
+                <div className="flex justify-center py-12">
+                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                </div>
+              ) : pendingReports.length === 0 ? (
+                <Card className="border-0 shadow-md p-8 text-center text-muted-foreground">
+                  <CheckCircle className="w-12 h-12 mx-auto mb-4 text-green-500" />
+                  <p>暂无待处理举报</p>
+                </Card>
+              ) : (
+                <div className="space-y-4">
+                  {pendingReports.map((report) => (
+                    <Card key={report.id} className="border-0 shadow-md border-l-4 border-l-red-500">
+                      <CardHeader className="pb-2 bg-red-50/50 dark:bg-red-950/20">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 text-red-600 dark:text-red-400 font-medium">
+                            <AlertCircle className="w-4 h-4" />
+                            举报理由: {report.reason}
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            举报人: {report.reporter?.name || '未知'} · {new Date(report.created_at).toLocaleDateString('zh-CN')}
+                          </span>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="pt-4">
+                        <div className="bg-muted p-3 rounded-md mb-4 border border-border">
+                          <p className="text-sm font-medium text-muted-foreground mb-2">被举报内容 (帖子ID: {report.target_id})</p>
+                          <div className="text-sm">
+                            <Button 
+                              variant="link" 
+                              className="px-0 h-auto text-primary"
+                              onClick={() => onNavigate?.('post-detail', { postId: report.target_id })}
+                            >
+                              查看原帖详情 &rarr;
+                            </Button>
                           </div>
                         </div>
-                        <StatusBadge status={post.status} />
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-foreground mb-4 leading-relaxed">{post.content}</p>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="default"
-                          size="sm"
-                          className="flex-1 bg-green-600 hover:bg-green-700"
-                          onClick={() => handleApprove(post.id)}
-                          disabled={processingId === post.id}
-                        >
-                          {processingId === post.id ? (
-                            <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                          ) : (
-                            <CheckCircle className="w-4 h-4 mr-1" />
-                          )}
-                          通过
-                        </Button>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          className="flex-1"
-                          onClick={() => handleReject(post.id)}
-                          disabled={processingId === post.id}
-                        >
-                          {processingId === post.id ? (
-                            <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                          ) : (
-                            <XCircle className="w-4 h-4 mr-1" />
-                          )}
-                          拒绝
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+
+                        <div className="flex gap-2">
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            className="flex-1"
+                            onClick={() => handleResolveReport(report.id, 'approve')}
+                            disabled={processingId === report.id}
+                          >
+                            {processingId === report.id ? (
+                              <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                            ) : (
+                              <CheckCircle className="w-4 h-4 mr-1" />
+                            )}
+                            核实通过 (隐藏原帖)
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex-1"
+                            onClick={() => handleResolveReport(report.id, 'reject')}
+                            disabled={processingId === report.id}
+                          >
+                            {processingId === report.id ? (
+                              <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                            ) : (
+                              <XCircle className="w-4 h-4 mr-1" />
+                            )}
+                            驳回举报 (无需处理)
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )
             )}
           </div>
         )}
@@ -512,6 +850,7 @@ export function CampusWall({ onNavigate }: CampusWallProps) {
                 )}
                 <div className="flex gap-3">
                   <Avatar className="w-10 h-10">
+                    {currentUser?.avatar && <AvatarImage src={currentUser.avatar} alt="我" />}
                     <AvatarFallback className="bg-gradient-to-br from-primary to-secondary text-primary-foreground">我</AvatarFallback>
                   </Avatar>
                   <div className="flex-1">
@@ -521,9 +860,43 @@ export function CampusWall({ onNavigate }: CampusWallProps) {
                       onChange={(e) => setNewPost(e.target.value)}
                       className="min-h-[80px] resize-none border-0 bg-muted/50 focus-visible:ring-0"
                     />
+
+                    {/* 图片预览区域 */}
+                    {selectedImages.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {selectedImages.map((img, index) => (
+                          <div key={index} className="relative group w-20 h-20 rounded-md overflow-hidden border border-border">
+                            <img src={img} alt="preview" className="w-full h-full object-cover" />
+                            <button
+                              onClick={() => removeImage(index)}
+                              className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                        {uploadingImages && (
+                          <div className="w-20 h-20 flex items-center justify-center bg-muted rounded-md">
+                            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     <div className="flex items-center justify-between mt-3">
                       <div className="flex gap-2">
-                        <Button variant="ghost" size="sm" className="text-muted-foreground">
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="text-muted-foreground relative overflow-hidden"
+                        >
+                          <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            className="absolute inset-0 opacity-0 cursor-pointer"
+                            onChange={handleImageUpload}
+                          />
                           <ImageIcon className="w-4 h-4 mr-1" />
                           图片
                         </Button>
@@ -583,7 +956,11 @@ export function CampusWall({ onNavigate }: CampusWallProps) {
                   </Card>
                 ) : (
                   posts.map((post) => (
-                    <Card key={post.id} className="border-0 shadow-md hover:shadow-lg transition-shadow">
+                    <Card 
+                      key={post.id} 
+                      className="border-0 shadow-md hover:shadow-lg transition-shadow relative"
+                      style={{ zIndex: activeMenuId === post.id ? 50 : 1 }}
+                    >
                       <CardHeader className="pb-3">
                         <div className="flex items-center justify-between">
                           <div 
@@ -591,6 +968,7 @@ export function CampusWall({ onNavigate }: CampusWallProps) {
                             onClick={() => onNavigate?.('post-detail', { postId: post.id })}
                           >
                             <Avatar className="w-10 h-10">
+                              {post.author.avatar && <AvatarImage src={post.author.avatar} alt={post.author.name} />}
                               <AvatarFallback className="bg-gradient-to-br from-primary to-secondary text-primary-foreground">
                                 {post.author.name.slice(0, 1)}
                               </AvatarFallback>
@@ -600,9 +978,57 @@ export function CampusWall({ onNavigate }: CampusWallProps) {
                               <p className="text-xs text-muted-foreground">{post.author.department} · {post.time}</p>
                             </div>
                           </div>
-                          <Button variant="ghost" size="icon" className="text-muted-foreground">
-                            <MoreHorizontal className="w-5 h-5" />
-                          </Button>
+                          <div className="relative post-menu-container">
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="text-muted-foreground relative z-20"
+                              onClick={(e) => {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                console.log("Dropdown toggle clicked! post.id:", post.id, "current activeMenuId:", activeMenuId)
+                                setActiveMenuId(activeMenuId === post.id ? null : post.id)
+                              }}
+                            >
+                              <MoreHorizontal className="w-5 h-5 pointer-events-none" />
+                            </Button>
+                            
+                            {activeMenuId === post.id && (
+                                <div 
+                                  className="absolute right-0 mt-2 w-32 bg-popover border border-border rounded-md shadow-lg overflow-hidden z-[100] animate-in fade-in zoom-in-95"
+                                  onClick={(e) => {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                  }}
+                                >
+                                {(currentUser?.id === post.author.id || currentUser?.role === 'admin') ? (
+                                  <div
+                                    className="w-full text-left px-4 py-2 text-sm text-destructive hover:bg-muted transition-colors cursor-pointer"
+                                    onClick={(e) => {
+                                      e.preventDefault()
+                                      e.stopPropagation()
+                                      setActiveMenuId(null)
+                                      handleDeletePost(post.id)
+                                    }}
+                                  >
+                                    删除动态
+                                  </div>
+                                ) : (
+                                <div
+                                  className="w-full text-left px-4 py-2 text-sm text-muted-foreground hover:bg-muted transition-colors cursor-pointer"
+                                  onClick={(e) => {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    setActiveMenuId(null)
+                                    setReportModalPost(post)
+                                  }}
+                                >
+                                  举报
+                                </div>
+                              )}
+                                </div>
+                            )}
+                          </div>
                         </div>
                       </CardHeader>
                       
@@ -614,6 +1040,25 @@ export function CampusWall({ onNavigate }: CampusWallProps) {
                           <p className="text-foreground leading-relaxed hover:text-primary/80 transition-colors">{post.content}</p>
                         </div>
                         
+                        {/* 图片展示区 */}
+                        {post.images && post.images.length > 0 && (
+                          <div className="mt-3 mb-4 flex flex-wrap gap-2">
+                            {post.images.map((img, idx) => (
+                              <div key={idx} className="w-24 h-24 sm:w-32 sm:h-32 rounded-md overflow-hidden border border-border cursor-pointer">
+                                <img 
+                                  src={img} 
+                                  alt={`post-image-${idx}`} 
+                                  className="w-full h-full object-cover transition-transform hover:scale-105"
+                                  onDoubleClick={(e) => {
+                                    e.stopPropagation()
+                                    setPreviewImage(img)
+                                  }}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
                         {/* 标签 */}
                         {post.tags.length > 0 && (
                           <div className="flex flex-wrap gap-2 mb-4">
@@ -664,6 +1109,31 @@ export function CampusWall({ onNavigate }: CampusWallProps) {
           </>
         )}
       </div>
+
+      {/* 图片预览弹窗 */}
+      {previewImage && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setPreviewImage(null)}
+        >
+          <div className="relative w-full h-full flex items-center justify-center p-4">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="absolute top-4 right-4 text-white hover:bg-white/20"
+              onClick={() => setPreviewImage(null)}
+            >
+              <X className="w-6 h-6" />
+            </Button>
+            <img 
+              src={previewImage} 
+              alt="preview" 
+              className="max-w-full max-h-full object-contain cursor-zoom-out"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+        </div>
+      )}
 
       {/* 分享弹窗 */}
       {shareModalPost && (
@@ -741,6 +1211,62 @@ export function CampusWall({ onNavigate }: CampusWallProps) {
                     </div>
                   ))
                 )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+      {/* 举报弹窗 */}
+      {reportModalPost && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <Card className="w-full max-w-md mx-4 shadow-2xl border-0">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5 text-destructive" />
+                  <span className="font-semibold text-destructive">举报动态</span>
+                </div>
+                <Button variant="ghost" size="icon" onClick={() => setReportModalPost(null)}>
+                  <X className="w-5 h-5" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="p-3 bg-muted/50 rounded-lg">
+                <p className="text-sm text-muted-foreground mb-1">举报对象:</p>
+                <div className="flex items-center gap-2 mb-2">
+                  <Avatar className="w-6 h-6">
+                    <AvatarImage src={reportModalPost.author.avatar} />
+                    <AvatarFallback>{reportModalPost.author.name.slice(0, 1)}</AvatarFallback>
+                  </Avatar>
+                  <span className="text-sm font-medium">{reportModalPost.author.name}</span>
+                </div>
+                <p className="text-sm line-clamp-2">{reportModalPost.content}</p>
+              </div>
+              
+              <div>
+                <label className="text-sm font-medium block mb-2">请填写举报理由</label>
+                <Textarea
+                  placeholder="例如：广告营销、不实信息、人身攻击等..."
+                  value={reportReason}
+                  onChange={(e) => setReportReason(e.target.value)}
+                  className="min-h-[100px] resize-none"
+                />
+              </div>
+              
+              <div className="flex gap-2 pt-2">
+                <Button variant="outline" className="flex-1" onClick={() => setReportModalPost(null)}>
+                  取消
+                </Button>
+                <Button 
+                  variant="destructive" 
+                  className="flex-1" 
+                  disabled={!reportReason.trim() || reporting}
+                  onClick={handleReportPost}
+                >
+                  {reporting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                  提交举报
+                </Button>
               </div>
             </CardContent>
           </Card>

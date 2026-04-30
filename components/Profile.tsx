@@ -219,7 +219,7 @@ export function Profile({ user, onNavigate, onLogout, onAvatarUpdate }: ProfileP
           <CardContent className="relative pt-0 pb-6 px-6">
             <div className="flex flex-col sm:flex-row items-center sm:items-end gap-4 -mt-16">
               <div className="relative">
-                <Avatar className="w-32 h-32 border-4 border-card shadow-xl">
+                <Avatar className="w-32 h-32 border-4 border-card shadow-xl relative z-0">
                   {currentAvatar ? (
                     <AvatarImage src={currentAvatar} />
                   ) : (
@@ -229,7 +229,7 @@ export function Profile({ user, onNavigate, onLogout, onAvatarUpdate }: ProfileP
                   )}
                 </Avatar>
                 <button 
-                  className="absolute bottom-2 right-2 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg hover:bg-primary/90 transition-colors"
+                  className="absolute bottom-2 right-2 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg hover:bg-primary/90 transition-colors z-20"
                   onClick={() => setShowAvatarUpload(true)}
                 >
                   <Camera className="w-4 h-4" />

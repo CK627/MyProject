@@ -5,7 +5,7 @@
 #  使用 venv 内的 Python 直接运行，避免 PATH 问题
 # ============================================================
 
-PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 BACKEND_DIR="$PROJECT_DIR/backend"
 BACKEND_PORT=8000
 FRONTEND_PORT=80

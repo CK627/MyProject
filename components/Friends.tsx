@@ -278,6 +278,7 @@ export function Friends({ onNavigateToMessages }: FriendsProps = {}) {
                 {/* 头像 */}
                 <div className="relative">
                   <Avatar className="w-32 h-32 border-4 border-white shadow-lg">
+                    {selectedFriend.avatar && <AvatarImage src={selectedFriend.avatar} alt={selectedFriend.name} />}
                     <AvatarFallback className="bg-gradient-to-br from-primary to-secondary text-primary-foreground text-4xl">
                       {selectedFriend.name.slice(0, 1)}
                     </AvatarFallback>
@@ -532,6 +533,7 @@ export function Friends({ onNavigateToMessages }: FriendsProps = {}) {
                         <div className="flex items-center gap-3">
                           <div className="relative">
                             <Avatar className="w-12 h-12">
+                              {friend.avatar && <AvatarImage src={friend.avatar} alt={friend.name} />}
                               <AvatarFallback className="bg-gradient-to-br from-primary to-secondary text-primary-foreground">
                                 {friend.name.slice(0, 1)}
                               </AvatarFallback>
@@ -575,6 +577,7 @@ export function Friends({ onNavigateToMessages }: FriendsProps = {}) {
                       <CardContent className="p-4 flex items-center justify-between">
                         <div className="flex items-center gap-3">
                           <Avatar className="w-12 h-12">
+                            {friend.avatar && <AvatarImage src={friend.avatar} alt={friend.name} />}
                             <AvatarFallback className="bg-muted text-muted-foreground">
                               {friend.name.slice(0, 1)}
                             </AvatarFallback>
@@ -621,6 +624,7 @@ export function Friends({ onNavigateToMessages }: FriendsProps = {}) {
                   <CardContent className="p-4">
                     <div className="flex items-start gap-3">
                       <Avatar className="w-12 h-12">
+                        {request.avatar && <AvatarImage src={request.avatar} alt={request.name} />}
                         <AvatarFallback className="bg-gradient-to-br from-primary to-secondary text-primary-foreground">
                           {request.name.slice(0, 1)}
                         </AvatarFallback>
@@ -684,6 +688,7 @@ export function Friends({ onNavigateToMessages }: FriendsProps = {}) {
                     <CardContent className="p-4 flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <Avatar className="w-12 h-12">
+                          {user.avatar && <AvatarImage src={user.avatar} alt={user.name} />}
                           <AvatarFallback className="bg-gradient-to-br from-primary to-secondary text-primary-foreground">
                             {user.name.slice(0, 1)}
                           </AvatarFallback>

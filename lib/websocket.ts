@@ -48,11 +48,20 @@ class WebSocketManager {
     this.cleanupWebSocket()
 
     try {
-      // 根据当前页面地址动态构建WebSocket URL,支持手机端通过局域网IP访问
+      // 根据当前页面地址动态构建WebSocket URL
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const hostname = window.location.hostname
-      const backendPort = 8000
-      const wsUrl = `${protocol}//${hostname}:${backendPort}/api/v1/ws/${token}`
+      
+      // 通过API_BASE_URL获取后端的域名和端口，这样可以确保 WebSocket 的目标和 HTTP API 保持一致
+      const getBackendHost = () => {
+        // Since Next.js proxy doesn't handle wss well out of the box in some configs,
+        // and we know the backend is on 8000 when running locally:
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+           return `${window.location.hostname}:8000`
+        }
+        return window.location.host
+      }
+
+      const wsUrl = `${protocol}//${getBackendHost()}/api/v1/ws/${token}`
       console.log('WebSocket连接地址:', wsUrl)
       this.ws = new WebSocket(wsUrl)
 

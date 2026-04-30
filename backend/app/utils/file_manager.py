@@ -186,7 +186,17 @@ class FileStorageManager:
         if metadata:
             metadata.last_accessed = datetime.utcnow()
             db.commit()
-            return metadata.file_path
+            
+            # Fix path separators to be OS-independent, especially for paths saved on Windows but read on Mac
+            import os
+            normalized_path = str(metadata.file_path).replace('\\', '/')
+            
+            # Since the path is relative, we should ensure it resolves correctly from backend root
+            if normalized_path.startswith('storage/files/'):
+                # Ensure the path is relative to the current working directory of the FastAPI app
+                normalized_path = os.path.join(os.getcwd(), normalized_path)
+            
+            return normalized_path
         
         return None
     

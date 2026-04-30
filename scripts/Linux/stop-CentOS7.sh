@@ -4,7 +4,7 @@
 #  智慧校园服务平台 - CentOS 7 停止脚本
 # ============================================================
 
-PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 PID_DIR="$PROJECT_DIR/.pids"
 
 GREEN='\033[0;32m'

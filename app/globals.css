@@ -90,6 +90,19 @@
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
+
+  /* 隐藏原生的密码查看按钮 (主要针对 Edge 等浏览器) */
+  input::-ms-reveal,
+  input::-ms-clear {
+    display: none;
+  }
+  
+  /* 隐藏 WebKit 浏览器 (如 Safari/Chrome) 原生的密码/凭证图标 */
+  input::-webkit-credentials-auto-fill-button {
+    visibility: hidden;
+    position: absolute;
+    right: 0;
+  }
 }
 
 @layer components {

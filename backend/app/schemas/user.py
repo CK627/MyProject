@@ -39,7 +39,7 @@ class UserCreate(UserBase):
 class UserUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     phone: Optional[str] = Field(None, max_length=20)
-    avatar: Optional[str] = None
+    avatar: Optional[str] = Field(None, description="Base64 encoded image data or URL")
 
 
 # Response schema

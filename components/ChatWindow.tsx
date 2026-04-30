@@ -13,9 +13,9 @@ import {
 } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
-import { messagesApi, Message, User, getToken } from '@/lib/api'
+import { messagesApi, Message, User, getToken, authApi, User as ApiUser } from '@/lib/api'
 import { wsManager, WebSocketMessage } from '@/lib/websocket'
 
 interface ChatWindowProps {
@@ -31,11 +31,23 @@ export function ChatWindow({ user, onBack, onMessageSent }: ChatWindowProps) {
   const [sending, setSending] = useState(false)
   const [uploadingFile, setUploadingFile] = useState(false)
   const [previewFile, setPreviewFile] = useState<{ url: string; name: string; type: string } | null>(null)
+  const [currentUser, setCurrentUser] = useState<ApiUser | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        if (getToken()) {
+          const user = await authApi.getCurrentUser()
+          setCurrentUser(user)
+        }
+      } catch (err) {
+        console.error('获取当前用户信息失败', err)
+      }
+    }
+    fetchUser()
     loadMessages()
     
     // 监听WebSocket消息
@@ -276,6 +288,7 @@ export function ChatWindow({ user, onBack, onMessageSent }: ChatWindowProps) {
               </Button>
             )}
             <Avatar className="w-10 h-10">
+              {user.avatar && <AvatarImage src={user.avatar} alt={user.name} />}
               <AvatarFallback className="bg-gradient-to-br from-primary to-secondary text-primary-foreground">
                 {user.name.slice(0, 1)}
               </AvatarFallback>
@@ -316,6 +329,11 @@ export function ChatWindow({ user, onBack, onMessageSent }: ChatWindowProps) {
                 className={`flex gap-3 ${isMe ? 'flex-row-reverse' : ''}`}
               >
                 <Avatar className="w-8 h-8 flex-shrink-0">
+                  {isMe ? (
+                    currentUser?.avatar && <AvatarImage src={currentUser.avatar} alt="我" />
+                  ) : (
+                    user.avatar && <AvatarImage src={user.avatar} alt={user.name} />
+                  )}
                   <AvatarFallback className={isMe ? 'bg-primary text-primary-foreground' : 'bg-muted'}>
                     {isMe ? '我' : user.name.slice(0, 1)}
                   </AvatarFallback>

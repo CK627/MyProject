@@ -6,7 +6,7 @@ setlocal enabledelayedexpansion
 ::  stop.bat
 :: ============================================================
 
-set "PROJECT_DIR=%~dp0"
+set "PROJECT_DIR=%~dp0..\.."
 if "%PROJECT_DIR:~-1%"=="\" set "PROJECT_DIR=%PROJECT_DIR:~0,-1%"
 set "PID_DIR=%PROJECT_DIR%\.pids"
 set "BACKEND_PORT=8000"

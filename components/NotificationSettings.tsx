@@ -152,8 +152,8 @@ export function NotificationSettings({ onNavigate }: NotificationSettingsProps) 
                   }`}
                 >
                   <span
-                    className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${
-                      preferences[item.key] ? 'translate-x-7' : 'translate-x-1'
+                    className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                      preferences[item.key] ? 'translate-x-6' : 'translate-x-0'
                     }`}
                   />
                 </button>

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 智慧校园服务平台 - 启动脚本
-PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 BACKEND_PORT=8000
 FRONTEND_PORT=80
 BACKEND_LOG="$PROJECT_DIR/backend.log"
