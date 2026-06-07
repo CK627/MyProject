@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>文件审查批阅</title>
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .review-container { display: flex; height: calc(100vh - 60px); }
+    .preview-pane { flex: 1; border-right: 1px solid #ddd; position: relative; background: #f5f5f5; }
+    .review-panel { width: 300px; padding: 20px; background: #fff; display: flex; flex-direction: column; }
+    .iframe-viewer { width: 100%; height: 100%; border: none; }
+    .status-bar { margin-bottom: 20px; padding: 10px; background: #eef; border-radius: 4px; }
+    .annotation-list { flex: 1; overflow-y: auto; margin-bottom: 20px; }
+    .annotation-item { padding: 10px; border-bottom: 1px solid #eee; }
+    .actions { display: flex; gap: 10px; }
+    #loading-bar { position: absolute; top: 0; left: 0; height: 4px; background: blue; width: 0%; transition: width 0.3s; }
+    
+    .btn-nav {
+      min-width: 80px;
+      margin-left: 5px;
+      padding: 6px 12px;
+      border-radius: 8px; /* Slightly more rounded */
+      cursor: pointer;
+      font-size: 14px;
+      color: #333;
+      transition: all 0.3s ease;
+      
+      /* Glassmorphism */
+      background: rgba(255, 255, 255, 0.25);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.4);
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+    }
+    .btn-nav:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.4);
+      box-shadow: 0 6px 8px rgba(0, 0, 0, 0.1);
+      transform: translateY(-1px);
+    }
+    .btn-nav:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      background: rgba(200, 200, 200, 0.1);
+      box-shadow: none;
+    }
+    
+    .btn-action {
+        flex: 1;
+        padding: 10px 0;
+        font-size: 15px;
+        font-weight: 500;
+        border-radius: 8px;
+        cursor: pointer;
+        color: white;
+        transition: all 0.3s ease;
+        
+        /* Glassmorphism Base */
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    }
+    .btn-action:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+    }
+    .btn-pass {
+        /* Green Glass */
+        background: rgba(16, 185, 129, 0.85); /* #10b981 with opacity */
+        border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .btn-pass:hover {
+        background: rgba(16, 185, 129, 0.95);
+    }
+    .btn-reject {
+        /* Red Glass */
+        background: rgba(239, 68, 68, 0.85); /* #ef4444 with opacity */
+        border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .btn-reject:hover {
+        background: rgba(239, 68, 68, 0.95);
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <h1 class="app-title">文件审查批阅</h1>
+    <div class="header-actions">
+      <span id="review-progress" style="margin-right:15px; font-size:14px; color:#555;"></span>
+      <button id="btn-prev" class="btn-nav">上一个</button>
+      <button id="btn-next" class="btn-nav">下一个</button>
+      <button id="btn-close" class="tab">关闭</button>
+    </div>
+  </header>
+  <div class="review-container">
+    <div class="preview-pane">
+      <div id="loading-bar"></div>
+      <div id="preview-content" style="width:100%;height:100%;display:flex;justify-content:center;align-items:center;">加载中...</div>
+    </div>
+    <aside class="review-panel">
+      <div class="annotation-list">
+        <h3>不通过原因：</h3>
+        <div id="anno-list-container">
+           <textarea id="review-annotation" class="input-area" maxlength="500" placeholder="请输入不通过原因" style="width:100%;height:200px;resize:none;padding:10px;border:1px solid #ddd;border-radius:4px;"></textarea>
+        </div>
+      </div>
+      <div class="actions" style="flex-direction: column; gap: 15px;">
+        <div style="display:flex; justify-content: space-between; align-items: center;">
+             <label style="display:flex; align-items:center; font-size:13px; cursor: pointer;">
+                <input type="checkbox" id="auto-next" checked> 自动下一条
+            </label>
+            <button id="btn-save-draft" class="btn-link">保存草稿</button>
+        </div>
+        <div style="display:flex; gap: 10px;">
+            <button id="btn-pass" class="btn-action btn-pass">通过</button>
+            <button id="btn-reject" class="btn-action btn-reject">不通过</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <script src="js/vue.global.js"></script>
+  <script src="js/index.js"></script>
+  <script src="/static/lib/jszip/jszip.min.js"></script>
+  <script src="/static/lib/docx-preview/docx-preview.min.js"></script>
+  <link rel="stylesheet" href="/static/lib/js-preview-excel/index.css">
+  <script type="module" src="js/teacher-review.js"></script>
+</body>
+</html>

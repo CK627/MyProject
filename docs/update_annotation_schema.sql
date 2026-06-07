@@ -1,0 +1,27 @@
+-- Auto-generated schema update for annotation system
+ALTER TABLE `graduation_information` ADD COLUMN `Application Form for Internship Unit Annotation` TEXT DEFAULT NULL COMMENT '岗位实习单位申请表-批注';
+ALTER TABLE `graduation_information` MODIFY COLUMN `Application Form for Internship Unit_review_result` ENUM('未批阅','不通过','通过') DEFAULT '未批阅' COMMENT '岗位实习单位申请表-批阅结果';
+ALTER TABLE `graduation_information` ADD COLUMN `Tripartite Agreement for Student Position Annotation` TEXT DEFAULT NULL COMMENT '学生岗位三方协议书-批注';
+ALTER TABLE `graduation_information` MODIFY COLUMN `Tripartite Agreement for Student Position_review_result` ENUM('未批阅','不通过','通过') DEFAULT '未批阅' COMMENT '学生岗位三方协议书-批阅结果';
+ALTER TABLE `graduation_information` ADD COLUMN `Opinions of the internship unit Annotation` TEXT DEFAULT NULL COMMENT '实习单位意见-批注';
+ALTER TABLE `graduation_information` MODIFY COLUMN `Opinions of the internship unit_review_result` ENUM('未批阅','不通过','通过') DEFAULT '未批阅' COMMENT '实习单位意见-批阅结果';
+ALTER TABLE `graduation_information` ADD COLUMN `Internship Self-Accommodation Commitment Annotation` TEXT DEFAULT NULL COMMENT '实习自主住宿承诺书及家长意见-批注';
+ALTER TABLE `graduation_information` MODIFY COLUMN `Internship Self-Accommodation Commitment_review_result` ENUM('未批阅','不通过','通过') DEFAULT '未批阅' COMMENT '实习自主住宿承诺书及家长意见-批阅结果';
+ALTER TABLE `graduation_information` ADD COLUMN `parental opinion Annotation` TEXT DEFAULT NULL COMMENT '家长意见-批注';
+ALTER TABLE `graduation_information` MODIFY COLUMN `parental opinion_review_result` ENUM('未批阅','不通过','通过') DEFAULT '未批阅' COMMENT '家长意见-批阅结果';
+ALTER TABLE `graduation_information` ADD COLUMN `Informed Consent Form for Legal Guardian Annotation` TEXT DEFAULT NULL COMMENT '丙方实习岗位实习法定监护人（或家长）知情同意书-批注';
+ALTER TABLE `graduation_information` MODIFY COLUMN `Informed Consent Form for Legal Guardian_review_result` ENUM('未批阅','不通过','通过') DEFAULT '未批阅' COMMENT '丙方实习岗位实习法定监护人（或家长）知情同意书-批阅结果';
+ALTER TABLE `graduation_information` ADD COLUMN `Student Internship Company Inspection Report Form Annotation` TEXT DEFAULT NULL COMMENT '学生实习企业考察报告表-批注';
+ALTER TABLE `graduation_information` MODIFY COLUMN `Student Internship Company Inspection Report Form_review_result` ENUM('未批阅','不通过','通过') DEFAULT '未批阅' COMMENT '学生实习企业考察报告表-批阅结果';
+ALTER TABLE `graduation_information` ADD COLUMN `Summary Table of Student Internship Enterprise Inspec Annotation` TEXT DEFAULT NULL COMMENT '学生实习企业考察情况汇总表-批注';
+ALTER TABLE `graduation_information` MODIFY COLUMN `Summary Table of Student Internship Enterprise Ins_review_result` ENUM('未批阅','不通过','通过') DEFAULT '未批阅' COMMENT '学生实习企业考察情况汇总表-批阅结果';
+ALTER TABLE `graduation_information` ADD COLUMN `Business license Annotation` TEXT DEFAULT NULL COMMENT '企业营业执照-批注';
+ALTER TABLE `graduation_information` MODIFY COLUMN `Business license_review_result` ENUM('未批阅','不通过','通过') DEFAULT '未批阅' COMMENT '企业营业执照-批阅结果';
+ALTER TABLE `graduation_information` ADD COLUMN `Corporate credit report Annotation` TEXT DEFAULT NULL COMMENT '企业信用报告-批注';
+ALTER TABLE `graduation_information` MODIFY COLUMN `Corporate credit report_review_result` ENUM('未批阅','不通过','通过') DEFAULT '未批阅' COMMENT '企业信用报告-批阅结果';
+ALTER TABLE `graduation_information` ADD COLUMN `Safety Responsibility Agreement Annotation` TEXT DEFAULT NULL COMMENT '毕业实习安全责任书-批注';
+ALTER TABLE `graduation_information` MODIFY COLUMN `Safety Responsibility Agreement_review_result` ENUM('未批阅','不通过','通过') DEFAULT '未批阅' COMMENT '毕业实习安全责任书-批阅结果';
+ALTER TABLE `graduation_information` ADD COLUMN `Internship Report and Assessment Form Annotation` TEXT DEFAULT NULL COMMENT '岗位实习报告及考核表-批注';
+ALTER TABLE `graduation_information` MODIFY COLUMN `Internship Report and Assessment Form_review_result` ENUM('未批阅','不通过','通过') DEFAULT '未批阅' COMMENT '岗位实习报告及考核表-批阅结果';
+ALTER TABLE `graduation_information` ADD COLUMN `Internship Student Info and Instructor Summary Annotation` TEXT DEFAULT NULL COMMENT '实习学生信息及指导教师名单汇总表-批注';
+ALTER TABLE `graduation_information` MODIFY COLUMN `Internship Student Info and Instructor Summary_review_result` ENUM('未批阅','不通过','通过') DEFAULT '未批阅' COMMENT '实习学生信息及指导教师名单汇总表-批阅结果';

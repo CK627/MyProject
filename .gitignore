@@ -1,0 +1,32 @@
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# IDE / 编辑器
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# AI 辅助工具
+.qoder/
+.cursor/
+.windsurf/
+.trae/
+.agent
+
+# 日志
+logs/
+*.log
+
+# 临时文件
+temp/
+tmp/
+
+# Node.js (若未来引入)
+node_modules/
+package-lock.json
+
+# 上传的用户文件（不纳入版本控制）
+uploads/
+FileUploadGraduationSubmission/
