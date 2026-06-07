@@ -133,9 +133,15 @@ cmd_use() {
         return 1
     fi
 
-    sed -i.bak '/^PTOOL_DEFAULT_VERSION/d' "$CONFIG_FILE"
-    rm -f "$CONFIG_FILE.bak"
-    echo "PTOOL_DEFAULT_VERSION=\"$version\"" >> "$CONFIG_FILE"
+    if [ -w "$CONFIG_FILE" ]; then
+        sed -i.bak '/^PTOOL_DEFAULT_VERSION/d' "$CONFIG_FILE"
+        rm -f "$CONFIG_FILE.bak"
+        echo "PTOOL_DEFAULT_VERSION=\"$version\"" >> "$CONFIG_FILE"
+    else
+        sudo sed -i.bak '/^PTOOL_DEFAULT_VERSION/d' "$CONFIG_FILE"
+        sudo rm -f "$CONFIG_FILE.bak"
+        echo "PTOOL_DEFAULT_VERSION=\"$version\"" | sudo tee -a "$CONFIG_FILE" > /dev/null
+    fi
     PTOOL_DEFAULT_VERSION="$version"
 
     echo "已设置默认版本: $version"
@@ -245,7 +251,7 @@ case "$1" in
     config)   do_config "$CONFIG_FILE"; exit 0 ;;
     install)  do_install "$PROJECT_DIR"; exit $? ;;
     update)   do_update "ptool" "ptool" "https://github.com/CK627/MyProject.git" "$(get_install_dir)" "$CONFIG_FILE"; exit $? ;;
-    shim)     do_create_shims "$CONFIG_FILE"; exit $? ;;
+    shim)     do_create_shims "$(get_install_dir)/config/ptool.conf"; exit $? ;;
 esac
 
 # 运行工具

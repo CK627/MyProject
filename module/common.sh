@@ -215,6 +215,7 @@ do_install() {
 
     echo "[3/5] 扫描 Python..."
     do_scan "$config_file"
+    sudo chmod 666 "$config_file"
     echo ""
 
     echo "[4/5] 创建 shim..."
