@@ -52,6 +52,8 @@ if "%~1"=="run" goto :cmd_run
 if "%~1"=="scan" goto :cmd_scan
 if "%~1"=="config" goto :cmd_config
 if "%~1"=="install" goto :cmd_install
+if "%~1"=="update" goto :cmd_update
+if "%~1"=="shim" goto :cmd_shim
 
 REM 运行工具
 set "tool=%~1"
@@ -145,6 +147,8 @@ echo   ptool run ^<版本号^> ^<python文件^>     运行文件
 echo   ptool scan                          扫描路径
 echo   ptool config                        显示配置
 echo   ptool install                       完整安装
+echo   ptool update                        检查并更新 ptool
+echo   ptool shim                          重建 shim 脚本
 echo   ptool help                          帮助
 exit /b 0
 
@@ -242,3 +246,88 @@ REM ============================================
 :cmd_install
 call "%INSTALL_MODULE%"
 exit /b !errorlevel!
+
+REM ============================================
+REM update
+REM ============================================
+:cmd_update
+where git >nul 2>&1
+if !errorlevel! neq 0 (
+    echo 错误: 未找到 git 命令，请先安装 Git for Windows
+    echo 下载地址: https://git-scm.com/download/win
+    exit /b 1
+)
+
+set "REPO_DIR=%USERPROFILE%\.ptool\repo"
+
+if not exist "!REPO_DIR!\.git" (
+    echo 首次更新，正在克隆仓库...
+    git clone --branch ptool --single-branch https://github.com/CK627/MyProject.git "!REPO_DIR!"
+    if !errorlevel! neq 0 ( echo 克隆失败 & exit /b 1 )
+)
+
+echo 正在检查更新...
+git -C "!REPO_DIR!" fetch origin ptool 2>nul
+if !errorlevel! neq 0 ( echo 获取更新失败，请检查网络 & exit /b 1 )
+
+for /f %%a in ('git -C "!REPO_DIR!" rev-parse HEAD') do set "LOCAL_SHA=%%a"
+for /f %%a in ('git -C "!REPO_DIR!" rev-parse origin/ptool') do set "REMOTE_SHA=%%a"
+
+if "!LOCAL_SHA!"=="!REMOTE_SHA!" (
+    echo 已是最新版本
+    exit /b 0
+)
+
+git -C "!REPO_DIR!" checkout ptool 2>nul
+git -C "!REPO_DIR!" pull origin ptool
+if !errorlevel! neq 0 ( echo 拉取更新失败 & exit /b 1 )
+
+copy /y "!REPO_DIR!\bin\ptool.bat" "%BIN_DIR%\" >nul
+copy /y "!REPO_DIR!\module\install.sh" "%MODULE_DIR%\" >nul
+if not exist "%CONFIG_FILE%" copy "!REPO_DIR!\config\ptool.conf" "%CONFIG_DIR%\" >nul
+
+echo 更新完成！
+echo   旧版本: !LOCAL_SHA:~0,7!
+echo   新版本: !REMOTE_SHA:~0,7!
+exit /b 0
+
+REM ============================================
+REM shim
+REM ============================================
+:cmd_shim
+set "SHIMS_DIR=%USERPROFILE%\.ptool\shims"
+if not exist "!SHIMS_DIR!" mkdir "!SHIMS_DIR!"
+
+for %%t in (python python3 pip pip3) do (
+    (
+        echo @echo off
+        echo REM ptool shim - auto generated
+        echo set "CONFIG_FILE=%CONFIG_FILE%"
+        echo set "PYTHON_BASE_DIR="
+        echo set "PTOOL_DEFAULT_VERSION="
+        echo if exist "%%CONFIG_FILE%%" ^(
+        echo     for /f "usebackq tokens=1,* delims==" %%%%a in ^("%%CONFIG_FILE%%"^) do ^(
+        echo         set "key=%%%%a"
+        echo         set "val=%%%%b"
+        echo         if not "!key:~0,1!"=="#" if not "!key!"=="" ^(
+        echo             set "val=!val:"=!"
+        echo             if "!key!"=="PYTHON_BASE_DIR" set "PYTHON_BASE_DIR=!val!"
+        echo             if "!key!"=="PTOOL_DEFAULT_VERSION" set "PTOOL_DEFAULT_VERSION=!val!"
+        echo         ^)
+        echo     ^)
+        echo ^)
+        echo if "!PTOOL_DEFAULT_VERSION!"=="" ^(
+        echo     echo ptool: 未设置默认版本，请运行 ptool use ^<版本号^>
+        echo     exit /b 1
+        echo ^)
+        echo set "BIN=!PYTHON_BASE_DIR!\%%t!PTOOL_DEFAULT_VERSION!.exe"
+        echo if not exist "!BIN!" ^(
+        echo     echo ptool: !BIN! 不存在
+        echo     exit /b 1
+        echo ^)
+        echo "!BIN!" %%*
+    ) > "!SHIMS_DIR!\%%t.bat"
+)
+
+echo Shim 已创建: !SHIMS_DIR!
+exit /b 0

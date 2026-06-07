@@ -40,10 +40,16 @@ do_scan() {
     echo ""
 
     echo "已安装的 Python:"
+    local seen=""
     for bin in "$python_base_dir"/python[0-9]*.[0-9]* "$python_base_dir"/python[0-9]*; do
         [ -f "$bin" ] && [ -x "$bin" ] || continue
+        # 跳过 python*-config、python*-intel64 等非解释器文件
+        basename "$bin" | grep -q '-' && continue
         local ver
         ver=$("$bin" --version 2>&1 | head -1)
+        # 跳过重复
+        case " $seen " in *" $ver "*) continue ;; esac
+        seen="$seen $ver"
         echo "  $(basename "$bin") - $ver"
     done
 
@@ -68,6 +74,109 @@ EOF
 # ============================================
 # 完整安装
 # ============================================
+do_update() {
+    local tool_name="$1"
+    local branch="$2"
+    local remote_url="$3"
+    local install_dir="$4"
+    local config_file="$5"
+
+    local repo_dir="$HOME/.${tool_name}/repo"
+
+    # Step 1: 确保仓库存在
+    if [ ! -d "$repo_dir/.git" ]; then
+        echo "首次更新，正在克隆仓库..."
+        mkdir -p "$(dirname "$repo_dir")"
+        git clone --branch "$branch" --single-branch "$remote_url" "$repo_dir" || { echo "克隆失败"; return 1; }
+    fi
+
+    # Step 2: fetch
+    echo "正在检查更新..."
+    git -C "$repo_dir" fetch origin "$branch" 2>/dev/null || { echo "获取更新失败，请检查网络"; return 1; }
+
+    # Step 3: 比较 SHA
+    local local_sha remote_sha
+    local_sha=$(git -C "$repo_dir" rev-parse HEAD 2>/dev/null)
+    remote_sha=$(git -C "$repo_dir" rev-parse "origin/$branch" 2>/dev/null)
+
+    if [ "$local_sha" = "$remote_sha" ]; then
+        echo "已是最新版本"
+        return 0
+    fi
+
+    # Step 4: pull
+    git -C "$repo_dir" checkout "$branch" 2>/dev/null
+    git -C "$repo_dir" pull origin "$branch" || { echo "拉取更新失败"; return 1; }
+
+    # Step 5: 复制文件到安装目录（保留用户配置）
+    sudo cp "$repo_dir/bin/${tool_name}.sh" "$install_dir/bin/"
+    sudo cp "$repo_dir/module/common.sh" "$install_dir/module/"
+    sudo chmod +x "$install_dir/bin/${tool_name}.sh"
+
+    # 配置文件仅首次复制
+    if [ ! -f "$config_file" ]; then
+        sudo cp "$repo_dir/config/${tool_name}.conf" "$config_file"
+    fi
+
+    # Step 6: 记录版本
+    local new_sha
+    new_sha=$(git -C "$repo_dir" rev-parse HEAD)
+    local short_sha="${new_sha:0:7}"
+    sed -i.bak "/^${tool_name^^}_VERSION/d" "$config_file" 2>/dev/null
+    rm -f "${config_file}.bak" 2>/dev/null
+    echo "${tool_name^^}_VERSION=\"$short_sha\"" >> "$config_file"
+
+    # Step 7: 输出结果
+    echo "更新完成！"
+    echo "  旧版本: ${local_sha:0:7}"
+    echo "  新版本: $short_sha"
+}
+
+do_create_shims() {
+    local config_file="$1"
+    local shims_dir="$HOME/.ptool/shims"
+
+    mkdir -p "$shims_dir"
+
+    # python3 -> python, pip3 -> pip（拼接版本号时避免 python33.13）
+    local tools=("python" "python3" "pip" "pip3")
+    for tool in "${tools[@]}"; do
+        local bin_name
+        bin_name=$(echo "$tool" | sed 's/3$//')
+        cat > "$shims_dir/$tool" << SHIM
+#!/bin/bash
+# ptool shim - auto generated
+CONFIG_FILE="$config_file"
+PYTHON_BASE_DIR=""
+PTOOL_DEFAULT_VERSION=""
+if [ -f "\$CONFIG_FILE" ]; then
+    while IFS='=' read -r key value; do
+        [[ "\$key" =~ ^#.*$ || -z "\$key" ]] && continue
+        key=\$(echo "\$key" | tr -d ' ')
+        value=\$(echo "\$value" | tr -d " '\"")
+        case "\$key" in
+            PYTHON_BASE_DIR) PYTHON_BASE_DIR="\$value" ;;
+            PTOOL_DEFAULT_VERSION) PTOOL_DEFAULT_VERSION="\$value" ;;
+        esac
+    done < "\$CONFIG_FILE"
+fi
+if [ -z "\$PTOOL_DEFAULT_VERSION" ]; then
+    echo "ptool: 未设置默认版本，请运行 ptool use <版本号>" >&2
+    exit 1
+fi
+BIN="\$PYTHON_BASE_DIR/${bin_name}\$PTOOL_DEFAULT_VERSION"
+if [ ! -f "\$BIN" ]; then
+    echo "ptool: \$BIN 不存在" >&2
+    exit 1
+fi
+exec "\$BIN" "\$@"
+SHIM
+        chmod +x "$shims_dir/$tool"
+    done
+
+    echo "Shim 已创建: $shims_dir"
+}
+
 do_install() {
     local script_dir="$1"
     local install_dir
@@ -102,24 +211,29 @@ do_install() {
     echo "完成"
     echo ""
 
-    echo "[3/4] 扫描 Python..."
+    echo "[3/5] 扫描 Python..."
     do_scan "$config_file"
     echo ""
 
-    echo "[4/4] 配置 PATH..."
+    echo "[4/5] 创建 shim..."
+    do_create_shims "$config_file"
+    echo ""
+
+    echo "[5/5] 配置 PATH..."
+    local shims_dir="$HOME/.ptool/shims"
     local shell_rc="$HOME/.zshrc"
     [ -f "$HOME/.bashrc" ] && shell_rc="$HOME/.bashrc"
 
-    if ! grep -q "$bin_dir" "$shell_rc" 2>/dev/null; then
+    if ! grep -q "ptool" "$shell_rc" 2>/dev/null; then
         echo "" >> "$shell_rc"
         echo "# ptool" >> "$shell_rc"
-        echo "export PATH=\"$bin_dir:\$PATH\"" >> "$shell_rc"
+        echo "export PATH=\"$shims_dir:$bin_dir:\$PATH\"" >> "$shell_rc"
         echo "已添加到 $shell_rc"
     else
         echo "已存在"
     fi
 
-    export PATH="$bin_dir:$PATH"
+    export PATH="$shims_dir:$bin_dir:$PATH"
 
     echo ""
     echo "========================================"
@@ -155,12 +269,30 @@ do_uninstall() {
         echo "安装目录不存在"
     fi
 
+    # 清理 shims
+    local shims_dir="$HOME/.ptool/shims"
+    if [ -d "$shims_dir" ]; then
+        rm -rf "$shims_dir"
+        echo "已删除: $shims_dir"
+    fi
+
+    # 清理 .repo 目录
+    local repo_dir="$HOME/.ptool/repo"
+    if [ -d "$repo_dir" ]; then
+        rm -rf "$repo_dir"
+        echo "已删除: $repo_dir"
+    fi
+
     for rc_file in "$HOME/.zshrc" "$HOME/.bashrc"; do
         if [ -f "$rc_file" ] && grep -q "$install_dir" "$rc_file" 2>/dev/null; then
             sed -i.bak "/# ptool/d" "$rc_file"
             sed -i.bak "\|$install_dir|d" "$rc_file"
             rm -f "${rc_file}.bak"
             echo "已清理: $rc_file"
+        fi
+        if [ -f "$rc_file" ] && grep -q "$shims_dir" "$rc_file" 2>/dev/null; then
+            sed -i.bak "\|$shims_dir|d" "$rc_file"
+            rm -f "${rc_file}.bak"
         fi
     done
 

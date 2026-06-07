@@ -59,13 +59,21 @@ list_pythons() {
     echo "已安装的 Python:"
 
     local found=0
+    local seen=""
     for bin in "$PYTHON_BASE_DIR"/python[0-9]*.[0-9]* "$PYTHON_BASE_DIR"/python[0-9]*; do
         [ -f "$bin" ] && [ -x "$bin" ] || continue
+
+        # 跳过 python*-config、python*-intel64 等非解释器文件
+        basename "$bin" | grep -q '-' && continue
 
         local version
         version=$(basename "$bin" | sed -n 's/^python\([0-9]*\.[0-9]*\).*/\1/p')
         [ -z "$version" ] && version=$(basename "$bin" | sed -n 's/^python\([0-9]*\)$/\1/p')
         [ -z "$version" ] && continue
+
+        # 跳过重复版本
+        case " $seen " in *" $version "*) continue ;; esac
+        seen="$seen $version"
 
         local real_version
         real_version=$("$bin" --version 2>&1 | head -1)
@@ -99,6 +107,8 @@ ptool - 统一 Python 版本管理工具
   ptool scan                          扫描 Python 路径，更新配置
   ptool config                        显示配置
   ptool install                       完整安装
+  ptool update                        检查并更新 ptool 到最新版本
+  ptool shim                          重建 shim 脚本
   ptool help                          帮助
 
 示例:
@@ -234,6 +244,8 @@ case "$1" in
     scan)     do_scan "$CONFIG_FILE"; exit $? ;;
     config)   do_config "$CONFIG_FILE"; exit 0 ;;
     install)  do_install "$PROJECT_DIR"; exit $? ;;
+    update)   do_update "ptool" "ptool" "https://github.com/CK627/MyProject.git" "$(get_install_dir)" "$CONFIG_FILE"; exit $? ;;
+    shim)     do_create_shims "$CONFIG_FILE"; exit $? ;;
 esac
 
 # 运行工具
