@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>教师页面</title>
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <header class="header">
+      <h1 class="app-title">教师管理</h1>
+      <div class="header-actions">
+        <span id="admin-chip" class="user-chip"></span>
+        <button id="btn-admin-pwd" class="tab" type="button">修改密码</button>
+        <button id="btn-admin-logout" class="tab" type="button">退出登录</button>
+      </div>
+    </header>
+    <div class="layout">
+      <aside class="sidebar">
+        <nav class="nav">
+          <button class="nav-item active" data-target="stats" type="button">统计</button>
+          <button class="nav-item" data-target="class" type="button">班级管理</button>
+          <button class="nav-item" data-target="filestat" type="button">文件统计提交管理</button>
+          <div id="filestat-subnav" class="sub-nav">
+            <button class="sub-nav-item active" data-sub="thesis" type="button">岗位实习单位申请表</button>
+            <button class="sub-nav-item" data-sub="internship" type="button">学生岗位三方协议书</button>
+            <button class="sub-nav-item" data-sub="opinion" type="button">实习单位意见</button>
+            <button class="sub-nav-item" data-sub="commitment" type="button">自主住宿承诺书</button>
+            <button class="sub-nav-item" data-sub="parental" type="button">家长意见</button>
+            <button class="sub-nav-item" data-sub="guardian" type="button">丙方实习岗位实习法定监护人知情同意书</button>
+            <button class="sub-nav-item" data-sub="report" type="button">企业考察报告表</button>
+            <button class="sub-nav-item" data-sub="summary" type="button">企业考察汇总表</button>
+            <button class="sub-nav-item" data-sub="license" type="button">企业营业执照</button>
+            <button class="sub-nav-item" data-sub="credit" type="button">企业信用报告</button>
+            <button class="sub-nav-item" data-sub="safety" type="button">毕业实习安全责任书</button>
+            <button class="sub-nav-item" data-sub="assessment" type="button">岗位实习报告及考核表</button>
+            <button class="sub-nav-item" data-sub="names_summary" type="button">实习学生信息及教师汇总表</button>
+          </div>
+          <button class="nav-item" data-target="filemanage" type="button">文件管理</button>
+          <button class="nav-item" data-target="settings" type="button">系统设置</button>
+          <div id="settings-subnav" class="sub-nav">
+            <button class="sub-nav-item active" data-sub="format" type="button">文件格式限制</button>
+            <button class="sub-nav-item" data-sub="project" type="button">项目管理</button>
+          </div>
+        </nav>
+      </aside>
+      <main class="content auth-container">
+        <section id="stats-section" class="panel active">
+          <div id="stats-app">
+            <h2 class="section-title">数据概览</h2>
+            <div class="card-grid">
+              <div class="card" v-for="card in cards" :key="card.key">
+                <div class="card-head">
+                  <div class="card-icon">{{ card.icon }}</div>
+                  <div class="card-title">{{ card.title }}</div>
+                </div>
+                <div class="card-body">
+                  <div :id="'summary-' + card.key" class="card-number">{{ card.value }}</div>
+                  <div class="card-desc">{{ card.desc }}</div>
+                </div>
+              </div>
+            </div>
+            <div class="chart-area">
+              <div class="chart-head">
+                <div class="chart-title">数据统计图</div>
+              </div>
+              <div class="chart-body chart-grid">
+                <div class="chart-card" v-for="chart in charts" :key="chart.id">
+                  <div class="chart-subtitle">{{ chart.title }}</div>
+                  <canvas :id="chart.id" width="360" height="240"></canvas>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="filemanage-section" class="panel">
+          <h2 class="section-title">文件管理</h2>
+          <div class="toolbar">
+            <span id="fm-breadcrumb" class="muted">当前位置：/</span>
+            <div class="spacer"></div>
+            <button id="fm-dir-up" type="button" class="btn-link">返回上级</button>
+          </div>
+          <table class="grid" aria-label="学生文件列表">
+            <thead>
+              <tr>
+                <th style="width:40px"></th>
+                <th>文件名</th>
+                <th>收齐状态</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="fm-tbody"></tbody>
+          </table>
+          <p class="message" id="fm-msg">请选择班级与学生查看文件</p>
+        </section>
+
+        <section id="class-section" class="panel">
+          <h2 class="section-title">班级管理</h2>
+          <div class="toolbar">
+            <input id="cm-search" type="text" class="toolbar-input" placeholder="搜索学号或姓名" />
+            <button id="cm-search-btn" class="btn-link" type="button">搜索</button>
+          </div>
+          <div class="toolbar">
+            <button id="btn-cm-template" class="btn-link" type="button">下载模板</button>
+            <div class="spacer"></div>
+            <input id="cm-file" type="file" accept="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx,.csv,text/csv" />
+            <button id="btn-cm-import" class="btn-link" type="button">批量导入</button>
+            <button id="btn-cm-bulk-del" class="btn-link danger" type="button">批量删除</button>
+            <button id="btn-cm-add" class="primary btn-wide" type="button">单个添加</button>
+          </div>
+          <table class="grid" aria-label="班级名单">
+            <thead>
+              <tr>
+                <th style="width:40px"><input id="cm-select-all" type="checkbox" /></th>
+                <th>学号</th>
+                <th>姓名</th>
+                <th>班级</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="cm-tbody"></tbody>
+          </table>
+          <div class="pagination">
+            <button id="cm-prev" class="btn-link" type="button">上一页</button>
+            <span id="cm-page-info" class="muted"></span>
+            <button id="cm-next" class="btn-link" type="button">下一页</button>
+            <select id="cm-size" class="select">
+              <option value="10">每页 10</option>
+              <option value="20">每页 20</option>
+              <option value="50">每页 50</option>
+              <option value="all">全部显示</option>
+            </select>
+          </div>
+        </section>
+
+        <section id="filestat-section" class="panel">
+          <h2 class="section-title">文件统计提交管理<span id="fs-current-project" style="font-weight:normal; font-size: 0.8em; margin-left: 10px; color: #666;"></span></h2>
+          <div class="toolbar">
+            <input id="fs-search" type="text" class="toolbar-input" placeholder="搜索学号或姓名" />
+            <button id="fs-search-btn" class="btn-link" type="button">搜索</button>
+            <select id="fs-status" class="select">
+              <option value="all">全部</option>
+              <option value="submitted">提交</option>
+              <option value="pending">未交</option>
+            </select>
+            <select id="fs-review-status" class="select">
+              <option value="all">全部审查结果</option>
+              <option value="未批阅">未批阅</option>
+              <option value="通过">通过</option>
+              <option value="不通过">不通过</option>
+            </select>
+            <button id="fs-export" class="primary" type="button">下载所选</button>
+            <button id="fs-batch-pass" class="primary" type="button" style="display:none;">批量通过</button>
+          </div>
+          <table class="grid" aria-label="文件提交统计">
+            <thead>
+              <tr>
+                <th style="width:40px"><input id="fs-select-all" type="checkbox" /></th>
+                <th>学号</th>
+                <th>姓名</th>
+                <th>班级</th>
+                <th>提交状态</th>
+                <th>下载次数</th>
+                <th>最近下载时间</th>
+                <th>最近提交时间</th>
+                <th>审查结果</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="fs-tbody"></tbody>
+          </table>
+        </section>
+
+        <section id="settings-section" class="panel">
+          <h2 class="section-title">系统设置 <span id="ss-current-sub" style="font-weight:normal; font-size: 0.8em; margin-left: 10px; color: #666;">文件格式限制</span></h2>
+          
+          <div id="settings-format-panel" class="settings-sub-panel active">
+            <div class="card">
+              <div class="card-head">
+                <div class="card-title">文件上传格式限制</div>
+              </div>
+              <div class="card-body">
+                <p class="muted" style="margin-bottom: 20px;">配置各类文件允许上传的扩展名（多个扩展名用逗号分隔，如 doc,docx）</p>
+                <table class="grid" aria-label="文件格式配置">
+                  <thead>
+                    <tr>
+                      <th>文件类型</th>
+                      <th>允许的扩展名</th>
+                      <th style="width: 100px;">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="settings-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div id="settings-project-panel" class="settings-sub-panel" style="display:none;">
+            <div class="toolbar">
+              <button id="btn-project-add" class="primary btn-wide" type="button">添加项目</button>
+            </div>
+            <table class="grid" aria-label="项目管理">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>标识</th>
+                  <th>项目名称</th>
+                  <th>有无模版</th>
+                  <th>模版文件名称</th>
+                  <th style="width: 120px;">操作</th>
+                </tr>
+              </thead>
+              <tbody id="settings-project-tbody"></tbody>
+            </table>
+          </div>
+        </section>
+
+      </main>
+    </div>
+    <div id="edit-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="edit-title">
+      <div class="modal-dialog">
+        <div id="edit-title" class="modal-title">编辑学生信息</div>
+        <div class="modal-body">
+          <label class="form-label">学号
+            <input id="em-username" type="text" class="input" readonly />
+          </label>
+          <label class="form-label">姓名
+            <input id="em-name" type="text" class="input" placeholder="姓名" />
+          </label>
+          <label class="form-label">班级
+            <input id="em-class" type="text" class="input" placeholder="班级" />
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button id="em-save" class="primary" type="button">保存</button>
+          <button id="em-cancel" class="btn-link" type="button">取消</button>
+        </div>
+      </div>
+    </div>
+    <div id="add-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="add-title">
+      <div class="modal-dialog">
+        <div id="add-title" class="modal-title">添加学生</div>
+        <div class="modal-body">
+          <label class="form-label">学号
+            <input id="am-username" type="text" class="input" placeholder="学号（纯数字）" />
+          </label>
+          <label class="form-label">姓名
+            <input id="am-name" type="text" class="input" placeholder="姓名" />
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button id="am-save" class="primary" type="button">添加</button>
+          <button id="am-cancel" class="btn-link" type="button">取消</button>
+        </div>
+      </div>
+    </div>
+    <div id="pwd-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="pwd-title">
+      <div class="modal-dialog">
+        <div id="pwd-title" class="modal-title">修改密码</div>
+        <div class="modal-body">
+          <label class="form-label">当前密码
+            <input id="pm-old" type="password" class="input" placeholder="请输入当前密码" />
+          </label>
+          <label class="form-label">新密码
+            <input id="pm-new" type="password" class="input" placeholder="请输入新密码（至少6位）" />
+          </label>
+          <label class="form-label">确认新密码
+            <input id="pm-confirm" type="password" class="input" placeholder="请再次输入新密码" />
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button id="pm-save" class="primary" type="button">确认修改</button>
+          <button id="pm-cancel" class="btn-link" type="button">取消</button>
+        </div>
+      </div>
+    </div>
+    <div id="project-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="project-title">
+      <div class="modal-dialog">
+        <div id="project-title" class="modal-title">项目信息</div>
+        <div class="modal-body">
+          <input type="hidden" id="proj-id" />
+          <label class="form-label">项目名称
+            <input id="proj-name" type="text" class="input" placeholder="如：岗位实习报告及考核表" />
+          </label>
+          <label class="form-label" style="display: flex; align-items: center; gap: 8px;">
+            <input id="proj-has-template" type="checkbox" />
+            有无模版
+          </label>
+          <label class="form-label" id="proj-template-filename-wrapper" style="display:none;">对应模版文件名称
+            <input id="proj-template-filename" type="text" class="input" placeholder="如：岗位实习报告及考核表（模板）.docx" />
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button id="proj-save" class="primary" type="button">保存</button>
+          <button id="proj-cancel" class="btn-link" type="button">取消</button>
+        </div>
+      </div>
+    </div>
+    <footer class="app-footer">
+      <p>备案号：<a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">浙ICP备2024065828号</a></p>
+    </footer>
+    <script src="js/vue.global.js"></script>
+    <script src="js/index.js"></script>
+    <script src="js/teacher-class.js"></script>
+    <script src="js/teacher-filestat.js"></script>
+    <script src="js/teacher-filemanage.js"></script>
+    <script src="js/teacher-settings.js"></script>
+    <script src="js/teacher-core.js"></script>
+  </body>
+  </html>

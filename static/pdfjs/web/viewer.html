@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>PDF Viewer</title>
+  <style>
+    body {
+      background-color: #525659;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      font-family: sans-serif;
+    }
+    #header {
+      background-color: #323639;
+      color: white;
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 40px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      z-index: 10;
+    }
+    #title {
+      font-size: 14px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 70%;
+    }
+    #viewer-container {
+      flex: 1;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+    .page-wrapper {
+      position: relative;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+      background-color: white;
+    }
+    .page {
+      display: block;
+      max-width: 100%;
+      height: auto;
+    }
+    .loading-page {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: #fff;
+      color: #999;
+      font-size: 14px;
+    }
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin-right: 20px;
+    }
+    .btn {
+      background: #555;
+      color: white;
+      border: none;
+      padding: 5px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .btn:hover { background: #666; }
+    .error {
+      color: #ffcccc;
+      margin-top: 50px;
+      text-align: center;
+    }
+  </style>
+  <script src="/static/lib/pdfjs/pdf.min.js"></script>
+  <script>
+    // Set worker source
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '/static/lib/pdfjs/pdf.worker.min.js';
+  </script>
+</head>
+<body>
+  <div id="header">
+    <div id="title">Loading...</div>
+    <div class="controls">
+      <button class="btn" onclick="rotateAll(-90)">⟲ 左转</button>
+      <button class="btn" onclick="rotateAll(90)">右转 ⟳</button>
+    </div>
+  </div>
+  <div id="viewer-container">
+    <div id="loading" class="loading" style="color:white;margin-top:50px;">正在初始化...</div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const file = params.get('file');
+    const container = document.getElementById('viewer-container');
+    const titleEl = document.getElementById('title');
+    const loadingEl = document.getElementById('loading');
+    
+    let currentRotation = 0;
+    let pdfDoc = null;
+
+    if (!file) {
+      showError('未指定文件');
+    } else {
+      let url = file;
+      if (!url.startsWith('http') && !url.startsWith('/')) {
+        url = '/' + url;
+      }
+      
+      titleEl.textContent = decodeURIComponent(url.split('/').pop());
+      loadPDF(url);
+    }
+
+    async function loadPDF(url) {
+      try {
+        // Use range requests if supported by server, allows partial loading
+        const loadingTask = pdfjsLib.getDocument({
+           url: url,
+           rangeChunkSize: 65536 * 2, // 128KB chunks
+           disableAutoFetch: true,    // Don't auto fetch everything
+           disableStream: true        // Use range requests
+        });
+        
+        // Progress callback
+        loadingTask.onProgress = function(progress) {
+             const percent = progress.total ? Math.round(progress.loaded / progress.total * 100) : 0;
+             if (loadingEl) loadingEl.textContent = `正在加载文档... ${percent}%`;
+        };
+
+        pdfDoc = await loadingTask.promise;
+        loadingEl.style.display = 'none';
+        
+        // Initialize placeholders for all pages
+        for (let i = 1; i <= pdfDoc.numPages; i++) {
+            createPagePlaceholder(i);
+        }
+        
+        // Start rendering pages one by one (waterfall)
+        // Or use IntersectionObserver for lazy loading.
+        // For "load as you go" behavior on slow network, 
+        // we can render visible pages first, but simple sequential is better than "wait for all".
+        // Let's implement a simple sequential queue that yields to UI
+        renderQueue(1);
+
+      } catch (error) {
+        console.error('Error loading PDF:', error);
+        showError('无法加载 PDF 文件: ' + error.message);
+      }
+    }
+    
+    function createPagePlaceholder(pageNum) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'page-wrapper';
+        wrapper.id = `page-wrapper-${pageNum}`;
+        // Default size estimation (A4 ratio approx) or just min-height
+        // We'll update size when page loads
+        wrapper.style.minHeight = '600px'; 
+        wrapper.style.width = '100%';
+        wrapper.style.maxWidth = '1000px'; // Match max width
+        
+        const loadingDiv = document.createElement('div');
+        loadingDiv.className = 'loading-page';
+        loadingDiv.textContent = `正在加载第 ${pageNum} 页...`;
+        loadingDiv.style.height = '100%';
+        
+        wrapper.appendChild(loadingDiv);
+        container.appendChild(wrapper);
+    }
+
+    async function renderQueue(pageNum) {
+        if (pageNum > pdfDoc.numPages) return;
+        
+        await renderPage(pdfDoc, pageNum);
+        
+        // Schedule next page with a small delay to allow UI updates
+        requestAnimationFrame(() => {
+            renderQueue(pageNum + 1);
+        });
+    }
+
+    async function renderPage(pdf, pageNum) {
+      const wrapper = document.getElementById(`page-wrapper-${pageNum}`);
+      if (!wrapper) return;
+      
+      try {
+        const page = await pdf.getPage(pageNum);
+        
+        // Calculate scale to fit width for EACH page, but cap at a reasonable max width
+        const containerWidth = container.clientWidth - 40; 
+        const targetWidth = Math.min(containerWidth, 1900); 
+        
+        // Consider rotation
+        const totalRotation = (page.rotate + currentRotation) % 360;
+        const unscaledViewport = page.getViewport({ scale: 1.0, rotation: totalRotation });
+        
+        const scale = targetWidth / unscaledViewport.width;
+        const viewport = page.getViewport({ scale, rotation: totalRotation });
+
+        // Clear wrapper (remove loading)
+        wrapper.innerHTML = '';
+        wrapper.style.minHeight = 'auto'; // Remove placeholder height
+
+        const canvas = document.createElement('canvas');
+        canvas.className = 'page';
+        canvas.dir = 'ltr'; // Ensure correct text rendering direction
+        const context = canvas.getContext('2d');
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        
+        // Set wrapper size to match canvas to prevent jumps
+        wrapper.style.width = viewport.width + 'px';
+        wrapper.style.height = viewport.height + 'px';
+
+        wrapper.appendChild(canvas);
+
+        const renderContext = {
+          canvasContext: context,
+          viewport: viewport
+        };
+        
+        await page.render(renderContext).promise;
+      } catch (err) {
+        console.error(`Page ${pageNum} render error:`, err);
+        wrapper.innerHTML = `<div class="error">第 ${pageNum} 页加载失败</div>`;
+      }
+    }
+    
+    function rotateAll(deg) {
+        currentRotation = (currentRotation + deg) % 360;
+        // Re-render visible pages or all pages?
+        // Simple approach: Clear and re-render all
+        // To avoid flicker, we could just re-render.
+        // Given performance concern, let's just reload the queue logic but update existing wrappers
+        
+        // Reset queue or just trigger re-render of all
+        // Let's clear container and restart renderQueue logic to keep it simple and robust
+        container.innerHTML = '';
+        if (pdfDoc) {
+             for (let i = 1; i <= pdfDoc.numPages; i++) {
+                createPagePlaceholder(i);
+            }
+            renderQueue(1);
+        }
+    }
+
+    function showError(msg) {
+      if(loadingEl) loadingEl.style.display = 'none';
+      const div = document.createElement('div');
+      div.className = 'error';
+      div.textContent = msg;
+      container.appendChild(div);
+    }
+  </script>
+</body>
+</html>

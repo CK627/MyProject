@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>文件上传系统 - 登录/注册</title>
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body class="auth-body">
+    <main class="auth-container auth-page">
+      <h1 class="app-title">文件上传系统</h1>
+
+      <div class="tabs">
+        <button id="tab-login" class="tab active" type="button">登录</button>
+        <button id="tab-grad" class="tab" type="button">毕业学生登录</button>
+        <button id="tab-teacher" class="tab" type="button">教师登录</button>
+        <button id="tab-register" class="tab" type="button">注册</button>
+      </div>
+
+      <div class="panel-container">
+        <section id="login-section" class="panel active">
+          <form id="login-form" class="form" autocomplete="off">
+            <div class="form-row">
+              <label for="login-username">用户名</label>
+              <input id="login-username" name="login_username" type="text" required maxlength="64" autocomplete="username" />
+            </div>
+            <div class="form-row">
+              <label for="login-password">密码</label>
+              <input id="login-password" name="login_password" type="password" required maxlength="255" autocomplete="current-password" />
+            </div>
+            <button class="primary" type="submit">登录</button>
+            <div class="form-row align-right">
+              <button id="forgot-password" class="text-link" type="button">忘记密码</button>
+            </div>
+          </form>
+        </section>
+
+        <section id="grad-section" class="panel">
+          <form id="grad-form" class="form" autocomplete="off">
+            <div class="form-row">
+              <label for="grad-username">学号</label>
+              <input id="grad-username" name="grad_username" type="text" required maxlength="64" inputmode="numeric" pattern="\d+" placeholder="仅学号" autocomplete="username" />
+            </div>
+            <button class="primary" type="submit">毕业学生登录</button>
+          </form>
+        </section>
+
+        <section id="teacher-section" class="panel">
+          <form id="teacher-form" class="form" autocomplete="off">
+            <div class="form-row">
+              <label for="teacher-username">用户名</label>
+              <input id="teacher-username" name="teacher_username" type="text" required maxlength="64" autocomplete="username" />
+            </div>
+            <div class="form-row">
+              <label for="teacher-password">密码</label>
+              <input id="teacher-password" name="teacher_password" type="password" required maxlength="255" autocomplete="current-password" />
+            </div>
+            <button class="primary" type="submit">教师登录</button>
+          </form>
+        </section>
+
+        <section id="register-section" class="panel">
+          <form id="register-form" class="form" autocomplete="off">
+            <div class="form-row">
+              <label for="register-username">用户名</label>
+              <input id="register-username" name="register_username" type="text" required maxlength="64" inputmode="numeric" pattern="\d+" placeholder="仅数字" autocomplete="username" />
+            </div>
+            <div class="form-row">
+              <label for="register-password">密码</label>
+              <input id="register-password" name="register_password" type="password" required maxlength="255" autocomplete="new-password" />
+            </div>
+            <div class="form-row">
+              <label for="register-password2">确认密码</label>
+              <input id="register-password2" name="register_password2" type="password" required maxlength="255" autocomplete="new-password" />
+            </div>
+            <button class="primary" type="submit">注册</button>
+          </form>
+        </section>
+      </div>
+
+      <p id="message" class="message" role="alert" aria-live="polite"></p>
+    </main>
+
+    <footer class="app-footer">
+      <p>备案号：<a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer">浙ICP备2024065828号</a></p>
+    </footer>
+
+    <script src="js/index.js"></script>
+    <script src="js/auth.js"></script>
+  </body>
+</html>
