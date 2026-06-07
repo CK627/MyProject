@@ -98,6 +98,8 @@ jtool - 统一 Java 版本管理工具
   jtool scan                          扫描 Java 路径，更新配置
   jtool config                        显示配置
   jtool install                       完整安装
+  jtool update                        检查并更新 jtool 到最新版本
+  jtool shim                          重建 shim 脚本
   jtool help                          帮助
 
 示例:
@@ -240,6 +242,8 @@ case "$1" in
     scan)     do_scan "$CONFIG_FILE"; exit $? ;;
     config)   do_config "$CONFIG_FILE"; exit 0 ;;
     install)  do_install "$PROJECT_DIR"; exit $? ;;
+    update)   do_update "jtool" "jtool" "https://github.com/CK627/MyProject.git" "$(get_install_dir)" "$CONFIG_FILE"; exit $? ;;
+    shim)     do_create_shims "$CONFIG_FILE"; exit $? ;;
 esac
 
 # 运行工具

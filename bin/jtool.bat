@@ -52,6 +52,8 @@ if "%~1"=="run" goto :cmd_run
 if "%~1"=="scan" goto :cmd_scan
 if "%~1"=="config" goto :cmd_config
 if "%~1"=="install" goto :cmd_install
+if "%~1"=="update" goto :cmd_update
+if "%~1"=="shim" goto :cmd_shim
 
 REM 运行工具
 set "tool=%~1"
@@ -150,6 +152,8 @@ echo   jtool run ^<版本号^> ^<java文件^>       编译并运行
 echo   jtool scan                          扫描 Java 路径
 echo   jtool config                        显示配置
 echo   jtool install                       完整安装
+echo   jtool update                        检查并更新 jtool
+echo   jtool shim                          重建 shim 脚本
 echo   jtool help                          帮助
 exit /b 0
 
@@ -272,3 +276,90 @@ REM ============================================
 :cmd_install
 call "%INSTALL_MODULE%"
 exit /b !errorlevel!
+
+REM ============================================
+REM update
+REM ============================================
+:cmd_update
+where git >nul 2>&1
+if !errorlevel! neq 0 (
+    echo 错误: 未找到 git 命令，请先安装 Git for Windows
+    echo 下载地址: https://git-scm.com/download/win
+    exit /b 1
+)
+
+set "REPO_DIR=%USERPROFILE%\.jtool\repo"
+
+if not exist "!REPO_DIR!\.git" (
+    echo 首次更新，正在克隆仓库...
+    git clone --branch jtool --single-branch https://github.com/CK627/MyProject.git "!REPO_DIR!"
+    if !errorlevel! neq 0 ( echo 克隆失败 & exit /b 1 )
+)
+
+echo 正在检查更新...
+git -C "!REPO_DIR!" fetch origin jtool 2>nul
+if !errorlevel! neq 0 ( echo 获取更新失败，请检查网络 & exit /b 1 )
+
+for /f %%a in ('git -C "!REPO_DIR!" rev-parse HEAD') do set "LOCAL_SHA=%%a"
+for /f %%a in ('git -C "!REPO_DIR!" rev-parse origin/jtool') do set "REMOTE_SHA=%%a"
+
+if "!LOCAL_SHA!"=="!REMOTE_SHA!" (
+    echo 已是最新版本
+    exit /b 0
+)
+
+git -C "!REPO_DIR!" checkout jtool 2>nul
+git -C "!REPO_DIR!" pull origin jtool
+if !errorlevel! neq 0 ( echo 拉取更新失败 & exit /b 1 )
+
+copy /y "!REPO_DIR!\bin\jtool.bat" "%BIN_DIR%\" >nul
+copy /y "!REPO_DIR!\module\install.sh" "%MODULE_DIR%\" >nul
+if not exist "%CONFIG_FILE%" copy "!REPO_DIR!\config\jtool.conf" "%CONFIG_DIR%\" >nul
+
+echo 更新完成！
+echo   旧版本: !LOCAL_SHA:~0,7!
+echo   新版本: !REMOTE_SHA:~0,7!
+exit /b 0
+
+REM ============================================
+REM shim
+REM ============================================
+:cmd_shim
+set "SHIMS_DIR=%USERPROFILE%\.jtool\shims"
+if not exist "!SHIMS_DIR!" mkdir "!SHIMS_DIR!"
+
+for %%t in (java javac jar jshell javadoc javap) do (
+    (
+        echo @echo off
+        echo REM jtool shim - auto generated
+        echo set "CONFIG_FILE=%CONFIG_FILE%"
+        echo set "JAVA_BASE_DIR="
+        echo set "JTOOL_DEFAULT_VERSION="
+        echo if exist "%%CONFIG_FILE%%" ^(
+        echo     for /f "usebackq tokens=1,* delims==" %%%%a in ^("%%CONFIG_FILE%%"^) do ^(
+        echo         set "key=%%%%a"
+        echo         set "val=%%%%b"
+        echo         if not "!key:~0,1!"=="#" if not "!key!"=="" ^(
+        echo             set "val=!val:"=!"
+        echo             if "!key!"=="JAVA_BASE_DIR" set "JAVA_BASE_DIR=!val!"
+        echo             if "!key!"=="JTOOL_DEFAULT_VERSION" set "JTOOL_DEFAULT_VERSION=!val!"
+        echo         ^)
+        echo     ^)
+        echo ^)
+        echo if "!JTOOL_DEFAULT_VERSION!"=="" ^(
+        echo     echo jtool: 未设置默认版本，请运行 jtool use ^<版本号^>
+        echo     exit /b 1
+        echo ^)
+        echo set "VER=!JTOOL_DEFAULT_VERSION!"
+        echo if "!VER!"=="8" set "VER=1.8"
+        echo set "JDK_HOME=!JAVA_BASE_DIR!\jdk-!VER!.jdk\Contents\Home"
+        echo if not exist "!JDK_HOME!\bin\%%t.exe" ^(
+        echo     echo jtool: JDK !JTOOL_DEFAULT_VERSION! 没有 %%t
+        echo     exit /b 1
+        echo ^)
+        echo "!JDK_HOME!\bin\%%t.exe" %%*
+    ) > "!SHIMS_DIR!\%%t.bat"
+)
+
+echo Shim 已创建: !SHIMS_DIR!
+exit /b 0
