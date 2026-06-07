@@ -121,9 +121,11 @@ do_update() {
     local new_sha
     new_sha=$(git -C "$repo_dir" rev-parse HEAD)
     local short_sha="${new_sha:0:7}"
-    sed -i.bak "/^${tool_name^^}_VERSION/d" "$config_file" 2>/dev/null
+    local version_key
+    version_key=$(echo "${tool_name}_VERSION" | tr 'a-z' 'A-Z')
+    sed -i.bak "/^${version_key}/d" "$config_file" 2>/dev/null
     rm -f "${config_file}.bak" 2>/dev/null
-    echo "${tool_name^^}_VERSION=\"$short_sha\"" >> "$config_file"
+    echo "${version_key}=\"$short_sha\"" >> "$config_file"
 
     # Step 7: 输出结果
     echo "更新完成！"
