@@ -94,21 +94,39 @@ do_update() {
     echo "正在检查更新..."
     git -C "$repo_dir" fetch origin "$branch" 2>/dev/null || { echo "获取更新失败，请检查网络"; return 1; }
 
-    # Step 3: 比较 SHA
-    local local_sha remote_sha
-    local_sha=$(git -C "$repo_dir" rev-parse HEAD 2>/dev/null)
-    remote_sha=$(git -C "$repo_dir" rev-parse "origin/$branch" 2>/dev/null)
+    # Step 3: 从远程获取版本号
+    local remote_version
+    remote_version=$(git -C "$repo_dir" show "origin/$branch:VERSION" 2>/dev/null | tr -d '[:space:]')
+    if [ -z "$remote_version" ]; then
+        echo "错误: 无法获取远程版本号"
+        return 1
+    fi
 
-    if [ "$local_sha" = "$remote_sha" ]; then
-        echo "已是最新版本"
+    # Step 4: 获取本地版本号
+    local version_key
+    version_key=$(echo "${tool_name}_VERSION" | tr 'a-z' 'A-Z')
+    local local_version=""
+    if [ -f "$config_file" ]; then
+        local_version=$(grep "^${version_key}=" "$config_file" 2>/dev/null | cut -d'"' -f2)
+    fi
+
+    # 首次安装（本地无版本号）时，从本地仓库读取
+    if [ -z "$local_version" ] && [ -f "$repo_dir/VERSION" ]; then
+        local_version=$(cat "$repo_dir/VERSION" | tr -d '[:space:]')
+    fi
+
+    if [ "$local_version" = "$remote_version" ]; then
+        echo "已是最新版本 (v$local_version)"
         return 0
     fi
 
-    # Step 4: pull
+    echo "发现新版本: v${local_version:-未知} → v$remote_version"
+
+    # Step 5: pull
     git -C "$repo_dir" checkout "$branch" 2>/dev/null
     git -C "$repo_dir" pull origin "$branch" || { echo "拉取更新失败"; return 1; }
 
-    # Step 5: 复制文件到安装目录（保留用户配置）
+    # Step 6: 复制文件到安装目录（保留用户配置）
     sudo cp "$repo_dir/bin/${tool_name}.sh" "$install_dir/bin/"
     sudo cp "$repo_dir/module/common.sh" "$install_dir/module/"
     sudo chmod +x "$install_dir/bin/${tool_name}.sh"
@@ -118,20 +136,20 @@ do_update() {
         sudo cp "$repo_dir/config/${tool_name}.conf" "$config_file"
     fi
 
-    # Step 6: 记录版本
-    local new_sha
-    new_sha=$(git -C "$repo_dir" rev-parse HEAD)
-    local short_sha="${new_sha:0:7}"
-    local version_key
-    version_key=$(echo "${tool_name}_VERSION" | tr 'a-z' 'A-Z')
-    sed -i.bak "/^${version_key}/d" "$config_file" 2>/dev/null
-    rm -f "${config_file}.bak" 2>/dev/null
-    echo "${version_key}=\"$short_sha\"" >> "$config_file"
+    # Step 7: 记录版本到配置文件
+    if [ -w "$config_file" ]; then
+        sed -i.bak "/^${version_key}/d" "$config_file" 2>/dev/null
+        rm -f "${config_file}.bak" 2>/dev/null
+        echo "${version_key}=\"$remote_version\"" >> "$config_file"
+    else
+        sudo sed -i.bak "/^${version_key}/d" "$config_file" 2>/dev/null
+        sudo rm -f "${config_file}.bak" 2>/dev/null
+        echo "${version_key}=\"$remote_version\"" | sudo tee -a "$config_file" > /dev/null
+    fi
 
-    # Step 7: 输出结果
+    # Step 8: 输出结果
     echo "更新完成！"
-    echo "  旧版本: ${local_sha:0:7}"
-    echo "  新版本: $short_sha"
+    echo "  版本: v${local_version:-未知} → v$remote_version"
 }
 
 do_create_shims() {
@@ -216,6 +234,12 @@ do_install() {
     echo "[3/5] 扫描 Python..."
     do_scan "$config_file"
     sudo chmod 666 "$config_file"
+    # 写入版本号
+    if [ -f "$script_dir/VERSION" ]; then
+        local ver
+        ver=$(cat "$script_dir/VERSION" | tr -d '[:space:]')
+        echo "PTOOL_VERSION=\"$ver\"" >> "$config_file"
+    fi
     echo ""
 
     echo "[4/5] 创建 shim..."
