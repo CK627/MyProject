@@ -124,15 +124,9 @@ cmd_use() {
         return 1
     fi
 
-    if [ -w "$CONFIG_FILE" ]; then
-        sed -i.bak '/^JTOOL_DEFAULT_VERSION/d' "$CONFIG_FILE"
-        rm -f "$CONFIG_FILE.bak"
-        echo "JTOOL_DEFAULT_VERSION=\"$version\"" >> "$CONFIG_FILE"
-    else
-        sudo sed -i.bak '/^JTOOL_DEFAULT_VERSION/d' "$CONFIG_FILE"
-        sudo rm -f "$CONFIG_FILE.bak"
-        echo "JTOOL_DEFAULT_VERSION=\"$version\"" | sudo tee -a "$CONFIG_FILE" > /dev/null
-    fi
+    sudo sed -i.bak '/^JTOOL_DEFAULT_VERSION/d' "$CONFIG_FILE"
+    sudo rm -f "$CONFIG_FILE.bak"
+    echo "JTOOL_DEFAULT_VERSION=\"$version\"" | sudo tee -a "$CONFIG_FILE" > /dev/null
     JTOOL_DEFAULT_VERSION="$version"
 
     echo "已设置默认版本: $version"
