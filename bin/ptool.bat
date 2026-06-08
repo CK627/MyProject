@@ -258,7 +258,7 @@ if !errorlevel! neq 0 (
     exit /b 1
 )
 
-set "REPO_DIR=%USERPROFILE%\.ptool\repo"
+set "REPO_DIR=%USERPROFILE%\.devtools\ptool\repo"
 
 if not exist "!REPO_DIR!\.git" (
     echo 首次更新，正在克隆仓库...
@@ -295,7 +295,7 @@ REM ============================================
 REM shim
 REM ============================================
 :cmd_shim
-set "SHIMS_DIR=%USERPROFILE%\.ptool\shims"
+set "SHIMS_DIR=%USERPROFILE%\.devtools\ptool\shims"
 if not exist "!SHIMS_DIR!" mkdir "!SHIMS_DIR!"
 
 for %%t in (python python3 pip pip3) do (

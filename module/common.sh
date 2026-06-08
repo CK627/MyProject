@@ -154,7 +154,7 @@ do_update() {
 
 do_create_shims() {
     local config_file="$1"
-    local shims_dir="$HOME/.ptool/shims"
+    local shims_dir="$HOME/.devtools/ptool/shims"
 
     mkdir -p "$shims_dir"
 
@@ -247,7 +247,7 @@ do_install() {
     echo ""
 
     echo "[5/5] 配置 PATH..."
-    local shims_dir="$HOME/.ptool/shims"
+    local shims_dir="$HOME/.devtools/ptool/shims"
     local shell_rc="$HOME/.zshrc"
     [ -f "$HOME/.bashrc" ] && shell_rc="$HOME/.bashrc"
 
@@ -297,14 +297,14 @@ do_uninstall() {
     fi
 
     # 清理 shims
-    local shims_dir="$HOME/.ptool/shims"
+    local shims_dir="$HOME/.devtools/ptool/shims"
     if [ -d "$shims_dir" ]; then
         rm -rf "$shims_dir"
         echo "已删除: $shims_dir"
     fi
 
     # 清理 .repo 目录
-    local repo_dir="$HOME/.ptool/repo"
+    local repo_dir="$HOME/.devtools/ptool/repo"
     if [ -d "$repo_dir" ]; then
         rm -rf "$repo_dir"
         echo "已删除: $repo_dir"
