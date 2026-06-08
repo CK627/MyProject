@@ -288,7 +288,7 @@ if !errorlevel! neq 0 (
     exit /b 1
 )
 
-set "REPO_DIR=%USERPROFILE%\.jtool\repo"
+set "REPO_DIR=%USERPROFILE%\.devtools\jtool\repo"
 
 if not exist "!REPO_DIR!\.git" (
     echo 首次更新，正在克隆仓库...
@@ -325,7 +325,7 @@ REM ============================================
 REM shim
 REM ============================================
 :cmd_shim
-set "SHIMS_DIR=%USERPROFILE%\.jtool\shims"
+set "SHIMS_DIR=%USERPROFILE%\.devtools\jtool\shims"
 if not exist "!SHIMS_DIR!" mkdir "!SHIMS_DIR!"
 
 for %%t in (java javac jar jshell javadoc javap) do (
