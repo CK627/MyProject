@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" href="images/favicon.ico" type="image/x-icon">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="宁波景点大全：天一阁、东钱湖、溪口雪窦山等自然风光、人文古迹与红色研学景点推荐。">
+  <title>景点推荐 — 宁波旅游</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/common.css?v=20260220b">
+  <link rel="stylesheet" href="css/scenic.css">
+</head>
+<body>
+
+  <!-- Hero -->
+  <section class="hero hero--small">
+    <div class="hero__bg">
+      <img src="images/index/hero.png" alt="宁波景点">
+    </div>
+    <div class="hero__overlay hero__overlay--scenic"></div>
+    <div class="hero__content">
+      <h1 class="hero__title">探索宁波景点</h1>
+      <p class="hero__subtitle">山水人文交融，每一处都是风景</p>
+    </div>
+  </section>
+
+  <!-- 搜索 & 标签 -->
+  <section class="section">
+    <div class="container">
+      <div class="search-box">
+        <span class="search-box__icon">🔍</span>
+        <input type="text" class="search-box__input" id="scenicSearch" placeholder="搜索景点名称...">
+      </div>
+      <div class="tabs" id="scenicTabs">
+        <button class="tab tab--active" data-category="all">全部景点</button>
+        <button class="tab" data-category="自然风光">自然风光</button>
+        <button class="tab" data-category="人文古迹">人文古迹</button>
+        <button class="tab" data-category="红色研学">红色研学</button>
+      </div>
+
+      <!-- 加载状态 -->
+      <div class="scenic-loading" id="scenicLoading" style="text-align:center;padding:var(--space-12);color:var(--color-text-muted);">
+        正在加载景点数据...
+      </div>
+
+      <!-- 景点列表（由JS动态渲染） -->
+      <div class="scenic-grid" id="scenicGrid"></div>
+    </div>
+  </section>
+
+  <script src="js/common.js?v=20260220b"></script>
+  <script src="js/scenic.js"></script>
+</body>
+</html>

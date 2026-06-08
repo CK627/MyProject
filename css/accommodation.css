@@ -1,0 +1,26 @@
+/* accommodation.css — 住宿页专属样式 */
+
+.tip-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+  border: 1px solid var(--color-border-light);
+  transition: all var(--transition-base);
+}
+
+.tip-card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.tip-card__title {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: var(--space-3);
+}
+
+.tip-card__desc {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  line-height: var(--line-height-relaxed);
+}

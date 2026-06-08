@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <link rel="icon" href="images/favicon.ico" type="image/x-icon">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="宁波美食推荐：海鲜大餐、宁波汤圆、年糕、老字号小吃等地道宁波味道。">
+  <title>美食推荐 — 宁波旅游</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/common.css?v=20260220b">
+  <link rel="stylesheet" href="css/food.css">
+</head>
+<body>
+
+  <section class="hero hero--small">
+    <div class="hero__bg">
+      <img src="images/food/seafood.png" alt="宁波美食">
+    </div>
+    <div class="hero__overlay hero__overlay--food"></div>
+    <div class="hero__content">
+      <h1 class="hero__title">宁波味道</h1>
+      <p class="hero__subtitle">一城鲜味，味蕾上的千年传承</p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container">
+
+      <!-- 海鲜 -->
+      <div class="food-category" id="seafood" data-animate="fade-in-up">
+        <h2 class="food-category__title">🦀 海鲜</h2>
+        <div class="grid grid--3" data-food-category="海鲜">
+          <div class="loading-hint">加载中...</div>
+        </div>
+      </div>
+
+      <!-- 传统小吃 -->
+      <div class="food-category" id="snacks" data-animate="fade-in-up">
+        <h2 class="food-category__title">🍜 传统小吃</h2>
+        <div class="grid grid--3" data-food-category="传统小吃">
+          <div class="loading-hint">加载中...</div>
+        </div>
+      </div>
+
+      <!-- 糕点甜品 -->
+      <div class="food-category" id="dessert" data-animate="fade-in-up">
+        <h2 class="food-category__title">🍰 糕点甜品</h2>
+        <div class="grid grid--3" data-food-category="糕点甜品">
+          <div class="loading-hint">加载中...</div>
+        </div>
+      </div>
+
+      <!-- 特色菜肴 -->
+      <div class="food-category" id="dishes" data-animate="fade-in-up">
+        <h2 class="food-category__title">🍲 特色菜肴</h2>
+        <div class="grid grid--3" data-food-category="特色菜肴">
+          <div class="loading-hint">加载中...</div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- 美食地图提示 -->
+  <section class="section section--alt">
+    <div class="container">
+      <div class="section-header" data-animate="fade-in-up">
+        <h2 class="section-title">美食聚集地</h2>
+        <p class="section-subtitle">这些地方，一站吃遍宁波味道</p>
+      </div>
+      <div class="grid grid--3" data-animate="fade-in-up" data-delay="0.2">
+        <div class="food-spot">
+          <h4 class="food-spot__name">🏮 南塘老街</h4>
+          <p class="food-spot__desc">汇聚缸鸭狗、赵大有等老字号，还有各类宁波小吃。古色古香的街道氛围极佳。</p>
+          <span class="food-spot__loc">📍 海曙区南塘河畔</span>
+        </div>
+        <div class="food-spot">
+          <h4 class="food-spot__name">🏯 城隍庙步行街</h4>
+          <p class="food-spot__desc">宁波最热闹的商业美食街区，海鲜大排档、地方小吃应有尽有，夜市氛围浓厚。</p>
+          <span class="food-spot__loc">📍 海曙区县学街</span>
+        </div>
+        <div class="food-spot">
+          <h4 class="food-spot__name">🌊 东海渔村</h4>
+          <p class="food-spot__desc">石浦、象山一带的渔村，可以品尝到最新鲜的海鲜。船上直卖，现捞现做。</p>
+          <span class="food-spot__loc">📍 象山县石浦</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script src="js/common.js?v=20260220b"></script>
+  <script src="js/food.js"></script>
+</body>
+</html>

@@ -1,0 +1,41 @@
+<?php
+/**
+ * 数据库配置文件模板
+ * 使用 PDO 连接 MySQL 数据库
+ */
+
+// 数据库配置
+define('DB_HOST', '<DB_HOST>');
+define('DB_NAME', '<DB_NAME>');
+define('DB_USER', '<DB_USER>');
+define('DB_PASS', '<DB_PASSWORD>');
+define('DB_CHARSET', 'utf8mb4');
+
+/**
+ * 获取 PDO 数据库连接实例
+ * 
+ * @return PDO|null 返回 PDO 实例，连接失败则返回 null
+ */
+function getDBConnection() {
+    static $pdo = null;
+
+    if ($pdo === null) {
+        $dsn = 'mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=' . DB_CHARSET;
+        $options = [
+            PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION, // 抛出异常
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,       // 默认获取关联数组
+            PDO::ATTR_EMULATE_PREPARES   => false,                  // 禁用模拟预处理，提高安全性
+        ];
+
+        try {
+            $pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
+        } catch (PDOException $e) {
+            // 生产环境中，不应直接输出错误信息，应记录到日志文件
+            error_log("数据库连接失败: " . $e->getMessage());
+            die("系统错误，请稍后再试。");
+        }
+    }
+
+    return $pdo;
+}
+?>

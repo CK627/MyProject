@@ -1,0 +1,106 @@
+/* transport.css — 交通页专属样式 */
+
+.transport-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.transport-card {
+  display: flex;
+  gap: var(--space-5);
+  padding: var(--space-6);
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border-light);
+  transition: all 0.25s ease;
+}
+.transport-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+  border-color: var(--color-primary);
+}
+.transport-card__icon {
+  font-size: 2rem;
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-primary-bg);
+  border-radius: var(--radius-md);
+}
+
+.loading-hint {
+  text-align: center;
+  padding: var(--space-8);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.transport-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.transport-info-card {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+  border: 1px solid var(--color-border-light);
+}
+
+.transport-info-card__title {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  color: var(--color-text);
+  margin-bottom: var(--space-3);
+}
+
+.transport-info-card__desc {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  line-height: var(--line-height-relaxed);
+  margin-bottom: var(--space-5);
+}
+
+.transport-tips {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+
+.transport-tip {
+  background: var(--color-primary-bg);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.transport-tip strong {
+  display: block;
+  font-size: var(--font-size-sm);
+  color: var(--color-primary-dark);
+  margin-bottom: var(--space-2);
+}
+
+.transport-tip p {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  line-height: var(--line-height-relaxed);
+  margin: 0;
+}
+
+@media (max-width: 768px) {
+  .transport-card {
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .transport-card__icon {
+    width: 48px;
+    height: 48px;
+    font-size: 1.5rem;
+  }
+}

@@ -1,0 +1,90 @@
+/* guestbook.css — 留言板专属样式 */
+
+.guestbook-layout {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr;
+  gap: var(--space-10);
+  align-items: start;
+}
+
+.guestbook-form-wrapper {
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
+  padding: var(--space-8);
+  border: 1px solid var(--color-border-light);
+  position: sticky;
+  top: calc(var(--navbar-height) + var(--space-6));
+}
+
+.guestbook-form__title {
+  font-family: var(--font-display);
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  color: var(--color-text);
+  margin-bottom: var(--space-6);
+  letter-spacing: 0.03em;
+}
+
+.guestbook-form__submit {
+  width: 100%;
+}
+
+.char-count {
+  text-align: right;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+  margin-top: var(--space-1);
+}
+
+/* 留言列表 */
+.guestbook-list__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-6);
+}
+
+.guestbook-list__title {
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+}
+
+.guestbook-list__count {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  background: var(--color-bg-alt);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+}
+
+.guestbook-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.guestbook-empty {
+  text-align: center;
+  padding: var(--space-12) var(--space-6);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  background: var(--color-bg-alt);
+  border-radius: var(--radius-lg);
+}
+
+/* 单条留言 */
+.message-card {
+  animation: fadeInUp 0.4s ease-out;
+}
+
+@media (max-width: 768px) {
+  .guestbook-layout {
+    grid-template-columns: 1fr;
+    gap: var(--space-6);
+  }
+
+  .guestbook-form-wrapper {
+    position: static;
+    padding: var(--space-6);
+  }
+}

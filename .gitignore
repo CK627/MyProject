@@ -1,0 +1,14 @@
+# 忽略文件与目录
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Qoder 缓存
+.qoder/
+
+# Vibe 生成的图片缓存 (如果不希望上传)
+vibe_images/
+
+# PHP 和服务器日志
+*.log
