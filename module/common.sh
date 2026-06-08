@@ -81,38 +81,40 @@ do_update() {
     local install_dir="$4"
     local config_file="$5"
 
-    local repo_dir="$HOME/.${tool_name}/repo"
+    local repo_dir="$HOME/.devtools/${tool_name}/repo"
+    local version_key
+    version_key=$(echo "${tool_name}_VERSION" | tr 'a-z' 'A-Z')
 
     # Step 1: 确保仓库存在
+    local fresh_clone=0
     if [ ! -d "$repo_dir/.git" ]; then
         echo "首次更新，正在克隆仓库..."
         mkdir -p "$(dirname "$repo_dir")"
         git clone --branch "$branch" --single-branch --depth 1 "$remote_url" "$repo_dir" || { echo "克隆失败"; return 1; }
+        fresh_clone=1
     fi
 
-    # Step 2: fetch
-    echo "正在检查更新..."
-    git -C "$repo_dir" fetch origin "$branch" 2>/dev/null || { echo "获取更新失败，请检查网络"; return 1; }
+    # Step 2: 获取远程版本号
+    local remote_version=""
+    if [ "$fresh_clone" -eq 1 ]; then
+        # 刚克隆完，直接读本地文件
+        remote_version=$(cat "$repo_dir/VERSION" 2>/dev/null | tr -d '[:space:]')
+    else
+        # 已有仓库，fetch 后读远程
+        echo "正在检查更新..."
+        git -C "$repo_dir" fetch origin "$branch" 2>/dev/null || { echo "获取更新失败，请检查网络"; return 1; }
+        remote_version=$(git -C "$repo_dir" show "origin/$branch:VERSION" 2>/dev/null | tr -d '[:space:]')
+    fi
 
-    # Step 3: 从远程获取版本号
-    local remote_version
-    remote_version=$(git -C "$repo_dir" show "origin/$branch:VERSION" 2>/dev/null | tr -d '[:space:]')
     if [ -z "$remote_version" ]; then
-        echo "错误: 无法获取远程版本号"
+        echo "错误: 无法获取版本号"
         return 1
     fi
 
-    # Step 4: 获取本地版本号
-    local version_key
-    version_key=$(echo "${tool_name}_VERSION" | tr 'a-z' 'A-Z')
+    # Step 3: 获取本地版本号
     local local_version=""
     if [ -f "$config_file" ]; then
         local_version=$(grep "^${version_key}=" "$config_file" 2>/dev/null | cut -d'"' -f2)
-    fi
-
-    # 首次安装（本地无版本号）时，从本地仓库读取
-    if [ -z "$local_version" ] && [ -f "$repo_dir/VERSION" ]; then
-        local_version=$(cat "$repo_dir/VERSION" | tr -d '[:space:]')
     fi
 
     if [ "$local_version" = "$remote_version" ]; then
@@ -122,11 +124,13 @@ do_update() {
 
     echo "发现新版本: v${local_version:-未知} → v$remote_version"
 
-    # Step 5: pull
-    git -C "$repo_dir" checkout "$branch" 2>/dev/null
-    git -C "$repo_dir" pull origin "$branch" || { echo "拉取更新失败"; return 1; }
+    # Step 4: 拉取最新代码（非首次克隆时需要）
+    if [ "$fresh_clone" -eq 0 ]; then
+        git -C "$repo_dir" checkout "$branch" 2>/dev/null
+        git -C "$repo_dir" pull origin "$branch" || { echo "拉取更新失败"; return 1; }
+    fi
 
-    # Step 6: 复制文件到安装目录（保留用户配置）
+    # Step 5: 复制文件到安装目录（保留用户配置）
     sudo cp "$repo_dir/bin/${tool_name}.sh" "$install_dir/bin/"
     sudo cp "$repo_dir/module/common.sh" "$install_dir/module/"
     sudo chmod +x "$install_dir/bin/${tool_name}.sh"
@@ -136,7 +140,7 @@ do_update() {
         sudo cp "$repo_dir/config/${tool_name}.conf" "$config_file"
     fi
 
-    # Step 7: 记录版本到配置文件
+    # Step 6: 记录版本到配置文件
     if [ -w "$config_file" ]; then
         sed -i.bak "/^${version_key}/d" "$config_file" 2>/dev/null
         rm -f "${config_file}.bak" 2>/dev/null
@@ -147,7 +151,7 @@ do_update() {
         echo "${version_key}=\"$remote_version\"" | sudo tee -a "$config_file" > /dev/null
     fi
 
-    # Step 8: 输出结果
+    # Step 7: 输出结果
     echo "更新完成！"
     echo "  版本: v${local_version:-未知} → v$remote_version"
 }
