@@ -86,7 +86,7 @@ do_update() {
     if [ ! -d "$repo_dir/.git" ]; then
         echo "首次更新，正在克隆仓库..."
         mkdir -p "$(dirname "$repo_dir")"
-        git clone --branch "$branch" --single-branch "$remote_url" "$repo_dir" || { echo "克隆失败"; return 1; }
+        git clone --branch "$branch" --single-branch --depth 1 "$remote_url" "$repo_dir" || { echo "克隆失败"; return 1; }
     fi
 
     # Step 2: fetch
