@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>照片直播 - 手机版</title>
+    <link href="../css/mobile.css" rel="stylesheet">
+    <!-- 页面状态检查 -->
+    <script src="../js/page-status.js"></script>
+    
+    <script>
+        // 页面初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            initializePage();
+        });
+
+        // 监听页面内容准备就绪事件
+        document.addEventListener('mobilePageContentReady', function() {
+            // 页面状态检查通过，开始倒计时
+            startCountdown();
+        });
+
+        // 初始化页面
+        function initializePage() {
+            // 页面状态检查会自动执行，这里只需要设置其他初始化逻辑
+            setupNetworkListeners();
+        }
+
+        // 设置网络状态监听
+        function setupNetworkListeners() {
+            window.addEventListener('online', function() {
+                console.log('网络已连接');
+            });
+
+            window.addEventListener('offline', function() {
+                showErrorMessage('网络连接已断开，请检查网络设置');
+            });
+        }
+
+        // 显示错误信息
+        function showErrorMessage(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.style.cssText = `
+                position: fixed;
+                top: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: #ff4444;
+                color: white;
+                padding: 10px 20px;
+                border-radius: 5px;
+                z-index: 9999;
+                font-size: 14px;
+            `;
+            errorDiv.textContent = message;
+            document.body.appendChild(errorDiv);
+            
+            setTimeout(() => {
+                document.body.removeChild(errorDiv);
+            }, 3000);
+        }
+    </script>
+    <style>
+        .redirect-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+            text-align: center;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .redirect-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        
+        .redirect-text {
+            font-size: 1.2rem;
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+        
+        .countdown {
+            font-size: 2rem;
+            font-weight: bold;
+            margin-bottom: 20px;
+            color: #ffd700;
+        }
+        
+        .manual-link {
+            display: inline-block;
+            padding: 12px 24px;
+            background: rgba(255,255,255,0.2);
+            color: white;
+            text-decoration: none;
+            border-radius: 25px;
+            border: 2px solid rgba(255,255,255,0.3);
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+        
+        .manual-link:hover {
+            background: rgba(255,255,255,0.3);
+            color: white;
+            transform: translateY(-2px);
+        }
+    </style>
+</head>
+<body>
+    <div class="redirect-container">
+        <div class="redirect-icon">📸</div>
+        <h1>照片直播</h1>
+        <div class="redirect-text">
+            正在为您跳转到照片直播页面...<br>
+            即将展示活动精彩瞬间
+        </div>
+        <div class="countdown" id="countdown">3</div>
+        <a href="https://m.alltuu.com/album/2276504408/" class="manual-link" id="manualLink">
+            <i class="fas fa-external-link-alt"></i> 点击直接进入
+        </a>
+    </div>
+    
+    <script>
+        // 倒计时和自动跳转逻辑
+        function startCountdown() {
+            // 自动跳转倒计时
+            let countdown = 3;
+            const countdownElement = document.getElementById('countdown');
+            const manualLink = document.getElementById('manualLink');
+            
+            const timer = setInterval(() => {
+                countdown--;
+                countdownElement.textContent = countdown;
+                
+                if (countdown <= 0) {
+                    clearInterval(timer);
+                    // 直接跳转到照片直播网址
+                    window.location.href = 'https://m.alltuu.com/album/2276504408/';
+                }
+            }, 1000);
+            
+            // 手动点击跳转
+            manualLink.addEventListener('click', () => {
+                clearInterval(timer);
+            });
+        }
+    </script>
+    
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</body>
+</html>

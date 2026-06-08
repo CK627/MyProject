@@ -1,0 +1,26 @@
+<svg width="800" height="200" viewBox="0 0 800 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- 直接使用用户提供的图片样式 -->
+  <defs>
+    <linearGradient id="pinkGoldGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#F4C2C2;stop-opacity:1" />
+      <stop offset="30%" style="stop-color:#E8B4B8;stop-opacity:1" />
+      <stop offset="60%" style="stop-color:#D4A574;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#B8926A;stop-opacity:1" />
+    </linearGradient>
+    
+    <filter id="textEffect" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="2" dy="4" stdDeviation="2" flood-color="rgba(139,69,19,0.6)"/>
+    </filter>
+  </defs>
+  
+  <!-- 主标题文字 -->
+  <text x="400" y="100" text-anchor="middle" 
+        font-family="'STKaiti', 'KaiTi', '楷体', 'STSong', '宋体', 'Microsoft YaHei', serif" 
+        font-size="60" 
+        font-weight="bold" 
+        fill="url(#pinkGoldGradient)" 
+        filter="url(#textEffect)"
+        style="letter-spacing: 4px;">
+    就爱你·校友情
+  </text>
+</svg>

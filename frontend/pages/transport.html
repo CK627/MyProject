@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>交通指引 - 福建师范大学广东校友会一周年庆典晚会</title>
+    <meta name="description" content="福建师范大学广东校友会一周年庆典晚会交通指引">
+    
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="../css/main.css" rel="stylesheet">
+    <link href="../css/transport.css" rel="stylesheet">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="../favicon.svg">
+    <link rel="alternate icon" href="../favicon.ico">
+</head>
+<body>
+    <!-- 导航栏 -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary fixed-top">
+        <div class="container">
+            <a class="navbar-brand" href="../index.html">
+                <i class="fas fa-graduation-cap me-2"></i>福建师范大学广东校友会
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="../index.html">首页</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="registrations.html">报名</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="seating.html">座位信息</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="agenda.html">活动议程</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="photo-live.html">照片直播</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="video-live.html">视频直播</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="transport.html">交通指引</a>
+                    </li>
+                    <li class="nav-item">
+                        <button class="btn music-toggle ms-2" id="musicToggle" title="播放音乐">
+                            <span class="music-icon">🎵</span>
+                        </button>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主内容 -->
+    <main class="pt-5">
+        <div class="container mt-5">
+            <div class="row justify-content-center">
+                <div class="col-lg-8">
+                    <!-- 建设中提示 -->
+                    <div class="text-center py-5" id="maintenanceNotice">
+                        <div class="maintenance-icon mb-4">
+                            <i class="fas fa-route fa-5x text-success"></i>
+                        </div>
+                        <h1 class="display-4 mb-4">页面建设中</h1>
+                        <p class="lead text-muted mb-4">
+                            交通指引页面正在紧张建设中，敬请期待！
+                        </p>
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            我们正在为您准备详细的交通指引信息，包括路线规划、停车指南等实用内容。
+                        </div>
+                        <a href="../index.html" class="btn btn-primary btn-lg">
+                            <i class="fas fa-home me-2"></i>返回首页
+                        </a>
+                    </div>
+
+                    <!-- 实际内容区域（隐藏状态） -->
+                    <div id="pageContent" style="display: none;">
+                        <div class="page-header text-center mb-5">
+                            <h1 class="display-4 mb-3">活动地点</h1>
+                            <p class="lead text-muted">福建师范大学广东校友会一周年庆典晚会</p>
+                        </div>
+
+                        <!-- 目的地信息 -->
+                        <div class="transport-card mb-4">
+                            <div class="text-center mb-4">
+                                <div class="transport-icon car mb-3">
+                                    <i class="fas fa-map-marker-alt"></i>
+                                </div>
+                                <h3 class="mb-3">活动地点</h3>
+                                <h4 class="text-primary mb-2">笑傲江湖庄园营地</h4>
+                                <p class="text-muted mb-3">广东省广州市黄埔区碧桂园凤凰城凤曦苑西区西北</p>
+                                <button class="btn btn-outline-primary" onclick="copyAddress()">
+                                    <i class="fas fa-copy me-2"></i>复制地址
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- 页脚 -->
+    <footer class="bg-dark text-white py-4 mt-5">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5>联系我们</h5>
+                    <p><i class="fas fa-phone me-2"></i>400-123-4567</p>
+                    <p><i class="fas fa-envelope me-2"></i>conference@school.edu</p>
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <p>&copy; 2025 福建师范大学广东校友会. All rights reserved.</p>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- JavaScript -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="../js/main.js"></script>
+    <script src="../js/page-status.js"></script>
+    <script>
+        // 自定义页面状态处理函数
+        function handlePageStatus(data) {
+            if (data.status === 'maintenance') {
+                // 页面处于维护状态，显示建设中提示
+                document.getElementById('maintenanceNotice').style.display = 'block';
+                document.getElementById('pageContent').style.display = 'none';
+            } else if (data.status === 'active') {
+                // 页面正常，显示实际内容
+                document.getElementById('maintenanceNotice').style.display = 'none';
+                document.getElementById('pageContent').style.display = 'block';
+            } else {
+                // 未知状态，默认显示实际内容
+                console.warn('未知的页面状态:', data.status);
+                document.getElementById('maintenanceNotice').style.display = 'none';
+                document.getElementById('pageContent').style.display = 'block';
+            }
+        }
+
+        // 自定义显示页面内容函数
+        function showPageContent() {
+            // 显示实际内容，隐藏建设中提示
+            document.getElementById('maintenanceNotice').style.display = 'none';
+            document.getElementById('pageContent').style.display = 'block';
+            
+            // 显示页面内容
+            document.body.style.visibility = 'visible';
+        }
+
+        // 初始化页面状态检查
+        initPageStatusCheck('transport');
+
+        // 复制地址功能
+        function copyAddress() {
+            const address = "笑傲江湖庄园营地 广东省广州市黄埔区碧桂园凤凰城凤曦苑西区西北";
+            
+            if (navigator.clipboard && window.isSecureContext) {
+                // 使用现代 Clipboard API
+                navigator.clipboard.writeText(address).then(() => {
+                    showToast('地址已复制到剪贴板！', 'success');
+                }).catch(err => {
+                    console.error('复制失败:', err);
+                    fallbackCopyTextToClipboard(address);
+                });
+            } else {
+                // 降级方案
+                fallbackCopyTextToClipboard(address);
+            }
+        }
+
+        // 降级复制方案
+        function fallbackCopyTextToClipboard(text) {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.top = "0";
+            textArea.style.left = "0";
+            textArea.style.position = "fixed";
+            
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    showToast('地址已复制到剪贴板！', 'success');
+                } else {
+                    showToast('复制失败，请手动复制地址', 'error');
+                }
+            } catch (err) {
+                console.error('降级复制失败:', err);
+                showToast('复制失败，请手动复制地址', 'error');
+            }
+            
+            document.body.removeChild(textArea);
+        }
+
+        // 打开导航应用
+        function openNavigation(type) {
+            const destination = "笑傲江湖庄园营地";
+            const address = "广东省广州市黄埔区碧桂园凤凰城凤曦苑西区西北";
+            const encodedDestination = encodeURIComponent(destination);
+            const encodedAddress = encodeURIComponent(address);
+            
+            let url = '';
+            
+            switch(type) {
+                case 'baidu':
+                    url = `https://map.baidu.com/?qt=nav&c=289&sc=289&ec=289&sn=2$$$$$$&en=0$$${encodedDestination}$$0$$$$&rn=${encodedAddress}`;
+                    break;
+                case 'gaode':
+                    url = `https://uri.amap.com/navigation?to=${encodedAddress}&toname=${encodedDestination}&callnative=1`;
+                    break;
+                case 'tencent':
+                    url = `https://apis.map.qq.com/uri/v1/routeplan?type=drive&to=${encodedDestination}&tocoord=&policy=0&referer=myapp`;
+                    break;
+                case 'apple':
+                    url = `http://maps.apple.com/?daddr=${encodedAddress}&dirflg=d`;
+                    break;
+                default:
+                    showToast('不支持的导航类型', 'error');
+                    return;
+            }
+            
+            // 尝试打开导航应用
+            window.open(url, '_blank');
+            showToast('正在打开导航应用...', 'info');
+        }
+
+        // 显示提示消息
+        function showToast(message, type = 'info') {
+            // 创建提示元素
+            const toast = document.createElement('div');
+            toast.className = `alert alert-${type === 'success' ? 'success' : type === 'error' ? 'danger' : 'info'} position-fixed`;
+            toast.style.cssText = `
+                top: 20px;
+                right: 20px;
+                z-index: 9999;
+                min-width: 300px;
+                opacity: 0;
+                transition: opacity 0.3s ease;
+            `;
+            toast.innerHTML = `
+                <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'} me-2"></i>
+                ${message}
+            `;
+            
+            document.body.appendChild(toast);
+            
+            // 显示动画
+            setTimeout(() => {
+                toast.style.opacity = '1';
+            }, 100);
+            
+            // 自动隐藏
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => {
+                    if (document.body.contains(toast)) {
+                        document.body.removeChild(toast);
+                    }
+                }, 300);
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,1860 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理员后台 - 福建师范大学广东校友会一周年庆典晚会</title>
+    <!-- Chart.js 图表库 -->
+    <!-- 使用本地Chart.js文件确保稳定性 -->
+    <script src="./js/chart.min.js"></script>
+    <!-- ExcelJS 库用于Excel导出（支持图片嵌入） -->
+    <script src="https://cdn.jsdelivr.net/npm/exceljs@4.3.0/dist/exceljs.min.js"></script>
+    <!-- 报名管理样式 -->
+    <link rel="stylesheet" href="css/RegistrationManagement.css">
+     <link rel="stylesheet" href="css/DataImport.css">
+    <link rel="stylesheet" href="css/DataExport.css">
+     <link rel="stylesheet" href="css/PageManager.css">
+     <link rel="stylesheet" href="css/SystemSettings.css">
+     <link rel="stylesheet" href="css/seatings.css">
+     <link rel="stylesheet" href="css/index.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- 配置文件 - 必须在其他JS文件之前加载 -->
+    <script src="js/config.js"></script>
+    <script src="js/RegistrationManagement.js"></script>
+    <script src="js/DataImport.js"></script>
+    <script src="js/DataExport.js"></script>
+    <script src="js/PageManager.js"></script>
+    <script src="js/SystemSettings.js?v=20250806010030"></script>
+    <script src="js/seatings.js"></script>
+    <script src="js/index.js"></script>
+</head>
+<body>
+
+    <!-- 侧边栏 -->
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">🎓</div>
+            <div class="sidebar-title">学校会议系统</div>
+        </div>
+        
+        <button class="sidebar-toggle" onclick="toggleSidebar()">
+            <span id="toggleIcon">‹</span>
+        </button>
+        <nav class="sidebar-nav">
+            <a href="#" class="nav-item active" onclick="showDashboard()">
+                <div class="nav-icon">🏠</div>
+                <span class="nav-text">仪表板</span>
+            </a>
+            <a href="#" class="nav-item" onclick="viewRegistrations()">
+                <div class="nav-icon">📝</div>
+                <span class="nav-text">报名管理</span>
+            </a>
+            <a href="#" class="nav-item" onclick="manageSeatings()">
+                <div class="nav-icon">🪑</div>
+                <span class="nav-text">座位信息管理</span>
+            </a>
+            <a href="#" class="nav-item" onclick="importData()">
+                <div class="nav-icon">📤</div>
+                <span class="nav-text">数据导入</span>
+            </a>
+            <a href="#" class="nav-item" onclick="exportData()">
+                <div class="nav-icon">📥</div>
+                <span class="nav-text">数据导出</span>
+            </a>
+            <a href="#" class="nav-item" onclick="managePages()">
+                <div class="nav-icon">📄</div>
+                <span class="nav-text">页面管理</span>
+            </a>
+            <a href="#" class="nav-item" onclick="viewSettings()">
+                <div class="nav-icon">⚙️</div>
+                <span class="nav-text">系统设置</span>
+            </a>
+        </nav>
+    </div>
+
+    <!-- 主内容区域 -->
+    <div class="main-content">
+        <!-- 顶部导航栏 -->
+        <div class="top-navbar">
+            <h1 class="page-title" id="pageTitle">仪表板</h1>
+            <div class="user-info">
+                <div class="user-avatar" id="userAvatar">A</div>
+                <div class="user-details">
+                    <div class="username" id="username">加载中...</div>
+                    <div class="last-login" id="lastLogin">最后登录: 加载中...</div>
+                </div>
+                <button class="logout-btn" onclick="logout()">退出登录</button>
+            </div>
+        </div>
+
+        <!-- 内容区域 -->
+        <div class="content-area">
+            <!-- 弹窗提示容器 -->
+            <div id="toastContainer" class="toast-container"></div>
+
+
+
+            <!-- 仪表板内容 -->
+              <div id="dashboardContent" class="content-section" style="display: block;">
+                  <div class="dashboard-header">
+                      <h2>数据概览</h2>
+                      <button class="refresh-btn" onclick="refreshDashboard()" title="刷新数据">
+                          <span id="refreshIcon">🔄</span> 刷新
+                      </button>
+                  </div>
+                  <div class="dashboard-grid">
+                      <!-- 总人数卡片 -->
+                      <div class="dashboard-card">
+                          <div class="card-header">
+                              <div class="card-icon stats">
+                                  👥
+                              </div>
+                              <div class="card-content">
+                                  <h3>总人数</h3>
+                                  <p>系统中所有报名用户的总数量</p>
+                              </div>
+                          </div>
+                          <div class="card-stats">
+                              <div>
+                                  <div class="stat-number" id="totalRegistrations">--</div>
+                                  <div class="stat-label">人</div>
+                              </div>
+                          </div>
+                      </div>
+
+
+
+                      <!-- 已移除总缴费金额卡片（额外捐赠功能已移除） -->
+
+                      <!-- 总节目数卡片 -->
+                      <div class="dashboard-card">
+                          <div class="card-header">
+                              <div class="card-icon reports">
+                                  🎭
+                              </div>
+                              <div class="card-content">
+                                  <h3>总节目数</h3>
+                                  <p>会议中安排的才艺表演节目总数</p>
+                              </div>
+                          </div>
+                          <div class="card-stats">
+                              <div>
+                                  <div class="stat-number" id="totalPrograms">--</div>
+                                  <div class="stat-label">个</div>
+                              </div>
+                          </div>
+                      </div>
+
+                      <!-- 签到详情卡片 -->
+                      <div class="dashboard-card">
+                          <div class="card-header">
+                              <div class="card-icon checkin">
+                                  ✅
+                              </div>
+                              <div class="card-content">
+                                  <h3>签到详情</h3>
+                                  <p>实时签到状态和统计信息</p>
+                              </div>
+                          </div>
+                          <div class="card-stats checkin-stats">
+                              <div class="checkin-row">
+                                  <div class="checkin-item">
+                                      <div class="stat-number" id="checkedInCount">--</div>
+                                      <div class="stat-label">已签到</div>
+                                  </div>
+                                  <div class="checkin-item">
+                                      <div class="stat-number" id="notCheckedInCount">--</div>
+                                      <div class="stat-label">未签到</div>
+                                  </div>
+                              </div>
+                              <div class="checkin-row">
+                                  <div class="checkin-item">
+                                      <div class="stat-number" id="checkinRate">--%</div>
+                                      <div class="stat-label">签到率</div>
+                                  </div>
+                                  <div class="checkin-item">
+                                      <div class="stat-number" id="todayCheckinCount">--</div>
+                                      <div class="stat-label">今日签到</div>
+                                  </div>
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+
+                  <!-- 数据统计图表区域 -->
+                  <div class="charts-section">
+                      <h2 class="charts-title">数据统计图表</h2>
+                      <div class="charts-grid">
+                          <!-- 报名人数趋势图 -->
+                          <div class="chart-card">
+                              <div class="chart-header">
+                                  <h3>📈 报名人数趋势</h3>
+                                  <p>按天统计报名人数变化</p>
+                              </div>
+                              <div class="chart-container">
+                                  <canvas id="registrationTrendChart"></canvas>
+                              </div>
+                          </div>
+
+
+
+                          <!-- 才艺表演统计图 -->
+                          <div class="chart-card">
+                              <div class="chart-header">
+                                  <h3>🎭 才艺表演统计</h3>
+                                  <p>按才艺表演类型统计人数</p>
+                              </div>
+                              <div class="chart-container">
+                                  <canvas id="talentShowStatsChart"></canvas>
+                              </div>
+                          </div>
+
+
+                      </div>
+                  </div>
+              </div>
+
+            <!-- 报名管理内容 -->
+            <div id="registrationsContent" class="content-section" style="display: none;">
+                <div class="registrations-container">
+                    <!-- 页面头部 -->
+                    <div class="page-header">
+                        <div class="header-left">
+                            <h2>📝 报名管理</h2>
+                            <p>管理和查看所有用户的报名信息</p>
+                        </div>
+                        <div class="header-right">
+                            <button class="btn btn-primary" onclick="refreshRegistrations()">
+                                <span id="refreshRegistrationsIcon">🔄</span> 刷新数据
+                            </button>
+                        </div>
+                    </div>
+
+
+
+                    <!-- 搜索和筛选区域 -->
+                    <div class="search-filter-section">
+                        <div class="search-box">
+                            <input type="text" id="searchInput" placeholder="搜索姓名、手机号..." class="search-input">
+                            <button class="search-btn" onclick="searchRegistrations()">🔍</button>
+                        </div>
+                        
+                        <!-- 列显示控制区域 -->
+                        <div class="column-control-section">
+                            <label class="column-control-label">显示列：</label>
+                            <div class="column-checkboxes">
+                                <label class="checkbox-item">
+                                    <input type="checkbox" id="showName" checked onchange="toggleColumn('name')">
+                                    <span>姓名</span>
+                                </label>
+                                <label class="checkbox-item">
+                                    <input type="checkbox" id="showPhone" checked onchange="toggleColumn('phone')">
+                                    <span>手机号</span>
+                                </label>
+                                <label class="checkbox-item">
+                                    <input type="checkbox" id="showEducation" checked onchange="toggleColumn('education')">
+                                    <span>年级/学院</span>
+                                </label>
+                                <label class="checkbox-item">
+                                    <input type="checkbox" id="showAmount" checked onchange="toggleColumn('amount')">
+                                    <span>缴费金额</span>
+                                </label>
+                                <label class="checkbox-item">
+                                    <input type="checkbox" id="showFamily" checked onchange="toggleColumn('family')">
+                                    <span>家属人数</span>
+                                </label>
+                                <label class="checkbox-item">
+                                    <input type="checkbox" id="showTalent" checked onchange="toggleColumn('talent')">
+                                    <span>才艺表演</span>
+                                </label>
+                                <label class="checkbox-item">
+                                    <input type="checkbox" id="showMaterial" checked onchange="toggleColumn('material')">
+                                    <span>物品赞助</span>
+                                </label>
+                                <label class="checkbox-item">
+                                    <input type="checkbox" id="showRemarks" checked onchange="toggleColumn('remarks')">
+                                    <span>备注</span>
+                                </label>
+                                <label class="checkbox-item">
+                                    <input type="checkbox" id="showPayment" checked onchange="toggleColumn('payment')">
+                                    <span>付款方式</span>
+                                </label>
+                                <label class="checkbox-item">
+                                    <input type="checkbox" id="showTime" checked onchange="toggleColumn('time')">
+                                    <span>报名时间</span>
+                                </label>
+
+                                <label class="checkbox-item operation-column">
+                                    <input type="checkbox" id="showOperation" checked disabled>
+                                    <span>操作</span>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="filter-options">
+
+                            <select id="paymentMethodFilter" class="filter-select">
+                                <option value="">全部付款方式</option>
+                                <option value="wechat">微信支付</option>
+                                <option value="alipay">支付宝</option>
+                                <option value="other">其他方式</option>
+                            </select>
+                            <select id="talentShowFilter" class="filter-select">
+                                <option value="">全部</option>
+                                <option value="声乐表演">声乐表演</option>
+                                <option value="舞蹈表演">舞蹈表演</option>
+                                <option value="器乐表演">器乐表演</option>
+                                <option value="其他表演">其他表演</option>
+                                <option value="不才艺表演">不才艺表演</option>
+                            </select>
+                            <button class="btn btn-secondary" onclick="clearFilters()">清除筛选</button>
+                        </div>
+                    </div>
+
+                    <!-- 表格区域 -->
+                    <div class="table-container">
+                        <div class="table-header">
+                            <div class="table-actions">
+                                <button class="btn btn-sm btn-primary" onclick="selectAll()">全选</button>
+                                <button class="btn btn-sm btn-danger" onclick="batchDelete()">批量删除</button>
+                            </div>
+                            <div class="table-pagination-info">
+                                显示第 <span id="currentPage">1</span> 页，共 <span id="totalPages">1</span> 页，总计 <span id="totalRecords">5</span> 条记录
+                            </div>
+                        </div>
+
+                        <div class="table-wrapper">
+                            <table class="registrations-table">
+                                <thead>
+                                    <tr>
+                                        <th><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll()"></th>
+                                        <th class="col-name">姓名</th>
+                                        <th class="col-phone">手机号</th>
+                                        <th class="col-education">年级/学院</th>
+                                        <th class="col-amount">缴费金额</th>
+                                        <th class="col-family">家属人数</th>
+                                        <th class="col-talent">才艺表演</th>
+                                        <th class="col-material">物品赞助</th>
+                                        <th class="col-remarks">备注</th>
+                                        <th class="col-payment">付款方式</th>
+                                        <th class="col-time">报名时间</th>
+                                        <th class="col-operation">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="registrationsTableBody">
+                                    <!-- 示例数据 -->
+                                    <tr>
+                                        <td><input type="checkbox"></td>
+                                        <td class="col-name">张三</td>
+                                        <td class="col-phone">13800138001</td>
+                                        <td class="col-education">2015级/经济管理学院</td>
+                                        <td class="col-amount">¥300.00</td>
+                                        <td class="col-family">2</td>
+                                        <td class="col-talent">声乐表演</td>
+                                        <td class="col-payment">微信支付</td>
+                                        <td class="col-time">-01-15 10:30</td>
+                                        <td class="col-operation">
+                                            <div class="action-buttons">
+        
+                                                <button class="action-btn-sm action-btn-edit" onclick="editRegistrationRecord(1)" title="编辑">编辑</button>
+                                                <button class="action-btn-sm action-btn-delete" onclick="deleteRegistration(1)" title="删除">删除</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td><input type="checkbox"></td>
+                                        <td class="col-name">李四</td>
+                                        <td class="col-phone">13900139002</td>
+                                        <td class="col-education">2016级/文学院</td>
+                                        <td class="col-amount">¥300.00</td>
+                                        <td class="col-family">1</td>
+                                        <td class="col-talent">舞蹈表演</td>
+                                        <td class="col-payment">支付宝</td>
+                                        <td class="col-time">-01-15 11:45</td>
+                                        <td class="col-operation">
+                                            <div class="action-buttons">
+        
+                                                <button class="action-btn-sm action-btn-edit" onclick="editRegistrationRecord(2)" title="编辑">编辑</button>
+                                                <button class="action-btn-sm action-btn-delete" onclick="deleteRegistration(2)" title="删除">删除</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td><input type="checkbox"></td>
+                                        <td class="col-name">王五</td>
+                                        <td class="col-phone">13700137003</td>
+                                        <td class="col-education"><span class="no-education">未填写</span></td>
+                                        <td class="col-amount">¥0.00</td>
+                                        <td class="col-family">0</td>
+                                        <td class="col-talent">不才艺表演</td>
+                                        <td class="col-payment">微信支付</td>
+                                        <td class="col-time">-01-15 14:20</td>
+                                        <td class="col-operation">
+                                            <div class="action-buttons">
+        
+                                                <button class="action-btn-sm action-btn-edit" onclick="editRegistrationRecord(3)" title="编辑">编辑</button>
+                                                <button class="action-btn-sm action-btn-delete" onclick="deleteRegistration(3)" title="删除">删除</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td><input type="checkbox"></td>
+                                        <td class="col-name">赵六</td>
+                                        <td class="col-phone">13600136004</td>
+                                        <td class="col-education">2017级/数学与信息学院</td>
+                                        <td class="col-amount">¥900.00</td>
+                                        <td class="col-family">3</td>
+                                        <td class="col-talent">器乐表演</td>
+                                        <td class="col-payment">其他方式</td>
+                                        <td class="col-time">-01-15 16:10</td>
+                                        <td class="col-operation">
+                                            <div class="action-buttons">
+        
+                                                <button class="action-btn-sm action-btn-edit" onclick="editRegistrationRecord(4)" title="编辑">编辑</button>
+                                                <button class="action-btn-sm action-btn-delete" onclick="deleteRegistration(4)" title="删除">删除</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td><input type="checkbox"></td>
+                                        <td class="col-name">孙七</td>
+                                        <td class="col-phone">13500135005</td>
+                                        <td class="col-education">2018级/外国语学院</td>
+                                        <td class="col-amount">¥300.00</td>
+                                        <td class="col-family">1</td>
+                                        <td class="col-talent">其他表演</td>
+                                        <td class="col-payment">支付宝</td>
+                                        <td class="col-time">-01-16 09:15</td>
+                                        <td class="col-operation">
+                                            <div class="action-buttons">
+        
+                                                <button class="action-btn-sm action-btn-edit" onclick="editRegistrationRecord(5)" title="编辑">编辑</button>
+                                                <button class="action-btn-sm action-btn-delete" onclick="deleteRegistration(5)" title="删除">删除</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- 分页控件 -->
+                        <div class="pagination-container">
+                            <div class="pagination-info">
+                                每页显示：
+                                <select id="pageSize" onchange="changePageSize()">
+                                    <option value="10">10</option>
+                                    <option value="20" selected>20</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                    <option value="all">全部显示</option>
+                                </select>
+                                条记录
+                            </div>
+                            <div class="pagination-controls">
+                                <button class="btn btn-sm" onclick="goToPage(1)" id="firstPageBtn">首页</button>
+                                <button class="btn btn-sm" onclick="goToPrevPage()" id="prevPageBtn">上一页</button>
+                                <span class="page-numbers" id="pageNumbers">
+                                    <!-- 页码将动态生成 -->
+                                </span>
+                                <button class="btn btn-sm" onclick="goToNextPage()" id="nextPageBtn">下一页</button>
+                                <button class="btn btn-sm" onclick="goToLastPage()" id="lastPageBtn">末页</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+
+
+                <!-- 编辑模态框 -->
+                <div id="registrationEditModal" class="modal" style="display: none;">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>✏️ 编辑报名信息</h3>
+                            <span class="close" onclick="closeRegistrationEdit()">&times;</span>
+                        </div>
+                        <div class="modal-body">
+                            <form id="editRegistrationForm">
+                                <!-- 基本信息 -->
+                                <div class="form-section">
+                                    <h4 class="section-title">👤 基本信息</h4>
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label>姓名 <span class="text-danger">*</span></label>
+                                            <input type="text" id="editName" required>
+                                        </div>
+                                        <div class="form-group">
+                                            <label>手机号 <span class="text-danger">*</span></label>
+                                            <input type="tel" id="editPhone" pattern="^1[3-9]\d{9}$" required>
+                                        </div>
+                                    </div>
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label>年级/学院</label>
+                                            <input type="text" id="editEducationInfo" placeholder="例如：2015级/经济管理学院">
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- 2025级学生选项 -->
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="editIs2025Student" name="is_2025_student">
+                                                <label class="form-check-label" for="editIs2025Student">
+                                                    <i class="fas fa-graduation-cap me-1"></i>
+                                                    我是2025级学生
+                                                </label>
+                                            </div>
+                                            <div class="alert alert-info mt-2" role="alert" style="font-size: 0.9em; padding: 0.5rem;">
+                                                <i class="fas fa-gift me-2"></i>
+                                                <strong>2025年应届毕业生和在读研究生校友免费参加，但仅限本人</strong>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 家属信息 -->
+                                <div class="form-section">
+                                    <h4 class="section-title">👨‍👩‍👧‍👦 家属参与人数</h4>
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label>携带家属人数 <span class="text-danger">*</span></label>
+                                            <div class="family-count-cards" id="editFamilyCountCards">
+                                                <div class="family-card" data-value="0" id="editNoFamilyCard">
+                                                    <div class="card-title">不携带家属</div>
+                                                </div>
+                                                <div class="family-card" data-value="1" id="editWithFamilyCard">
+                                                    <div class="card-title">携带家属</div>
+                                                </div>
+                                            </div>
+                                            <!-- 隐藏的input用于存储选中值 -->
+                                            <input type="hidden" id="editFamilyCount" name="editFamilyCount" value="0" required>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 费用信息 -->
+                                <div class="form-section">
+                                    <h4 class="section-title">💰 费用信息</h4>
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label>缴费金额 <span class="text-danger">*</span></label>
+                                            <input type="number" id="editPaymentAmount" name="payment_amount" 
+                                                   min="0" step="0.01" placeholder="请输入缴费金额" required>
+                                            <div class="form-text">
+                                                <i class="fas fa-info-circle me-1"></i>
+                                                以自愿为原则，量力而行，遵从内心，上不封顶
+                                            </div>
+                                            <!-- 2025级学生免费提示 -->
+                                            <div class="alert alert-success mt-2" id="editFreeForStudent2025" style="display: none; font-size: 0.9em; padding: 0.5rem;">
+                                                <i class="fas fa-gift me-2"></i>
+                                                <strong>以自愿为原则，量力而行，遵从内心，上不封顶</strong>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 付款方式 -->
+                                <div class="form-section">
+                                    <h4 class="section-title">💳 付款方式</h4>
+                                    <div class="form-group">
+                                        <label>付款方式 <span class="text-danger">*</span></label>
+                                        <select id="editPaymentMethod" name="editPaymentMethod" class="form-control" required>
+                                            <option value="">请选择付款方式</option>
+                                            <option value="wechat">微信支付</option>
+                                            <option value="alipay">支付宝</option>
+                                            <option value="other">其他付款方式</option>
+                                            <option value="student2025">2025级学生证明</option>
+                                        </select>
+                                        <div class="form-text">
+                                            <i class="fas fa-info-circle me-1"></i>
+                                            请选择您的付款方式
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 才艺表演 -->
+                                <div class="form-section">
+                                    <h4 class="section-title">🎭 才艺表演</h4>
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label>才艺节目报名</label>
+                                            <select id="editTalentShow" class="form-control">
+                                                <option value="不才艺表演">不才艺表演</option>
+                                                <option value="声乐表演">声乐表演</option>
+                                                <option value="舞蹈表演">舞蹈表演</option>
+                                                <option value="器乐表演">器乐表演</option>
+                                                <option value="朗诵表演">朗诵表演</option>
+                                                <option value="其他才艺">其他才艺</option>
+                                            </select>
+                                            <div class="form-text">
+                                                <i class="fas fa-info-circle me-1"></i>
+                                                展现个人才艺，丰富庆典内容
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- 才艺节目详情 -->
+                                    <div class="form-group" id="editTalentDetailsSection" style="display: none;">
+                                        <label>才艺节目详情</label>
+                                        <textarea id="editTalentDescription" rows="3" placeholder="请详细描述您的表演内容、所需时间、设备要求等"></textarea>
+                                        <div class="form-text">
+                                            <i class="fas fa-phone me-1"></i>
+                                            联系人：刘富琳教授 18617315268、黄琴部长 17620029312、江玉婷团长 18250101446
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 物品赞助 -->
+                                <div class="form-section">
+                                    <h4 class="section-title">🎁 物品赞助</h4>
+                                    <div class="form-group">
+                                        <label>物品赞助</label>
+                                        <textarea id="editMaterialSponsorship" rows="3" placeholder="如有物品赞助意向，请详细描述赞助物品的类型、数量、价值等"></textarea>
+                                        <div class="form-text">
+                                            <i class="fas fa-phone me-1"></i>
+                                            联系人：张伟 13924191980、吴华 138 2922 6495（截止时间：9月10日）
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 备注信息 -->
+                                <div class="form-section">
+                                    <h4 class="section-title">📝 备注信息</h4>
+                                    <div class="form-group">
+                                        <label>备注信息</label>
+                                        <textarea id="editRemarks" rows="3" placeholder="请填写其他需要说明的信息，如饮食禁忌、特殊需求等"></textarea>
+                                    </div>
+                                </div>
+
+
+
+                                <!-- 其他付款方式详情 -->
+                                <div class="form-group" id="editOtherPaymentDetails" style="display: none;">
+                                    <label for="editOtherPaymentMethod">其他付款方式详情 <span class="text-danger">*</span></label>
+                                    <textarea id="editOtherPaymentMethod" name="other_payment_method" class="form-control" rows="3" placeholder="请详细说明您的付款方式，如银行转账的银行名称、账号等信息"></textarea>
+                                </div>
+
+
+
+                                <!-- 付款凭证管理 -->
+                                <div class="form-section">
+                                    <h4 class="section-title">💰 付款凭证管理</h4>
+                                    
+                                    <!-- 付款凭证1 -->
+                                    <div class="form-group">
+                                        <label>付款凭证1</label>
+                                        <div class="payment-screenshot-container">
+                                            <div class="current-screenshot" id="currentScreenshot1" style="display: none;">
+                                                <div class="screenshot-preview">
+                                                    <img id="currentScreenshot1Image" src="" alt="当前付款凭证1" style="max-width: 200px; max-height: 150px; object-fit: contain; border-radius: 8px; border: 1px solid #ddd;">
+                                                    <div class="screenshot-actions mt-2">
+                                                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="viewCurrentScreenshot(1)">
+                                                            <i class="fas fa-eye"></i> 查看
+                                                        </button>
+                                                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeCurrentScreenshot(1)">
+                                                            <i class="fas fa-trash"></i> 删除
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="upload-area" id="uploadArea1">
+                                                <input type="file" id="paymentScreenshot1" name="payment_screenshot" accept="image/*" class="file-input">
+                                                <div class="upload-placeholder">
+                                                    <i class="fas fa-cloud-upload-alt mb-2" style="font-size: 2rem; color: #ccc;"></i>
+                                                    <p class="mb-1">点击上传新的付款凭证1</p>
+                                                    <small class="text-muted">支持JPG、PNG、GIF格式，最大5MB</small>
+                                                </div>
+                                                <div class="upload-preview" id="uploadPreview1" style="display: none;">
+                                                    <img src="" alt="付款凭证预览" class="img-fluid">
+                                                    <button type="button" class="btn btn-sm btn-outline-danger mt-2" onclick="removeUploadPreview(1)">
+                                                        <i class="fas fa-trash me-1"></i>删除
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- 付款凭证2 -->
+                                    <div class="form-group">
+                                        <label>付款凭证2 <small class="text-muted">(可选)</small></label>
+                                        <div class="payment-screenshot-container">
+                                            <div class="current-screenshot" id="currentScreenshot2" style="display: none;">
+                                                <div class="screenshot-preview">
+                                                    <img id="currentScreenshot2Image" src="" alt="当前付款凭证2" style="max-width: 200px; max-height: 150px; object-fit: contain; border-radius: 8px; border: 1px solid #ddd;">
+                                                    <div class="screenshot-actions mt-2">
+                                                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="viewCurrentScreenshot(2)">
+                                                            <i class="fas fa-eye"></i> 查看
+                                                        </button>
+                                                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeCurrentScreenshot(2)">
+                                                            <i class="fas fa-trash"></i> 删除
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="upload-area" id="uploadArea2">
+                                                <input type="file" id="paymentScreenshot2" name="payment_screenshot_2" accept="image/*" class="file-input">
+                                                <div class="upload-placeholder">
+                                                    <i class="fas fa-cloud-upload-alt mb-2" style="font-size: 2rem; color: #ccc;"></i>
+                                                    <p class="mb-1">点击上传付款凭证2</p>
+                                                    <small class="text-muted">支持JPG、PNG、GIF格式，最大5MB</small>
+                                                </div>
+                                                <div class="upload-preview" id="uploadPreview2" style="display: none;">
+                                                    <img src="" alt="付款凭证预览" class="img-fluid">
+                                                    <button type="button" class="btn btn-sm btn-outline-danger mt-2" onclick="removeUploadPreview(2)">
+                                                        <i class="fas fa-trash me-1"></i>删除
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+
+                                </div>
+                            </form>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-secondary" onclick="closeRegistrationEdit()">取消</button>
+                            <button class="btn btn-primary" onclick="saveRegistrationEdit()">保存</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 图片查看模态框 -->
+                <div id="imageModal" class="modal" style="display: none;">
+                    <div class="modal-content image-modal-content">
+                        <div class="modal-header">
+                            <h3>💰 付款截图</h3>
+                            <span class="close" onclick="closeImageModal()">&times;</span>
+                        </div>
+                        <div class="modal-body image-modal-body">
+                            <div class="image-container">
+                                <img id="modalImage" src="" alt="付款截图" style="max-width: 100%; max-height: 70vh; object-fit: contain;">
+                            </div>
+                            <div class="image-info">
+                                <p id="imageFileName">文件名: </p>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-secondary" onclick="closeImageModal()">关闭</button>
+                            <button class="btn btn-primary" onclick="downloadImage()">下载图片</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 座位信息管理内容 -->
+            <div id="seatingsContent" class="content-section" style="display: none;">
+                <div class="seatings-container">
+                    <!-- 页面头部 -->
+                    <div class="page-header">
+                        <div class="header-left">
+                            <h2>🪑 座位信息管理</h2>
+                            <p>管理和查看所有用户的座位安排和签到信息</p>
+                        </div>
+                        <div class="header-right">
+                            <button class="btn btn-primary" onclick="refreshSeatings()">
+                                <span id="refreshSeatingsIcon">🔄</span> 刷新数据
+                            </button>
+                            <button class="btn btn-success" onclick="showImportModal()">
+                                <span>📤</span> 导入座位
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 搜索和筛选区域 -->
+                    <div class="search-filter-section">
+                        <div class="search-box">
+                            <input type="text" id="seatingSearchInput" placeholder="搜索姓名、手机号、座位号..." class="search-input">
+                            <button class="search-btn" onclick="searchSeatings()">🔍</button>
+                        </div>
+                        
+                        <div class="filter-options">
+                            <select id="dataSourceFilter" class="filter-select" onchange="changeDataSource()">
+                                <option value="registrations">报名数据</option>
+                                <option value="import_info">导入数据</option>
+                            </select>
+                            <select id="seatStatusFilter" class="filter-select">
+                                <option value="">全部座位状态</option>
+                                <option value="assigned">已安排座位</option>
+                                <option value="unassigned">未安排座位</option>
+                            </select>
+                            <select id="checkinStatusFilter" class="filter-select">
+                                <option value="">全部签到状态</option>
+                                <option value="checked_in">已签到</option>
+                                <option value="not_checked_in">未签到</option>
+                            </select>
+                            <button class="btn btn-secondary" onclick="clearSeatingsFilters()">清除筛选</button>
+                        </div>
+                    </div>
+
+                    <!-- 表格区域 -->
+                    <div class="table-container">
+                        <div class="table-header">
+                            <div class="table-actions">
+                                <button class="btn btn-sm btn-primary" onclick="selectAllSeatings()">全选</button>
+                                <button class="btn btn-sm btn-warning" onclick="batchAssignSeats()">批量分配座位</button>
+                            </div>
+                            <div class="table-pagination-info">
+                                显示第 <span id="currentSeatingsPage">1</span> 页，共 <span id="totalSeatingsPages">1</span> 页，总计 <span id="totalSeatingsRecords">0</span> 条记录
+                            </div>
+                        </div>
+
+                        <div class="table-wrapper">
+                            <table class="seatings-table">
+                                <thead>
+                                    <tr>
+                                        <th><input type="checkbox" id="selectAllSeatingsCheckbox" onchange="toggleSelectAllSeatings()"></th>
+                                        <th>姓名</th>
+                                        <th>手机号</th>
+                                        <th>座位号</th>
+                                        <th>签到状态</th>
+                                        <th>签到时间</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="seatingsTableBody">
+                                    <!-- 数据将通过JavaScript动态加载 -->
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- 分页控件 -->
+                        <div class="pagination-container">
+                            <div class="pagination-info">
+                                每页显示：
+                                <select id="seatingsPageSize" onchange="changeSeatingsPageSize()">
+                                    <option value="10">10</option>
+                                    <option value="20" selected>20</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                    <option value="all">全部显示</option>
+                                </select>
+                                条记录
+                            </div>
+                            <div class="pagination-controls">
+                                <button class="btn btn-sm" onclick="goToSeatingsPage(1)" id="firstSeatingsPageBtn">首页</button>
+                                <button class="btn btn-sm" onclick="goToPrevSeatingsPage()" id="prevSeatingsPageBtn">上一页</button>
+                                <span class="page-numbers" id="seatingsPageNumbers">
+                                    <!-- 页码将动态生成 -->
+                                </span>
+                                <button class="btn btn-sm" onclick="goToNextSeatingsPage()" id="nextSeatingsPageBtn">下一页</button>
+                                <button class="btn btn-sm" onclick="goToLastSeatingsPage()" id="lastSeatingsPageBtn">末页</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 编辑座位信息模态框 -->
+                <div id="seatingEditModal" class="modal" style="display: none;">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>✏️ 编辑座位信息</h3>
+                            <span class="close" onclick="closeSeatingEdit()">&times;</span>
+                        </div>
+                        <div class="modal-body">
+                            <form id="editSeatingForm">
+                                <input type="hidden" id="editSeatingId">
+                                
+                                <!-- 基本信息（只读） -->
+                                <div class="form-section">
+                                    <h4 class="section-title">👤 基本信息（不可编辑）</h4>
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label>姓名</label>
+                                            <input type="text" id="editSeatingName" readonly class="readonly-input">
+                                        </div>
+                                        <div class="form-group">
+                                            <label>手机号</label>
+                                            <input type="text" id="editSeatingPhone" readonly class="readonly-input">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 座位信息（可编辑） -->
+                                <div class="form-section">
+                                    <h4 class="section-title">🪑 座位信息</h4>
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label>座位号</label>
+                                            <input type="text" id="editSeatingNumber" placeholder="例如：A-001, B-015">
+                                            <small class="form-text">留空表示未安排座位</small>
+                                        </div>
+                                        <div class="form-group">
+                                            <label>签到状态</label>
+                                            <select id="editCheckinStatus" class="form-control">
+                                                <option value="0">未签到</option>
+                                                <option value="1">已签到</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-secondary" onclick="closeSeatingEdit()">取消</button>
+                            <button class="btn btn-primary" onclick="saveSeatingEdit()">保存</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 导入座位信息模态框 -->
+                <div id="importSeatingModal" class="modal" style="display: none;">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>📤 导入座位信息</h3>
+                            <span class="close" onclick="closeImportModal()">&times;</span>
+                        </div>
+                        <div class="modal-body">
+                            <div class="import-section">
+                                <h4>📋 Excel文件格式要求</h4>
+                                <div class="format-info">
+                                    <p>请确保Excel文件包含以下列（按顺序）：</p>
+                                    <ul>
+                                        <li><strong>姓名</strong> - 用户姓名</li>
+                                        <li><strong>手机号</strong> - 用户手机号（用于匹配数据库记录）</li>
+                                        <li><strong>座位号</strong> - 分配的座位号（例如：A-001, B-015）</li>
+                                    </ul>
+                                    <p class="text-warning">⚠️ 系统将根据手机号匹配数据库中的用户记录并更新座位号</p>
+                                </div>
+                                
+                                <div class="file-upload-section">
+                                    <h4>📁 选择文件</h4>
+                                    <div class="file-upload-area" id="fileUploadArea">
+                                        <input type="file" id="excelFileInput" accept=".xlsx,.xls" style="display: none;" onchange="handleFileSelect(event)">
+                                        <div class="upload-placeholder" onclick="document.getElementById('excelFileInput').click()">
+                                            <div class="upload-icon">📄</div>
+                                            <p>点击选择Excel文件</p>
+                                            <small>支持 .xlsx 和 .xls 格式</small>
+                                        </div>
+                                    </div>
+                                    <div id="fileInfo" class="file-info" style="display: none;">
+                                        <div class="file-details">
+                                            <span id="fileName"></span>
+                                            <button type="button" class="btn btn-sm btn-danger" onclick="clearFile()">移除</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div id="previewSection" class="preview-section" style="display: none;">
+                                    <h4>👀 数据预览</h4>
+                                    <div class="preview-table-container">
+                                        <table class="preview-table">
+                                            <thead id="previewTableHead">
+                                                <!-- 表头将动态生成 -->
+                                            </thead>
+                                            <tbody id="previewTableBody">
+                                                <!-- 数据将动态生成 -->
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div class="preview-info">
+                                        <p>预览前 <span id="previewRowCount">0</span> 行数据</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-secondary" onclick="closeImportModal()">取消</button>
+                            <button class="btn btn-primary" id="importBtn" onclick="importSeatingData()" disabled>导入数据</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 批量分配座位模态框 -->
+                <div id="batchAssignModal" class="modal" style="display: none;">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3>🪑 批量分配座位</h3>
+                            <span class="close" onclick="closeBatchAssignModal()">&times;</span>
+                        </div>
+                        <div class="modal-body">
+                            <div class="batch-assign-section">
+                                <p>已选择 <span id="selectedCount">0</span> 个用户</p>
+                                <div class="form-group">
+                                    <label>座位号前缀</label>
+                            <input type="text" id="seatPrefix" placeholder="例如：A-, B-, C-（可为空）" value="">
+                                    <small class="form-text">系统将自动为选中用户分配连续座位号</small>
+                                </div>
+                                <div class="form-group">
+                                    <label>起始编号</label>
+                                    <input type="number" id="startNumber" value="1" min="1">
+                                    <small class="form-text">座位编号的起始数字</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button class="btn btn-secondary" onclick="closeBatchAssignModal()">取消</button>
+                            <button class="btn btn-primary" onclick="executeBatchAssign()">确认分配</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 登录日志内容 -->
+            <div id="logsContent" class="content-section" style="display: none;">
+                <div class="empty-content">
+                    <div class="empty-icon">📊</div>
+                    <h2>登录日志</h2>
+                    <p>登录日志功能正在开发中...</p>
+                </div>
+            </div>
+
+            <!-- 系统设置内容 -->
+            <div id="settingsContent" class="content-section" style="display: none;">
+                <div class="settings-container">
+                    <!-- 设置页面头部 -->
+                    <div class="settings-header">
+                        <div>
+                            <h2 class="settings-title">
+                                <span class="settings-icon">⚙️</span>
+                                系统设置
+                            </h2>
+                            <p class="settings-description">管理系统的各项配置和参数</p>
+                        </div>
+                        <button class="refresh-settings-btn" id="refreshSettingsBtn" onclick="SystemSettings.refresh()">
+                            <span>🔄</span> 刷新设置
+                        </button>
+                    </div>
+
+                    <!-- 提示信息容器 -->
+                    <div id="settingsAlertContainer"></div>
+
+                    <!-- 设置卡片网格 -->
+                    <div class="settings-grid">
+                        <!-- 签到时间管理设置卡片 (放在第一位) -->
+                        <div class="settings-card" style="position: relative;">
+                            <!-- 加载遮罩 -->
+                            <div id="checkinSettingsLoadingOverlay" class="loading-overlay" style="display: none;">
+                                <div class="loading-spinner"></div>
+                            </div>
+
+                            <div class="card-header">
+                                <div class="card-icon">📝</div>
+                                <div>
+                                    <h3 class="card-title">签到时间管理</h3>
+                                    <p class="card-subtitle">管理活动签到时间配置</p>
+                                </div>
+                            </div>
+
+                            <!-- 签到状态显示 -->
+                            <div class="status-display">
+                                <div class="status-label">当前签到状态</div>
+                                <div id="checkinStatus" class="status-indicator status-inactive">
+                                    <span class="status-dot"></span>
+                                    签到已关闭
+                                </div>
+                            </div>
+
+                            <!-- 签到时间信息 -->
+                            <div id="checkinTimeInfo" class="time-info">
+                                <div class="time-info-title">⏳ 签到时间配置</div>
+                                <div class="time-info-content">正在加载签到时间信息...</div>
+                            </div>
+
+                            <!-- 签到开始时间 -->
+                            <div class="form-group">
+                                <label class="form-label" for="checkinStartTime">签到开始时间</label>
+                                <div style="display: flex; gap: 8px;">
+                                    <input 
+                                        type="datetime-local" 
+                                        id="checkinStartTime" 
+                                        class="form-control datetime-input"
+                                        onchange="updateCheckinTimeInfo()"
+                                    >
+                                    <button 
+                                        type="button" 
+                                        class="btn btn-secondary" 
+                                        onclick="SystemSettings.setCurrentTimeAsCheckinStart()"
+                                        title="设置为当前时间"
+                                    >
+                                        <span>🕐</span> 现在
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- 签到结束时间 -->
+                            <div class="form-group">
+                                <label class="form-label" for="checkinEndTime">签到结束时间</label>
+                                <div style="display: flex; gap: 8px;">
+                                    <input 
+                                        type="datetime-local" 
+                                        id="checkinEndTime" 
+                                        class="form-control datetime-input"
+                                        onchange="updateCheckinTimeInfo()"
+                                    >
+                                    <button 
+                                        type="button" 
+                                        class="btn btn-secondary" 
+                                        onclick="SystemSettings.setCurrentTimeAsCheckinEnd()"
+                                        title="设置为当前时间"
+                                    >
+                                        <span>🕐</span> 现在
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="card-actions">
+                                <button 
+                                    type="button" 
+                                    class="btn btn-primary" 
+                                    id="saveCheckinBtn"
+                                    onclick="saveCheckinTimes()"
+                                >
+                                    <span>💾</span> 保存设置
+                                </button>
+                                <button 
+                                    type="button" 
+                                    class="btn btn-secondary" 
+                                    onclick="resetCheckinTimes()"
+                                >
+                                    <span>🔄</span> 重置
+                                </button>
+                                <button 
+                                    type="button" 
+                                    class="btn btn-info" 
+                                    id="refreshCheckinBtn"
+                                    onclick="refreshCheckinSettings()"
+                                >
+                                    <span>🔄</span> 刷新
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 报名时间设置卡片 -->
+                        <div class="settings-card" style="position: relative;">
+                            <!-- 加载遮罩 -->
+                            <div id="settingsLoadingOverlay" class="loading-overlay" style="display: none;">
+                                <div class="loading-spinner"></div>
+                            </div>
+
+                            <div class="card-header">
+                                <div class="card-icon">📅</div>
+                                <div>
+                                    <h3 class="card-title">报名时间管理</h3>
+                                    <p class="card-subtitle">设置报名活动的开始和结束时间</p>
+                                </div>
+                            </div>
+
+                            <!-- 报名状态显示 -->
+                            <div class="status-display">
+                                <div class="status-label">当前报名状态</div>
+                                <div id="registrationStatus" class="status-indicator status-inactive">
+                                    <span class="status-dot"></span>
+                                    报名已关闭
+                                </div>
+                            </div>
+
+                            <!-- 报名时间信息 -->
+                            <div id="timeInfo" class="time-info">
+                                <div class="time-info-title">⏳ 报名时间配置</div>
+                                <div class="time-info-content">正在加载报名时间信息...</div>
+                            </div>
+
+                            <!-- 报名开始时间 -->
+                            <div class="form-group">
+                                <label class="form-label" for="registrationStartTime">报名开始时间</label>
+                                <div style="display: flex; gap: 8px;">
+                                    <input 
+                                        type="datetime-local" 
+                                        id="registrationStartTime" 
+                                        class="form-control datetime-input"
+                                        onchange="updateTimeInfo()"
+                                    >
+                                    <button 
+                                        type="button" 
+                                        class="btn btn-secondary" 
+                                        onclick="SystemSettings.setCurrentTimeAsStart()"
+                                        title="设置为当前时间"
+                                    >
+                                        <span>🕐</span> 现在
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- 报名结束时间 -->
+                            <div class="form-group">
+                                <label class="form-label" for="registrationEndTime">报名结束时间</label>
+                                <div style="display: flex; gap: 8px;">
+                                    <input 
+                                        type="datetime-local" 
+                                        id="registrationEndTime" 
+                                        class="form-control datetime-input"
+                                        onchange="updateTimeInfo()"
+                                    >
+                                    <button 
+                                        type="button" 
+                                        class="btn btn-secondary" 
+                                        onclick="SystemSettings.setCurrentTimeAsEnd()"
+                                        title="设置为当前时间"
+                                    >
+                                        <span>🕐</span> 现在
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- 操作按钮 -->
+                            <div class="card-actions">
+                                <button 
+                                    type="button" 
+                                    class="btn btn-primary" 
+                                    id="saveRegistrationBtn"
+                                    onclick="SystemSettings.saveRegistrationTimes()"
+                                >
+                                    <span>💾</span> 保存设置
+                                </button>
+                                <button 
+                                    type="button" 
+                                    class="btn btn-secondary" 
+                                    onclick="SystemSettings.resetRegistrationTimes()"
+                                >
+                                    <span>🔄</span> 重置
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 数据导入内容 -->
+            <div id="importContent" class="content-section" style="display: none;">
+                <div class="import-panel">
+                    <div class="import-header">
+                        <div class="import-icon">📤</div>
+                        <h2>数据导入</h2>
+                        <p>导入座位信息和签到数据，支持Excel格式</p>
+                    </div>
+                    
+                    <!-- 导入功能区域 -->
+                    <div class="import-functions">
+                        <!-- 文件上传区域 -->
+                        <div class="file-upload-section">
+                            <div class="upload-area" onclick="document.getElementById('importFileInput').click()">
+                                <div class="upload-icon">📁</div>
+                                <div class="upload-text">点击选择Excel文件或拖拽文件到此处</div>
+                                <div class="upload-hint">支持 .xlsx 和 .xls 格式，无文件大小限制</div>
+                            </div>
+                            <input type="file" id="importFileInput" accept=".xlsx,.xls" style="display: none;" onchange="DataImport.handleFileSelect(event)">
+                        </div>
+                        
+                        <!-- 进度条 -->
+                        <div class="progress-container">
+                            <div class="progress-bar">
+                                <div class="progress-fill"></div>
+                            </div>
+                            <div class="progress-text">准备导入...</div>
+                        </div>
+                        
+                        <!-- 导入结果 -->
+                        <div class="import-result success">
+                            <strong>导入成功！</strong> 共处理 100 条记录，成功导入 98 条，跳过 2 条重复记录。
+                        </div>
+                        
+                        <div class="import-result error">
+                            <strong>导入失败！</strong> 文件格式不正确，请检查Excel文件格式。
+                        </div>
+                        
+                        <div class="import-result warning">
+                            <strong>导入完成，但有警告！</strong> 部分数据格式不规范，已自动修正。
+                        </div>
+                        
+                        <!-- 操作按钮 -->
+                        <div class="import-actions">
+                            <button class="btn-import" onclick="DataImport.startImport()">
+                                <span>🚀</span>
+                                开始导入
+                            </button>
+                            <button class="btn-import" onclick="DataImport.resetImportState()" style="background: #6c757d;">
+                                <span>🔄</span>
+                                重置
+                            </button>
+                        </div>
+                        
+                        <!-- 导入说明 -->
+                        <div style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #007bff;">
+                            <h4 style="color: #2c3e50; margin-bottom: 15px;">📋 导入说明</h4>
+                            <ul style="color: #495057; line-height: 1.6; margin: 0; padding-left: 20px;">
+                                <li>Excel文件第一行应为表头，包含：姓名、手机号、座位号等字段</li>
+                                <li>姓名为必填字段，手机号和座位号为可选字段</li>
+                                <li>系统会自动检测并跳过重复的记录</li>
+                                <li>导入过程中如有错误，系统会详细提示具体问题</li>
+                                <li>建议先备份现有数据，再进行批量导入操作</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 数据统计内容 -->
+            <div id="statsContent" class="content-section" style="display: none;">
+                <div class="empty-content">
+                    <div class="empty-icon">📈</div>
+                    <h2>数据统计</h2>
+                    <p>数据统计功能正在开发中...</p>
+                </div>
+            </div>
+
+            <!-- 数据导出内容 -->
+            <div id="exportContent" class="content-section" style="display: none;">
+                <div class="export-panel">
+                    <div class="export-header">
+                        <div class="export-icon">📥</div>
+                        <h2>数据导出</h2>
+                        <p>选择要导出的报名数据，支持Excel和CSV格式</p>
+                    </div>
+                    
+                    <!-- 导出统计信息 -->
+                    <div class="export-stats">
+                        <div class="stats-card">
+                            <div class="stats-icon">📊</div>
+                            <div class="stats-info">
+                                <div class="stats-number" id="totalDataCount">0</div>
+                                <div class="stats-label">总数据量</div>
+                            </div>
+                        </div>
+                        <div class="stats-card">
+                            <div class="stats-icon">✅</div>
+                            <div class="stats-info">
+                                <div class="stats-number" id="selectedDataCount">0</div>
+                                <div class="stats-label">已选择</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 列显示控制 -->
+                    <div class="column-control-section">
+                        <label class="column-control-label">显示列：</label>
+                        <div class="column-checkboxes">
+                            <label class="checkbox-item">
+                                <input type="checkbox" id="showExportName" checked onchange="toggleExportColumn('name')">
+                                <span>姓名</span>
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" id="showExportPhone" checked onchange="toggleExportColumn('phone')">
+                                <span>手机号</span>
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" id="showExportEducation" checked onchange="toggleExportColumn('education')">
+                                <span>年级/学院</span>
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" id="showExportFamily" checked onchange="toggleExportColumn('family')">
+                                <span>家属人数</span>
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" id="showExportAmount" checked onchange="toggleExportColumn('amount')">
+                                <span>缴费金额</span>
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" id="showExportTalent" checked onchange="toggleExportColumn('talent')">
+                                <span>才艺表演</span>
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" id="showExportMaterial" checked onchange="toggleExportColumn('material')">
+                                <span>物品赞助</span>
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" id="showExportRemarks" checked onchange="toggleExportColumn('remarks')">
+                                <span>备注</span>
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" id="showExportPayment" checked onchange="toggleExportColumn('payment')">
+                                <span>付款方式</span>
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" id="showExportTime" checked onchange="toggleExportColumn('time')">
+                                <span>报名时间</span>
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" id="showExportSeatNumber" checked onchange="toggleExportColumn('seat-number')">
+                                <span>座位号</span>
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" id="showExportCheckinStatus" checked onchange="toggleExportColumn('checkin-status')">
+                                <span>签到状态</span>
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" id="showExportCheckinTime" checked onchange="toggleExportColumn('checkin-time')">
+                                <span>签到时间</span>
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" id="showExportPaymentScreenshot1" checked onchange="toggleExportColumn('payment-screenshot-1')">
+                                <span>凭证1</span>
+                            </label>
+                            <label class="checkbox-item">
+                                <input type="checkbox" id="showExportPaymentScreenshot2" checked onchange="toggleExportColumn('payment-screenshot-2')">
+                                <span>凭证2</span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- 搜索功能 -->
+                    <div class="search-section">
+                        <div class="search-container">
+                            <div class="search-input-group">
+                                <input type="text" id="exportSearchInput" class="search-input" placeholder="搜索姓名、手机号、年级学院、才艺描述或备注..." onkeypress="handleExportSearchKeyPress(event)">
+                                <button class="btn btn-primary search-btn" onclick="searchExportData()">
+                                    <span>🔍</span> 搜索
+                                </button>
+                                <button class="btn btn-secondary clear-btn" onclick="clearExportSearch()">
+                                    <span>✖️</span> 清空
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 快速选择操作 -->
+                    <div class="quick-actions">
+                        <button class="btn btn-secondary" onclick="quickSelectAll()">
+                            <span>📋</span> 全选
+                        </button>
+                        <button class="btn btn-secondary" onclick="quickSelectNone()">
+                            <span>🗑️</span> 清空
+                        </button>
+                        <button class="btn btn-secondary" onclick="quickSelectReverse()">
+                            <span>🔄</span> 反选
+                        </button>
+                        <button class="btn btn-primary" onclick="refreshExportData()">
+                            <span>🔄</span> 刷新数据
+                        </button>
+                    </div>
+                    
+                    <!-- 数据表格 -->
+                    <div class="export-table-container">
+                        <div class="table-header">
+                            <div class="table-pagination-info">
+                                显示第 <span id="currentExportPage">1</span> 页，共 <span id="totalExportPages">1</span> 页，总计 <span id="totalExportRecords">0</span> 条记录
+                            </div>
+                        </div>
+                        
+                        <div class="table-wrapper">
+                            <table class="export-table">
+                                <thead>
+                                    <tr>
+                                        <th class="checkbox-column">
+                                            <input type="checkbox" id="selectAllExportCheckbox" onchange="toggleSelectAllExport()">
+                                        </th>
+                                        <th class="col-name">姓名</th>
+                                        <th class="col-phone">手机号</th>
+                                        <th class="col-education">年级/学院</th>
+                                        <th class="col-amount">缴费金额</th>
+                                        <th class="col-family">家属人数</th>
+                                        <th class="col-talent">才艺表演</th>
+                                        <th class="col-material">物品赞助</th>
+                                        <th class="col-remarks">备注</th>
+                                        <th class="col-payment">付款方式</th>
+                                        <th class="col-time">报名时间</th>
+                                        <th class="col-seat-number">座位号</th>
+                                        <th class="col-checkin-status">签到状态</th>
+                                        <th class="col-checkin-time">签到时间</th>
+                                        <th class="col-payment-screenshot-1">凭证1</th>
+                                        <th class="col-payment-screenshot-2">凭证2</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="exportTableBody">
+                                    <!-- 数据将通过JavaScript动态加载 -->
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <!-- 分页控件 -->
+                        <div class="pagination-container">
+                            <div class="pagination-info">
+                                每页显示：
+                                <select id="exportPageSize" onchange="changeExportPageSize()">
+                                    <option value="10">10</option>
+                                    <option value="20" selected>20</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                    <option value="all">全部显示</option>
+                                </select>
+                                条记录
+                            </div>
+                            <div class="pagination-controls">
+                                <button class="btn btn-sm" onclick="goToExportPage(1)" id="firstExportPageBtn">首页</button>
+                                <button class="btn btn-sm" onclick="goToPrevExportPage()" id="prevExportPageBtn">上一页</button>
+                                <span class="page-numbers" id="exportPageNumbers">
+                                    <!-- 页码将动态生成 -->
+                                </span>
+                                <button class="btn btn-sm" onclick="goToNextExportPage()" id="nextExportPageBtn">下一页</button>
+                                <button class="btn btn-sm" onclick="goToLastExportPage()" id="lastExportPageBtn">末页</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 导出操作区域 -->
+                    <div class="export-actions">
+                        <div class="export-buttons">
+                            <button class="btn btn-success export-btn" onclick="exportToExcel()" disabled>
+                                <span>📊</span> 导出Excel
+                            </button>
+                            <button class="btn btn-info export-btn" onclick="exportToCSV()" disabled>
+                                <span>📄</span> 导出CSV
+                            </button>
+                            <button class="btn btn-secondary export-btn" onclick="exportLogger.downloadLogs()" title="下载导出日志">
+                                <span>📋</span> 下载日志
+                            </button>
+                        </div>
+                        <div class="export-tips">
+                            <p>💡 提示：请先选择要导出的数据行，然后点击导出按钮。导出完成后可下载详细日志。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 页面管理内容 -->
+            <div id="pagesContent" class="content-section" style="display: none;">
+                <div class="page-management-header">
+                    <h2>📄 页面管理</h2>
+                    <p>管理PC端和移动端页面的状态和配置</p>
+                    <button class="btn btn-primary" onclick="refreshPageStatus()">
+                        <span id="refreshPagesIcon">🔄</span> 刷新状态
+                    </button>
+                </div>
+                
+                <!-- 前端服务控制区域 -->
+                <div class="service-control-container">
+                    <div class="service-control-header">
+                        <h3>🌐 前端服务控制</h3>
+                        <p>通过Apache2控制前端服务的运行状态</p>
+                    </div>
+                    <div class="service-control-grid">
+                        <!-- 统一前端服务控制 -->
+                        <div class="service-control-card">
+                            <div class="service-card-content">
+                                <div class="service-icon">🌐</div>
+                                <div class="service-info">
+                                    <h4>前端服务 (Apache2)</h4>
+                                    <span class="service-description">统一的前端网站服务</span>
+                                    <div class="service-status" id="frontend-service-status">
+                                        <span class="status-indicator running" id="frontend-status-indicator"></span>
+                                        <span class="status-text" id="frontend-status-text">运行中</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="service-toggle-container">
+                                <label class="service-toggle-switch">
+                                    <input type="checkbox" id="frontend-service-toggle" checked onchange="toggleFrontendService()">
+                                    <span class="service-toggle-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="page-management-container">
+                    <!-- PC端页面管理 -->
+                    <div class="page-section">
+                        <div class="section-header">
+                            <h3>🖥️ PC端页面</h3>
+                            <span class="section-badge">Desktop</span>
+                        </div>
+                        <div class="page-management-grid">
+                            <!-- PC端报名页面 -->
+                            <div class="page-card" data-page="pc-registration">
+                                <div class="page-card-content">
+                                    <div class="page-icon">📝</div>
+                                    <div class="page-info">
+                                        <h3>报名页面</h3>
+                                        <span class="page-description">用户注册报名功能</span>
+                                        <div class="page-status" id="pc-registration-status">
+                                            <span class="status-indicator running" id="pc-registration-status-indicator"></span>
+                                            <span class="status-text" id="pc-registration-status-text">正在运行中</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="page-toggle-container">
+                                    <label class="page-toggle-switch">
+                                        <input type="checkbox" id="pc-registration-toggle" checked onchange="togglePageStatus('pc-registration')">
+                                        <span class="page-toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- PC端座位信息 -->
+                            <div class="page-card" data-page="pc-seating">
+                                <div class="page-card-content">
+                                    <div class="page-icon">🪑</div>
+                                    <div class="page-info">
+                                        <h3>座位信息</h3>
+                                        <span class="page-description">座位查询与签到功能</span>
+                                        <div class="page-status" id="pc-seating-status">
+                                            <span class="status-indicator running" id="pc-seating-status-indicator"></span>
+                                            <span class="status-text" id="pc-seating-status-text">正在运行中</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="page-toggle-container">
+                                    <label class="page-toggle-switch">
+                                        <input type="checkbox" id="pc-seating-toggle" checked onchange="togglePageStatus('pc-seating')">
+                                        <span class="page-toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- PC端议程页面 -->
+                            <div class="page-card" data-page="pc-agenda">
+                                <div class="page-card-content">
+                                    <div class="page-icon">📅</div>
+                                    <div class="page-info">
+                                        <h3>活动议程</h3>
+                                        <span class="page-description">会议日程安排</span>
+                                        <div class="page-status" id="pc-agenda-status">
+                                            <span class="status-indicator stopped" id="pc-agenda-status-indicator"></span>
+                                            <span class="status-text" id="pc-agenda-status-text">正在建设中</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="page-toggle-container">
+                                    <label class="page-toggle-switch">
+                                        <input type="checkbox" id="pc-agenda-toggle" onchange="togglePageStatus('pc-agenda')">
+                                        <span class="page-toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- PC端照片直播 -->
+                            <div class="page-card" data-page="pc-photo-live">
+                                <div class="page-card-content">
+                                    <div class="page-icon">📸</div>
+                                    <div class="page-info">
+                                        <h3>照片直播</h3>
+                                        <span class="page-description">活动现场照片分享</span>
+                                        <div class="page-status" id="pc-photo-live-status">
+                                            <span class="status-indicator stopped" id="pc-photo-live-status-indicator"></span>
+                                            <span class="status-text" id="pc-photo-live-status-text">正在建设中</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="page-toggle-container">
+                                    <label class="page-toggle-switch">
+                                        <input type="checkbox" id="pc-photo-live-toggle" onchange="togglePageStatus('pc-photo-live')">
+                                        <span class="page-toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- PC端视频直播 -->
+                            <div class="page-card" data-page="pc-video-live">
+                                <div class="page-card-content">
+                                    <div class="page-icon">📹</div>
+                                    <div class="page-info">
+                                        <h3>视频直播</h3>
+                                        <span class="page-description">活动现场视频直播</span>
+                                        <div class="page-status" id="pc-video-live-status">
+                                            <span class="status-indicator stopped" id="pc-video-live-status-indicator"></span>
+                                            <span class="status-text" id="pc-video-live-status-text">正在建设中</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="page-toggle-container">
+                                    <label class="page-toggle-switch">
+                                        <input type="checkbox" id="pc-video-live-toggle" onchange="togglePageStatus('pc-video-live')">
+                                        <span class="page-toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- PC端交通指引 -->
+                            <div class="page-card" data-page="pc-transport">
+                                <div class="page-card-content">
+                                    <div class="page-icon">🚗</div>
+                                    <div class="page-info">
+                                        <h3>交通指引</h3>
+                                        <span class="page-description">会议地点交通信息</span>
+                                        <div class="page-status" id="pc-transport-status">
+                                            <span class="status-indicator stopped" id="pc-transport-status-indicator"></span>
+                                            <span class="status-text" id="pc-transport-status-text">正在建设中</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="page-toggle-container">
+                                    <label class="page-toggle-switch">
+                                        <input type="checkbox" id="pc-transport-toggle" onchange="togglePageStatus('pc-transport')">
+                                        <span class="page-toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 手机端页面管理 -->
+                    <div class="page-section">
+                        <div class="section-header">
+                            <h3>📱 手机端页面</h3>
+                            <span class="section-badge">Mobile</span>
+                        </div>
+                        <div class="page-management-grid">
+                            <!-- 手机端报名页面 -->
+                            <div class="page-card" data-page="mobile-registration">
+                                <div class="page-card-content">
+                                    <div class="page-icon">📝</div>
+                                    <div class="page-info">
+                                        <h3>报名页面</h3>
+                                        <span class="page-description">移动端用户注册报名</span>
+                                        <div class="page-status" id="mobile-registration-status">
+                                            <span class="status-indicator running" id="mobile-registration-status-indicator"></span>
+                                            <span class="status-text" id="mobile-registration-status-text">正在运行中</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="page-toggle-container">
+                                    <label class="page-toggle-switch">
+                                        <input type="checkbox" id="mobile-registration-toggle" checked onchange="togglePageStatus('mobile-registration')">
+                                        <span class="page-toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- 手机端座位信息 -->
+                            <div class="page-card" data-page="mobile-seating">
+                                <div class="page-card-content">
+                                    <div class="page-icon">🪑</div>
+                                    <div class="page-info">
+                                        <h3>座位信息</h3>
+                                        <span class="page-description">移动端座位查询与签到</span>
+                                        <div class="page-status" id="mobile-seating-status">
+                                            <span class="status-indicator running" id="mobile-seating-status-indicator"></span>
+                                            <span class="status-text" id="mobile-seating-status-text">正在运行中</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="page-toggle-container">
+                                    <label class="page-toggle-switch">
+                                        <input type="checkbox" id="mobile-seating-toggle" checked onchange="togglePageStatus('mobile-seating')">
+                                        <span class="page-toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- 手机端议程页面 -->
+                            <div class="page-card" data-page="mobile-agenda">
+                                <div class="page-card-content">
+                                    <div class="page-icon">📅</div>
+                                    <div class="page-info">
+                                        <h3>活动议程</h3>
+                                        <span class="page-description">移动端会议日程</span>
+                                        <div class="page-status" id="mobile-agenda-status">
+                                            <span class="status-indicator stopped" id="mobile-agenda-status-indicator"></span>
+                                            <span class="status-text" id="mobile-agenda-status-text">正在建设中</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="page-toggle-container">
+                                    <label class="page-toggle-switch">
+                                        <input type="checkbox" id="mobile-agenda-toggle" onchange="togglePageStatus('mobile-agenda')">
+                                        <span class="page-toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- 手机端图片直播 -->
+                            <div class="page-card" data-page="mobile-live-photos">
+                                <div class="page-card-content">
+                                    <div class="page-icon">📸</div>
+                                    <div class="page-info">
+                                        <h3>图片直播</h3>
+                                        <span class="page-description">移动端照片分享</span>
+                                        <div class="page-status" id="mobile-live-photos-status">
+                                            <span class="status-indicator stopped" id="mobile-live-photos-status-indicator"></span>
+                                            <span class="status-text" id="mobile-live-photos-status-text">正在建设中</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="page-toggle-container">
+                                    <label class="page-toggle-switch">
+                                        <input type="checkbox" id="mobile-live-photos-toggle" onchange="togglePageStatus('mobile-live-photos')">
+                                        <span class="page-toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- 手机端直播页面 -->
+                            <div class="page-card" data-page="mobile-live">
+                                <div class="page-card-content">
+                                    <div class="page-icon">📺</div>
+                                    <div class="page-info">
+                                        <h3>直播页面</h3>
+                                        <span class="page-description">移动端视频直播</span>
+                                        <div class="page-status" id="mobile-live-status">
+                                            <span class="status-indicator stopped" id="mobile-live-status-indicator"></span>
+                                            <span class="status-text" id="mobile-live-status-text">正在建设中</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="page-toggle-container">
+                                    <label class="page-toggle-switch">
+                                        <input type="checkbox" id="mobile-live-toggle" onchange="togglePageStatus('mobile-live')">
+                                        <span class="page-toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- 手机端交通页面 -->
+                            <div class="page-card" data-page="mobile-transport">
+                                <div class="page-card-content">
+                                    <div class="page-icon">🚗</div>
+                                    <div class="page-info">
+                                        <h3>交通指引</h3>
+                                        <span class="page-description">移动端交通信息</span>
+                                        <div class="page-status" id="mobile-transport-status">
+                                            <span class="status-indicator stopped" id="mobile-transport-status-indicator"></span>
+                                            <span class="status-text" id="mobile-transport-status-text">正在建设中</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="page-toggle-container">
+                                    <label class="page-toggle-switch">
+                                        <input type="checkbox" id="mobile-transport-toggle" onchange="togglePageStatus('mobile-transport')">
+                                        <span class="page-toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 页面设置面板 -->
+                <div class="page-settings-panel" style="display: none;" id="pageSettingsPanel">
+                    <div class="settings-header">
+                        <h3>⚙️ 页面设置</h3>
+                        <button class="btn btn-sm btn-secondary" onclick="closePageSettings()">关闭</button>
+                    </div>
+                    <div class="settings-content">
+                        <div class="setting-group">
+                            <label>页面标题：</label>
+                            <input type="text" id="pageTitle" class="form-control">
+                        </div>
+                        <div class="setting-group">
+                            <label>页面描述：</label>
+                            <textarea id="pageDescription" class="form-control" rows="3"></textarea>
+                        </div>
+                        <div class="setting-group">
+                            <label>页面状态：</label>
+                            <select id="pageStatus" class="form-control">
+                                <option value="enabled">已启用</option>
+                                <option value="disabled">建设中</option>
+                                <option value="maintenance">维护中</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="settings-actions">
+                        <button class="btn btn-primary" onclick="savePageSettings()">保存设置</button>
+                        <button class="btn btn-secondary" onclick="cancelPageSettings()">取消</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 数据备份内容 -->
+            <div id="backupContent" class="content-section" style="display: none;">
+                <div class="empty-content">
+                    <div class="empty-icon">💾</div>
+                    <h2>数据备份</h2>
+                    <p>数据备份功能正在开发中...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+</body>
+</html>
