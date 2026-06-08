@@ -110,10 +110,10 @@ do_update() {
         return 1
     fi
 
-    # Step 3: 获取本地版本号
+    # Step 3: 获取本地版本号（取最后一行匹配）
     local local_version=""
     if [ -f "$config_file" ]; then
-        local_version=$(grep "^${version_key}=" "$config_file" 2>/dev/null | cut -d'"' -f2)
+        local_version=$(grep "^${version_key}=" "$config_file" 2>/dev/null | tail -1 | cut -d'"' -f2)
     fi
 
     if [ "$local_version" = "$remote_version" ]; then
@@ -140,15 +140,9 @@ do_update() {
     fi
 
     # Step 6: 记录版本到配置文件
-    if [ -w "$config_file" ]; then
-        sed -i.bak "/^${version_key}/d" "$config_file" 2>/dev/null
-        rm -f "${config_file}.bak" 2>/dev/null
-        echo "${version_key}=\"$remote_version\"" >> "$config_file"
-    else
-        sudo sed -i.bak "/^${version_key}/d" "$config_file" 2>/dev/null
-        sudo rm -f "${config_file}.bak" 2>/dev/null
-        echo "${version_key}=\"$remote_version\"" | sudo tee -a "$config_file" > /dev/null
-    fi
+    sudo sed -i.bak "/^${version_key}/d" "$config_file" 2>/dev/null
+    sudo rm -f "${config_file}.bak" 2>/dev/null
+    echo "${version_key}=\"$remote_version\"" | sudo tee -a "$config_file" > /dev/null
 
     # Step 7: 输出结果
     echo "更新完成！"
