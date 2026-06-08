@@ -1,0 +1,641 @@
+/* 报名页面专用样式 */
+
+/* 表单容器样式 */
+.registration-form {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border-radius: 15px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+}
+
+
+
+/* 付款方式样式 */
+.payment-method-card {
+    border: 2px solid #e9ecef;
+    border-radius: 10px;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    height: 100%;
+    position: relative;
+    overflow: hidden;
+}
+
+.payment-method-card:hover {
+    border-color: #007bff;
+    box-shadow: 0 4px 15px rgba(0, 123, 255, 0.1);
+    transform: translateY(-2px);
+}
+
+.payment-method-card.selected {
+    border-color: #007bff;
+    background-color: #f8f9ff;
+    box-shadow: 0 4px 15px rgba(0, 123, 255, 0.2);
+}
+
+.payment-method-card.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+    background-color: #f8f9fa;
+    border-color: #dee2e6;
+}
+
+.payment-method-card.disabled:hover {
+    border-color: #dee2e6;
+    box-shadow: none;
+    transform: none;
+}
+
+.payment-method-card.disabled .payment-label {
+    cursor: not-allowed;
+}
+
+.payment-method-card.disabled .payment-text {
+    color: #6c757d;
+}
+
+.payment-radio {
+    position: absolute;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.payment-label {
+    display: flex;
+    align-items: center;
+    padding: 1.5rem;
+    margin: 0;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+}
+
+.payment-icon {
+    margin-right: 1rem;
+    font-size: 2rem;
+}
+
+.payment-text h6 {
+    margin-bottom: 0.25rem;
+    font-weight: 600;
+}
+
+/* 付款二维码区域样式 */
+.payment-qr-section {
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin-top: 1rem;
+    border: 1px solid #e9ecef;
+    animation: fadeIn 0.5s ease-out;
+}
+
+.qr-code-container {
+    background: white;
+    border-radius: 10px;
+    padding: 1.5rem;
+    border: 1px solid #e9ecef;
+}
+
+.qr-code-placeholder {
+    padding: 2rem;
+    border: 2px dashed #ccc;
+    border-radius: 10px;
+    background: #f8f9fa;
+}
+
+.qr-code-image img {
+    border-radius: 10px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    max-width: 400px;
+    max-height: 400px;
+    width: 100%;
+    height: auto;
+    border: 2px solid #e9ecef;
+}
+
+/* 文件上传样式 */
+.payment-upload-section {
+    background: white;
+    border-radius: 10px;
+    padding: 1.5rem;
+    border: 1px solid #e9ecef;
+}
+
+.upload-area {
+    position: relative;
+    border: 2px dashed #ccc;
+    border-radius: 10px;
+    padding: 2rem;
+    text-align: center;
+    background: #f8f9fa;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.upload-area:hover {
+    border-color: #007bff;
+    background: #f0f8ff;
+}
+
+.upload-area.dragover {
+    border-color: #007bff;
+    background: #e3f2fd;
+    transform: scale(1.02);
+}
+
+.file-input {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.upload-placeholder {
+    pointer-events: none;
+}
+
+.upload-preview {
+    text-align: center;
+}
+
+.upload-preview img {
+    max-width: 100%;
+    max-height: 200px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+/* 表单标题样式 */
+.form-section-title {
+    position: relative;
+    padding-bottom: 10px;
+    margin-bottom: 20px;
+}
+
+.form-section-title::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 50px;
+    height: 3px;
+    background: linear-gradient(90deg, #007bff, #0056b3);
+    border-radius: 2px;
+}
+
+/* 表单输入框样式 */
+.form-control {
+    border: 2px solid #e9ecef;
+    border-radius: 8px;
+    padding: 12px 15px;
+    font-size: 16px;
+    transition: all 0.3s ease;
+}
+
+.form-control:focus {
+    border-color: #007bff;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+    transform: translateY(-2px);
+}
+
+.form-control.is-valid {
+    border-color: #28a745;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3e%3cpath fill='%2328a745' d='m2.3 6.73.94-.94 2.94 2.94L8.5 6.4l.94.94L6.5 10.27z'/%3e%3c/svg%3e");
+}
+
+.form-control.is-invalid {
+    border-color: #dc3545;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' width='12' height='12' fill='none' stroke='%23dc3545'%3e%3ccircle cx='6' cy='6' r='4.5'/%3e%3cpath d='m5.8 4.6 2.4 2.4m0-2.4L5.8 7'/%3e%3c/svg%3e");
+}
+
+/* 输入组样式 */
+.input-group-text {
+    background-color: #f8f9fa;
+    border: 2px solid #e9ecef;
+    border-radius: 8px;
+    font-weight: 500;
+}
+
+/* 标签样式 */
+.form-label {
+    font-weight: 600;
+    color: #495057;
+    margin-bottom: 8px;
+}
+
+.form-label i {
+    color: #007bff;
+}
+
+/* 必填标记样式 */
+.text-danger {
+    font-weight: bold;
+}
+
+/* 按钮样式 */
+.btn-primary {
+    background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+    border: none;
+    border-radius: 25px;
+    padding: 12px 30px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(0, 123, 255, 0.3);
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0, 123, 255, 0.4);
+}
+
+.btn-outline-secondary {
+    border: 2px solid #6c757d;
+    border-radius: 25px;
+    padding: 12px 30px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    transition: all 0.3s ease;
+}
+
+.btn-outline-secondary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(108, 117, 125, 0.3);
+}
+
+/* 提示信息样式 */
+.form-text {
+    font-size: 14px;
+    color: #6c757d;
+    margin-top: 5px;
+}
+
+.form-text i {
+    color: #17a2b8;
+}
+
+/* 警告框样式 */
+.alert-info {
+    background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%);
+    border: 1px solid #b6d4da;
+    border-radius: 10px;
+    color: #0c5460;
+}
+
+.alert-heading {
+    color: #0c5460;
+    font-weight: 600;
+}
+
+/* 捐款账户信息样式 */
+.bg-light {
+    background-color: #f8f9fa !important;
+    border: 1px solid #dee2e6;
+}
+
+/* 无效反馈样式 */
+.invalid-feedback {
+    display: block;
+    width: 100%;
+    margin-top: 5px;
+    font-size: 14px;
+    color: #dc3545;
+    font-weight: 500;
+}
+
+.valid-feedback {
+    display: block;
+    width: 100%;
+    margin-top: 5px;
+    font-size: 14px;
+    color: #28a745;
+    font-weight: 500;
+}
+
+/* 家属人数选择卡片样式 */
+.family-count-card {
+    border: 2px solid #e9ecef;
+    border-radius: 12px;
+    transition: all 0.3s ease;
+    cursor: pointer;
+    height: 100%;
+}
+
+.family-count-card:hover {
+    border-color: #007bff;
+    box-shadow: 0 4px 12px rgba(0, 123, 255, 0.15);
+    transform: translateY(-2px);
+}
+
+.family-count-card .form-check {
+    margin: 0;
+}
+
+.family-count-card .form-check-input {
+    position: absolute;
+    opacity: 0;
+}
+
+.family-count-card .form-check-label {
+    cursor: pointer;
+    width: 100%;
+    display: block;
+    padding: 0;
+}
+
+.family-count-card .form-check-input:checked + .form-check-label {
+    color: #007bff;
+}
+
+.family-count-card .form-check-input:checked ~ * {
+    color: #007bff;
+}
+
+.family-count-card.selected {
+    border-color: #007bff;
+    background-color: #f8f9ff;
+    box-shadow: 0 4px 12px rgba(0, 123, 255, 0.15);
+}
+
+.family-count-card.selected .form-check-label {
+    color: #007bff;
+}
+
+.family-count-card.selected .text-muted {
+    color: #6c757d !important;
+}
+
+/* 费用计算区域样式 */
+#costBreakdown {
+    font-size: 0.95rem;
+}
+
+#costBreakdown .d-flex {
+    margin-bottom: 0.5rem;
+}
+
+#costBreakdown hr {
+    margin: 0.75rem 0;
+    border-color: #dee2e6;
+}
+
+#costBreakdown .fw-bold {
+    font-size: 1.1rem;
+}
+
+/* 家属姓名输入区域动画 */
+#familyNamesSection {
+    transition: all 0.3s ease;
+}
+
+#familyMember1Section,
+#familyMember2Section {
+    transition: all 0.3s ease;
+}
+
+/* 悬浮窗样式 */
+.toast-container {
+    z-index: 9999;
+}
+
+.toast {
+    border: none;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+    backdrop-filter: blur(10px);
+    margin-bottom: 1rem;
+    min-width: 350px;
+    animation: slideInRight 0.3s ease-out;
+}
+
+.toast-header {
+    border-bottom: none;
+    border-radius: 12px 12px 0 0;
+    padding: 1rem 1.25rem;
+    font-weight: 600;
+}
+
+.toast-body {
+    padding: 1rem 1.25rem;
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+
+/* 报名未开启提示样式 */
+#registrationClosedToast .toast-header {
+    background: linear-gradient(135deg, #ffc107 0%, #ff8f00 100%);
+    color: #212529;
+}
+
+#registrationClosedToast .toast-body {
+    background: #fff8e1;
+    color: #e65100;
+    border-radius: 0 0 12px 12px;
+}
+
+/* 报名成功提示样式 */
+#registrationSuccessToast .toast-header {
+    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+    color: white;
+}
+
+#registrationSuccessToast .toast-body {
+    background: #d4edda;
+    color: #155724;
+    border-radius: 0 0 12px 12px;
+}
+
+/* 报名失败提示样式 */
+#registrationFailedToast .toast-header {
+    background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+    color: white;
+}
+
+#registrationFailedToast .toast-body {
+    background: #f8d7da;
+    color: #721c24;
+    border-radius: 0 0 12px 12px;
+}
+
+/* 悬浮窗动画 */
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOutRight {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+}
+
+.toast.hide {
+    animation: slideOutRight 0.3s ease-in;
+}
+
+/* 测试按钮样式（仅开发环境） */
+.test-buttons {
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 8px;
+    padding: 0.5rem;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+.test-buttons .btn {
+    margin-bottom: 0.25rem;
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .toast {
+        min-width: 280px;
+        margin: 0 1rem 1rem 1rem;
+    }
+    
+    .toast-container {
+        left: 0;
+        right: 0;
+        top: auto;
+        bottom: 1rem;
+    }
+    
+    @keyframes slideInRight {
+        from {
+            transform: translateY(100%);
+            opacity: 0;
+        }
+        to {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    }
+    
+    @keyframes slideOutRight {
+        from {
+            transform: translateY(0);
+            opacity: 1;
+        }
+        to {
+            transform: translateY(100%);
+            opacity: 0;
+        }
+    }
+    
+    .form-control {
+        font-size: 16px; /* 防止iOS缩放 */
+    }
+    
+    .btn-lg {
+        padding: 10px 20px;
+        font-size: 16px;
+    }
+    
+    .card-body {
+        padding: 20px !important;
+    }
+    
+    .package-card {
+        margin-bottom: 15px;
+    }
+    
+    .family-count-card {
+        margin-bottom: 1rem;
+    }
+    
+    .family-count-card .card-body {
+        padding: 1rem 0.75rem;
+    }
+    
+    .family-count-card i {
+        font-size: 1.5rem !important;
+    }
+    
+    .family-count-card h6 {
+        font-size: 0.9rem;
+        margin-bottom: 0.25rem;
+    }
+    
+    .family-count-card small {
+        font-size: 0.75rem;
+    }
+}
+
+/* 动画效果 */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.card {
+    animation: fadeInUp 0.6s ease-out;
+}
+
+/* 加载状态样式 */
+.btn-loading {
+    position: relative;
+    color: transparent !important;
+}
+
+.btn-loading::after {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    top: 50%;
+    left: 50%;
+    margin-left: -8px;
+    margin-top: -8px;
+    border: 2px solid #ffffff;
+    border-radius: 50%;
+    border-top-color: transparent;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* 成功提示样式 */
+.success-message {
+    background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+    border: 1px solid #c3e6cb;
+    border-radius: 10px;
+    color: #155724;
+    padding: 20px;
+    text-align: center;
+    margin-top: 20px;
+}
+
+.success-message i {
+    font-size: 3rem;
+    color: #28a745;
+    margin-bottom: 15px;
+}

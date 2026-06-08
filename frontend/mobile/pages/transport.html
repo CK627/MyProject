@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>交通指引 - 福建师范大学广东校友会</title>
+    <link href="../css/mobile.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- 微信JS-SDK -->
+    <script src="https://res.wx.qq.com/open/js/jweixin-1.6.0.js"></script>
+    <style>
+        .transport-header {
+            color: #333;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        .destination-card {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            margin: 15px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        
+        .transport-option {
+            background: white;
+            border-radius: 15px;
+            padding: 15px;
+            margin: 10px 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            border-left: 4px solid #007bff;
+        }
+        
+        .transport-icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+        }
+        
+        .icon-car { background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); }
+        .icon-metro { background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); }
+        .icon-bus { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
+        .icon-taxi { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        
+        .route-step {
+            display: flex;
+            align-items: center;
+            margin: 8px 0;
+            font-size: 14px;
+        }
+        
+        .route-step i {
+            width: 20px;
+            color: #007bff;
+            margin-right: 8px;
+        }
+        
+        .nav-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin: 20px 15px;
+        }
+        
+        .nav-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            padding: 12px;
+            font-size: 14px;
+            text-decoration: none;
+            text-align: center;
+            transition: transform 0.2s;
+        }
+        
+        .nav-btn:hover {
+            transform: translateY(-2px);
+            color: white;
+        }
+        
+        .contact-section {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 20px;
+            margin: 15px;
+        }
+        
+        .contact-item {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+        
+        .contact-item i {
+            width: 25px;
+            color: #007bff;
+            margin-right: 10px;
+        }
+        
+        .tips-section {
+            background: #fff3cd;
+            border-radius: 15px;
+            padding: 20px;
+            margin: 15px;
+            border: 1px solid #ffeaa7;
+        }
+        
+        .tip-item {
+            display: flex;
+            align-items: flex-start;
+            margin: 8px 0;
+            font-size: 13px;
+        }
+        
+        .tip-item i {
+            width: 20px;
+            color: #856404;
+            margin-right: 8px;
+            margin-top: 2px;
+        }
+        
+        .copy-btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 16px;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+        
+        .back-btn {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(255,255,255,0.9);
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+    </style>
+</head>
+<body>
+    <button class="back-btn" onclick="history.back()">
+        <i class="fas fa-arrow-left"></i>
+    </button>
+
+    <div class="mobile-container">
+        <!-- 页面头部 -->
+        <div class="transport-header" style="margin-top: 40px;">
+            <h1><i class="fas fa-route me-2"></i>交通指引</h1>
+            <p>福建师范大学广东校友会一周年庆典晚会</p>
+        </div>
+
+        <!-- 目的地信息 -->
+        <div class="destination-card">
+            <div class="transport-icon icon-car">
+                <i class="fas fa-map-marker-alt"></i>
+            </div>
+            <h3>活动地点</h3>
+            <h4 style="color: #007bff; margin: 10px 0;">小白云山打石坑</h4>
+            <p style="color: #666; font-size: 14px;">广东省广州市黄埔区永宁街<br>小白云山打石坑自编8号</p>
+            <div style="display: flex; flex-direction: column; gap: 10px; align-items: center;">
+                <button class="copy-btn" id="openLocation" style="background: #007bff; font-size: 16px; padding: 12px 24px;">
+                    <i class="fas fa-navigation me-1"></i>导航
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <script src="../js/page-status.js"></script>
+    <script src="../js/mobile.js"></script>
+    <script src="https://res.wx.qq.com/open/js/jweixin-1.6.0.js"></script>
+    
+    <script>
+        
+        // 动态获取微信JS-SDK配置
+        function initWeixinConfig() {
+            const currentUrl = window.location.href.split('#')[0];
+            const configUrl = `../api/weixin-config.php?url=${encodeURIComponent(currentUrl)}`;
+            
+            fetch(configUrl)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.success && data.data) {
+                        const config = {
+                            debug: false,
+                            appId: data.data.appId,
+                            timestamp: data.data.timestamp,
+                            nonceStr: data.data.nonceStr,
+                            signature: data.data.signature,
+                            jsApiList: data.data.jsApiList || ['openLocation']
+                        };
+                        
+                        wx.config(config);
+                    } else {
+                        // 降级方案：使用基本配置
+                        const fallbackConfig = {
+                            debug: false,
+                            appId: 'wx19b8544837efb153',
+                            timestamp: Math.floor(Date.now() / 1000),
+                            nonceStr: Math.random().toString(36).substr(2, 15),
+                            signature: '',
+                            jsApiList: ['openLocation']
+                        };
+                        
+                        wx.config(fallbackConfig);
+                    }
+                })
+                .catch(error => {
+                    // 降级方案：使用基本配置
+                    const fallbackConfig = {
+                        debug: false,
+                        appId: 'wx19b8544837efb153',
+                        timestamp: Math.floor(Date.now() / 1000),
+                        nonceStr: Math.random().toString(36).substr(2, 15),
+                        signature: '',
+                        jsApiList: ['openLocation']
+                    };
+                    
+                    wx.config(fallbackConfig);
+                });
+        }
+        
+        // 微信JS-SDK事件监听
+        wx.ready(function () {
+            // 7.1 查看地理位置
+            if(document.getElementById('openLocation')){
+                document.getElementById('openLocation').onclick = function () {
+                    const locationData = {
+                        // 小白云山打石坑的正确经纬度
+                        latitude: 23.2050, // 纬度，浮点数，范围为90 ~ -90
+                        longitude: 113.4668, // 经度，浮点数，范围为180 ~ -180
+                        name: '小白云山打石坑', // 位置名
+                        address: '广东省广州市黄埔区永宁街小白云山打石坑自编8号', // 地址详情说明
+                        scale: 16, // 地图缩放级别,整形值,范围从1~28。默认为最大
+                        infoUrl: '' // 在查看位置界面底部显示的超链接,可点击跳转
+                    };
+                    
+                    wx.openLocation(locationData);
+                };
+            }
+        });
+        
+        wx.error(function(res) {
+            // 显示降级方案
+            showToast('微信导航功能暂时不可用，请手动复制地址', 'warning');
+        });
+        
+        // 初始化微信配置
+        initWeixinConfig();
+
+
+        // 复制地址功能
+        function copyAddress() {
+            const address = "小白云山打石坑 广东省广州市黄埔区永宁街小白云山打石坑自编8号";
+            
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(address).then(() => {
+                    showToast('地址已复制到剪贴板');
+                }).catch(() => {
+                    fallbackCopyTextToClipboard(address);
+                });
+            } else {
+                fallbackCopyTextToClipboard(address);
+            }
+        }
+
+        // 降级复制方案
+        function fallbackCopyTextToClipboard(text) {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.top = "0";
+            textArea.style.left = "0";
+            textArea.style.position = "fixed";
+            textArea.style.opacity = "0";
+            
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            
+            try {
+                document.execCommand('copy');
+                showToast('地址已复制到剪贴板');
+            } catch (err) {
+                showToast('复制失败，请手动复制地址');
+            }
+            
+            document.body.removeChild(textArea);
+        }
+
+
+
+        // 显示提示消息
+        function showToast(message) {
+            const toast = document.createElement('div');
+            toast.style.cssText = `
+                position: fixed;
+                top: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: #333;
+                color: white;
+                padding: 12px 20px;
+                border-radius: 8px;
+                z-index: 9999;
+                font-size: 14px;
+                opacity: 0;
+                transition: opacity 0.3s ease;
+            `;
+            toast.textContent = message;
+            
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.opacity = '1';
+            }, 100);
+            
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                setTimeout(() => {
+                    if (document.body.contains(toast)) {
+                        document.body.removeChild(toast);
+                    }
+                }, 300);
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

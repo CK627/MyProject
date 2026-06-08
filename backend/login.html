@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="福建师范大学广东校友会管理系统登录">
+    <meta name="keywords" content="管理系统,登录,福建师范大学,广东校友会">
+    <meta name="author" content="福建师范大学广东校友会">
+    
+    <title>管理系统登录 - 福建师范大学广东校友会</title>
+    
+    <!-- 引入Font Awesome图标库 -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- 引入登录页面样式 -->
+    <link href="css/login.css" rel="stylesheet">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="../frontend/favicon.svg">
+    <link rel="alternate icon" href="../frontend/favicon.ico">
+</head>
+<body>
+    <!-- 登录容器 -->
+    <div class="login-container">
+        <!-- 登录头部 -->
+        <div class="login-header">
+            <div class="login-logo">
+                <i class="fas fa-user-shield"></i>
+            </div>
+            <h1 class="login-title">管理系统</h1>
+            <p class="login-subtitle">福建师范大学广东校友会</p>
+        </div>
+
+        <!-- 错误/成功消息显示区域 -->
+        <div id="message-container"></div>
+
+        <!-- 登录表单 -->
+        <form class="login-form" id="loginForm">
+            <div class="form-group">
+                <label for="username" class="form-label">用户名</label>
+                <div class="form-input-wrapper">
+                    <input type="text" 
+                           id="username" 
+                           name="username" 
+                           class="form-control" 
+                           placeholder="请输入用户名" 
+                           required 
+                           autocomplete="username">
+                    <i class="fas fa-user form-icon"></i>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="password" class="form-label">密码</label>
+                <div class="form-input-wrapper">
+                    <input type="password" 
+                           id="password" 
+                           name="password" 
+                           class="form-control" 
+                           placeholder="请输入密码" 
+                           required 
+                           autocomplete="current-password">
+                    <i class="fas fa-lock form-icon"></i>
+                </div>
+            </div>
+
+            <div class="form-check">
+                <input type="checkbox" id="remember" name="remember" class="form-check-input">
+                <label for="remember" class="form-check-label">记住我</label>
+            </div>
+
+            <button type="submit" class="btn-login" id="loginBtn">
+                <span class="btn-text">登录</span>
+            </button>
+        </form>
+
+
+
+        <!-- 版权信息 -->
+        <div class="login-footer">
+            <p>&copy; 2025 福建师范大学广东校友会. 保留所有权利.</p>
+        </div>
+    </div>
+
+    <!-- JavaScript -->
+    <script>
+        // DOM元素
+        const loginForm = document.getElementById('loginForm');
+        const loginBtn = document.getElementById('loginBtn');
+        const messageContainer = document.getElementById('message-container');
+        const usernameInput = document.getElementById('username');
+        const passwordInput = document.getElementById('password');
+
+        // 显示消息
+        function showMessage(message, type = 'danger') {
+            messageContainer.innerHTML = `
+                <div class="alert alert-${type}">
+                    <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-triangle'} me-2"></i>
+                    ${message}
+                </div>
+            `;
+            
+            // 3秒后自动隐藏消息
+            setTimeout(() => {
+                messageContainer.innerHTML = '';
+            }, 3000);
+        }
+
+        // 设置按钮加载状态
+        function setLoading(loading) {
+            if (loading) {
+                loginBtn.classList.add('loading');
+                loginBtn.querySelector('.btn-text').textContent = '登录中...';
+                loginBtn.disabled = true;
+            } else {
+                loginBtn.classList.remove('loading');
+                loginBtn.querySelector('.btn-text').textContent = '登录';
+                loginBtn.disabled = false;
+            }
+        }
+
+        // 表单提交处理
+        loginForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const username = usernameInput.value.trim();
+            const password = passwordInput.value.trim();
+            const remember = document.getElementById('remember').checked;
+
+            // 基本验证
+            if (!username) {
+                showMessage('请输入用户名');
+                usernameInput.focus();
+                return;
+            }
+
+            if (!password) {
+                showMessage('请输入密码');
+                passwordInput.focus();
+                return;
+            }
+
+            if (password.length < 6) {
+                showMessage('密码长度不能少于6位');
+                passwordInput.focus();
+                return;
+            }
+
+            // 设置加载状态
+            setLoading(true);
+
+            try {
+                // 这里将来会连接到后端API进行登录验证
+                // 目前只是模拟登录过程
+                await simulateLogin(username, password, remember);
+                
+            } catch (error) {
+                showMessage(error.message || '登录失败，请重试');
+            } finally {
+                setLoading(false);
+            }
+        });
+
+        // 真实的登录函数，调用后端API
+        async function simulateLogin(username, password, remember) {
+            try {
+                const response = await fetch('./api/login.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        username: username,
+                        password: password
+                    })
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    // 登录成功
+                    showMessage('登录成功！正在跳转...', 'success');
+                    
+                    // 保存会话ID
+                    localStorage.setItem('session_id', result.data.session_id);
+                    
+                    // 如果选择记住我，保存用户名
+                    if (remember) {
+                        localStorage.setItem('adminRemember', 'true');
+                        localStorage.setItem('adminUsername', username);
+                    } else {
+                        localStorage.removeItem('adminRemember');
+                        localStorage.removeItem('adminUsername');
+                    }
+                    
+                    // 2秒后跳转到管理后台
+                    setTimeout(() => {
+                        window.location.href = 'index.html';
+                    }, 2000);
+                } else {
+                    // 登录失败
+                    throw new Error(result.message || '登录失败，请检查用户名和密码');
+                }
+            } catch (error) {
+                console.error('登录请求失败:', error);
+                if (error.message.includes('fetch')) {
+                    throw new Error('网络连接失败，请检查网络后重试');
+                } else {
+                    throw error;
+                }
+            }
+        }
+
+
+
+        // 页面加载时检查是否已登录
+        window.addEventListener('load', function() {
+            const sessionId = localStorage.getItem('session_id');
+            const rememberMe = localStorage.getItem('adminRemember');
+            
+            if (sessionId) {
+                // 如果有会话ID，验证是否有效
+                verifyExistingSession(sessionId);
+            } else if (rememberMe === 'true') {
+                // 如果选择了记住我，自动填充用户名
+                const savedUsername = localStorage.getItem('adminUsername');
+                if (savedUsername) {
+                    usernameInput.value = savedUsername;
+                    document.getElementById('remember').checked = true;
+                    passwordInput.focus(); // 焦点移到密码框
+                }
+            }
+        });
+
+        // 验证现有会话
+        async function verifyExistingSession(sessionId) {
+            try {
+                const response = await fetch('./api/verify-session.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        session_id: sessionId
+                    })
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    // 会话有效，直接跳转到后台
+                    showMessage('检测到有效会话，正在跳转...', 'success');
+                    setTimeout(() => {
+                        window.location.href = 'index.html';
+                    }, 1000);
+                } else {
+                    // 会话无效，清除本地存储
+                    localStorage.removeItem('session_id');
+                    console.log('会话已过期，请重新登录');
+                }
+            } catch (error) {
+                console.error('验证会话失败:', error);
+                localStorage.removeItem('session_id');
+            }
+        }
+
+        // 输入框焦点效果
+        const formControls = document.querySelectorAll('.form-control');
+        formControls.forEach(control => {
+            control.addEventListener('focus', function() {
+                this.parentElement.classList.add('focused');
+            });
+            
+            control.addEventListener('blur', function() {
+                if (!this.value) {
+                    this.parentElement.classList.remove('focused');
+                }
+            });
+        });
+
+        // 键盘快捷键支持
+        document.addEventListener('keydown', function(e) {
+            // Ctrl+Enter 快速登录
+            if (e.ctrlKey && e.key === 'Enter') {
+                loginForm.dispatchEvent(new Event('submit'));
+            }
+            
+            // ESC 清空表单
+            if (e.key === 'Escape') {
+                loginForm.reset();
+                messageContainer.innerHTML = '';
+                usernameInput.focus();
+            }
+        });
+
+        // 防止表单自动填充时的样式问题
+        window.addEventListener('load', function() {
+            setTimeout(() => {
+                formControls.forEach(control => {
+                    if (control.value) {
+                        control.parentElement.classList.add('focused');
+                    }
+                });
+            }, 100);
+        });
+    </script>
+</body>
+</html>

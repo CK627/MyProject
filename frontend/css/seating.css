@@ -1,0 +1,401 @@
+/* 座位信息页面样式 */
+
+/* 页面标题样式 */
+.page-header {
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    padding: 2rem 0;
+}
+
+.page-header h1 {
+    font-weight: 700;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+}
+
+/* 搜索区域样式 */
+.search-section .card {
+    border-radius: 15px;
+    overflow: hidden;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.search-section .card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+}
+
+.search-section .card-header {
+    background: linear-gradient(135deg, var(--primary-color), #0056b3);
+    border: none;
+    padding: 1.5rem;
+}
+
+.search-section .form-control {
+    border-radius: 10px;
+    border: 2px solid #e9ecef;
+    padding: 0.75rem 1rem;
+    font-size: 1.1rem;
+    transition: all 0.3s ease;
+}
+
+.search-section .form-control:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+    transform: translateY(-2px);
+}
+
+.search-section .btn {
+    border-radius: 10px;
+    padding: 0.75rem 1.5rem;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+.search-section .btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(0, 123, 255, 0.3);
+}
+
+/* 结果区域样式 */
+.result-section .card {
+    border-radius: 15px;
+    overflow: hidden;
+    animation: slideInUp 0.6s ease-out;
+}
+
+@keyframes slideInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.result-section .card-header {
+    padding: 1.5rem;
+    border: none;
+}
+
+.result-section .card-body {
+    padding: 2rem;
+}
+
+/* 信息项样式 */
+.info-item {
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 10px;
+    margin-bottom: 1rem;
+    transition: all 0.3s ease;
+}
+
+.info-item:hover {
+    background: #e9ecef;
+    transform: translateY(-2px);
+}
+
+.info-item h6 {
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* 座位信息样式 */
+.seat-info {
+    padding: 2rem;
+    background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+    border-radius: 15px;
+    transition: all 0.3s ease;
+}
+
+.seat-info:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+}
+
+.seat-icon {
+    animation: bounce 2s infinite;
+}
+
+@keyframes bounce {
+    0%, 20%, 50%, 80%, 100% {
+        transform: translateY(0);
+    }
+    40% {
+        transform: translateY(-10px);
+    }
+    60% {
+        transform: translateY(-5px);
+    }
+}
+
+.seat-number {
+    font-size: 3rem;
+    font-weight: 800;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* 签到区域样式 */
+.checkin-section {
+    padding: 2rem;
+    background: linear-gradient(135deg, #fff3cd, #ffeaa7);
+    border-radius: 15px;
+    transition: all 0.3s ease;
+}
+
+.checkin-section:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+}
+
+.checkin-status {
+    transition: all 0.3s ease;
+}
+
+.checkin-status.checked-in {
+    color: var(--success-color) !important;
+}
+
+.checkin-status.checked-in i {
+    color: var(--success-color) !important;
+    animation: checkPulse 1.5s infinite;
+}
+
+@keyframes checkPulse {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.1);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+#checkinBtn {
+    border-radius: 25px;
+    padding: 1rem 2rem;
+    font-weight: 600;
+    font-size: 1.1rem;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+#checkinBtn:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 25px rgba(40, 167, 69, 0.3);
+}
+
+#checkinBtn:disabled {
+    background-color: #6c757d;
+    border-color: #6c757d;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+#checkinBtn.checked-in {
+    background-color: var(--success-color);
+    border-color: var(--success-color);
+}
+
+/* 家属信息样式 */
+.family-member {
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    border-left: 4px solid var(--info-color);
+    transition: all 0.3s ease;
+}
+
+.family-member:hover {
+    background: #e9ecef;
+    transform: translateX(5px);
+}
+
+.family-member h6 {
+    color: var(--info-color);
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+/* 提醒区域样式 */
+.reminder-item {
+    padding: 0.75rem;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    transition: all 0.3s ease;
+}
+
+.reminder-item:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateX(5px);
+}
+
+/* 错误提示样式 */
+#errorAlert {
+    border-radius: 10px;
+    border: none;
+    animation: shake 0.5s ease-in-out;
+}
+
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    75% { transform: translateX(5px); }
+}
+
+/* 加载指示器样式 */
+#loadingIndicator {
+    padding: 3rem;
+    animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.spinner-border {
+    width: 3rem;
+    height: 3rem;
+    border-width: 0.3em;
+}
+
+/* 模态框样式 */
+.modal-content {
+    border-radius: 15px;
+    border: none;
+    overflow: hidden;
+}
+
+.modal-header {
+    border: none;
+    padding: 2rem 2rem 1rem;
+}
+
+.modal-body {
+    padding: 1rem 2rem 2rem;
+}
+
+.success-icon i {
+    animation: successPulse 1s ease-in-out;
+}
+
+@keyframes successPulse {
+    0% {
+        transform: scale(0);
+        opacity: 0;
+    }
+    50% {
+        transform: scale(1.2);
+        opacity: 0.8;
+    }
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .page-header h1 {
+        font-size: 2.5rem;
+    }
+    
+    .seat-number {
+        font-size: 2.5rem;
+    }
+    
+    .search-section .card-body {
+        padding: 2rem 1.5rem;
+    }
+    
+    .result-section .card-body {
+        padding: 1.5rem;
+    }
+    
+    .seat-info,
+    .checkin-section {
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+    }
+    
+    .info-item {
+        margin-bottom: 1.5rem;
+    }
+    
+    #checkinBtn {
+        width: 100%;
+        margin-top: 1rem;
+    }
+}
+
+@media (max-width: 576px) {
+    .page-header {
+        padding: 1rem 0;
+    }
+    
+    .page-header h1 {
+        font-size: 2rem;
+    }
+    
+    .seat-number {
+        font-size: 2rem;
+    }
+    
+    .search-section .card-body {
+        padding: 1.5rem 1rem;
+    }
+    
+    .result-section .card-body {
+        padding: 1rem;
+    }
+    
+    .seat-info,
+    .checkin-section {
+        padding: 1rem;
+    }
+    
+    .modal-header,
+    .modal-body {
+        padding: 1.5rem;
+    }
+}
+
+/* 打印样式 */
+@media print {
+    .navbar,
+    footer,
+    .search-section,
+    #checkinBtn,
+    .modal {
+        display: none !important;
+    }
+    
+    .result-section {
+        margin-top: 0 !important;
+    }
+    
+    .card {
+        border: 2px solid #000 !important;
+        box-shadow: none !important;
+    }
+    
+    .seat-number {
+        color: #000 !important;
+        -webkit-text-fill-color: #000 !important;
+    }
+}

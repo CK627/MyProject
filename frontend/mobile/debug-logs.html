@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>微信分享调试日志</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            margin: 20px;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+        }
+        .log-container {
+            background-color: #2d2d30;
+            border: 1px solid #3e3e42;
+            border-radius: 5px;
+            padding: 15px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        .log-entry {
+            margin-bottom: 10px;
+            padding: 8px;
+            border-radius: 3px;
+            border-left: 4px solid #007acc;
+        }
+        .log-entry.error {
+            border-left-color: #f44747;
+            background-color: rgba(244, 71, 71, 0.1);
+        }
+        .log-entry.warn {
+            border-left-color: #ffcc02;
+            background-color: rgba(255, 204, 2, 0.1);
+        }
+        .log-entry.info {
+            border-left-color: #007acc;
+            background-color: rgba(0, 122, 204, 0.1);
+        }
+        .timestamp {
+            color: #569cd6;
+            font-weight: bold;
+        }
+        .level {
+            color: #4ec9b0;
+            font-weight: bold;
+        }
+        .message {
+            color: #d4d4d4;
+        }
+        .data {
+            color: #ce9178;
+            margin-top: 5px;
+            font-size: 0.9em;
+        }
+        .controls {
+            margin-bottom: 20px;
+        }
+        button {
+            background-color: #0e639c;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 3px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #1177bb;
+        }
+        .filter {
+            margin-bottom: 10px;
+        }
+        select, input {
+            background-color: #3c3c3c;
+            color: #d4d4d4;
+            border: 1px solid #3e3e42;
+            padding: 5px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <h1>微信分享调试日志</h1>
+    
+    <div class="controls">
+        <button onclick="clearLogs()">清空日志</button>
+        <button onclick="exportLogs()">导出日志</button>
+        <button onclick="toggleAutoScroll()">自动滚动: <span id="autoScrollStatus">开启</span></button>
+    </div>
+    
+    <div class="filter">
+        <label>日志级别过滤: </label>
+        <select id="levelFilter" onchange="filterLogs()">
+            <option value="all">全部</option>
+            <option value="ERROR">错误</option>
+            <option value="WARN">警告</option>
+            <option value="INFO">信息</option>
+        </select>
+        
+        <label style="margin-left: 20px;">搜索: </label>
+        <input type="text" id="searchInput" placeholder="搜索日志内容..." onkeyup="filterLogs()">
+    </div>
+    
+    <div class="log-container" id="logContainer">
+        <div class="log-entry info">
+            <span class="timestamp">[等待日志...]</span>
+            <span class="level">[INFO]</span>
+            <span class="message">日志查看器已启动，等待微信分享日志...</span>
+        </div>
+    </div>
+
+    <script>
+        let logs = [];
+        let autoScroll = true;
+        
+        // 重写console方法来捕获日志
+        const originalLog = console.log;
+        const originalError = console.error;
+        const originalWarn = console.warn;
+        
+        function addLog(level, message, data = null) {
+            const timestamp = new Date().toISOString();
+            const logEntry = {
+                timestamp,
+                level,
+                message,
+                data
+            };
+            
+            logs.push(logEntry);
+            displayLog(logEntry);
+            
+            if (autoScroll) {
+                scrollToBottom();
+            }
+        }
+        
+        function displayLog(logEntry) {
+            const container = document.getElementById('logContainer');
+            const logDiv = document.createElement('div');
+            logDiv.className = `log-entry ${logEntry.level.toLowerCase()}`;
+            
+            let content = `
+                <span class="timestamp">[${logEntry.timestamp}]</span>
+                <span class="level">[${logEntry.level}]</span>
+                <span class="message">${logEntry.message}</span>
+            `;
+            
+            if (logEntry.data) {
+                content += `<div class="data">${JSON.stringify(logEntry.data, null, 2)}</div>`;
+            }
+            
+            logDiv.innerHTML = content;
+            container.appendChild(logDiv);
+        }
+        
+        function clearLogs() {
+            logs = [];
+            document.getElementById('logContainer').innerHTML = '';
+            addLog('INFO', '日志已清空');
+        }
+        
+        function exportLogs() {
+            const logText = logs.map(log => {
+                let text = `[${log.timestamp}] [${log.level}] ${log.message}`;
+                if (log.data) {
+                    text += `\n${JSON.stringify(log.data, null, 2)}`;
+                }
+                return text;
+            }).join('\n\n');
+            
+            const blob = new Blob([logText], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `weixin-share-logs-${new Date().toISOString().slice(0, 19)}.txt`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        
+        function toggleAutoScroll() {
+            autoScroll = !autoScroll;
+            document.getElementById('autoScrollStatus').textContent = autoScroll ? '开启' : '关闭';
+        }
+        
+        function scrollToBottom() {
+            const container = document.getElementById('logContainer');
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        function filterLogs() {
+            const levelFilter = document.getElementById('levelFilter').value;
+            const searchText = document.getElementById('searchInput').value.toLowerCase();
+            const container = document.getElementById('logContainer');
+            
+            container.innerHTML = '';
+            
+            logs.forEach(log => {
+                if (levelFilter !== 'all' && log.level !== levelFilter) {
+                    return;
+                }
+                
+                if (searchText && !log.message.toLowerCase().includes(searchText)) {
+                    return;
+                }
+                
+                displayLog(log);
+            });
+        }
+        
+        // 监听来自其他页面的消息
+        window.addEventListener('message', function(event) {
+            if (event.data && event.data.type === 'weixinLog') {
+                addLog(event.data.level, event.data.message, event.data.data);
+            }
+        });
+        
+        // 监听localStorage变化（用于跨页面日志传递）
+        window.addEventListener('storage', function(event) {
+            if (event.key === 'weixinDebugLog') {
+                try {
+                    const logData = JSON.parse(event.newValue);
+                    addLog(logData.level, logData.message, logData.data);
+                } catch (e) {
+                    // 忽略解析错误
+                }
+            }
+        });
+        
+        // 定期检查localStorage中的新日志
+        setInterval(() => {
+            const logData = localStorage.getItem('weixinDebugLog');
+            if (logData) {
+                try {
+                    const parsed = JSON.parse(logData);
+                    if (parsed.timestamp && parsed.timestamp > (window.lastLogTimestamp || 0)) {
+                        addLog(parsed.level, parsed.message, parsed.data);
+                        window.lastLogTimestamp = parsed.timestamp;
+                    }
+                } catch (e) {
+                    // 忽略解析错误
+                }
+            }
+        }, 1000);
+        
+        addLog('INFO', '微信分享调试日志查看器已启动');
+        addLog('INFO', '请在其他页面中进行微信分享操作，日志将在此处显示');
+    </script>
+</body>
+</html>
