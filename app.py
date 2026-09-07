@@ -2,8 +2,10 @@ import logging
 import os
 import sys
 
+from config import get
+
 # Setup logging
-log_file = os.path.expanduser("~/Documents/ChatRoomData/app.log")
+log_file = os.path.expanduser(get('logging', 'log_file'))
 os.makedirs(os.path.dirname(log_file), exist_ok=True)
 logging.basicConfig(filename=log_file, level=logging.DEBUG, 
                     format='%(asctime)s %(levelname)s: %(message)s')
@@ -72,7 +74,7 @@ else:
 
 logging.info(f"Starting app with config: {CONFIG_FILE}")
 
-app.config['SECRET_KEY'] = 'secret!'
+app.config['SECRET_KEY'] = get('server', 'secret_key')
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 def load_nickname_from_config():
@@ -122,8 +124,8 @@ def get_default_nickname():
 USER_NICKNAME = get_default_nickname()
 USER_ID = f"user_{int(time.time())}" # Internal ID
 
-DISCOVERY_PORT = "<DISCOVERY_PORT>" # Default: 5555
-WEB_PORT = "<WEB_PORT>" # Default: 8080
+DISCOVERY_PORT = get('network', 'discovery_port')
+WEB_PORT = get('network', 'web_port')
 
 storage = StorageManager(user_id=USER_ID)
 scanner = NetworkScanner(port=DISCOVERY_PORT)
@@ -138,7 +140,7 @@ def discovery_listener():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
-        s.bind(('0.0.0.0', DISCOVERY_PORT))
+        s.bind((get('network', 'host'), DISCOVERY_PORT))
         s.listen(5)
         print(f"Discovery listener started on port {DISCOVERY_PORT}")
         while True:
@@ -243,7 +245,7 @@ def upload_file():
                 data = {'nickname': USER_NICKNAME}
                 
                 url = f"http://{target_ip}:{WEB_PORT}/api/receive_file"
-                requests.post(url, files=files, data=data, timeout=10) # Longer timeout for files
+                requests.post(url, files=files, data=data, timeout=get('messaging', 'file_timeout')) # Longer timeout for files
                 
             return jsonify({"status": "ok"})
         except Exception as e:
@@ -337,7 +339,7 @@ def handle_send_message(data):
     try:
         # Assuming remote peer is running on same port 5000
         url = f"http://{target_ip}:{WEB_PORT}/api/receive_message"
-        requests.post(url, json={'content': content, 'type': msg_type, 'nickname': USER_NICKNAME}, timeout=2)
+        requests.post(url, json={'content': content, 'type': msg_type, 'nickname': USER_NICKNAME}, timeout=get('messaging', 'send_timeout'))
         
         # 3. Ack to frontend
         emit('message_sent', {
@@ -373,7 +375,7 @@ def run_app():
     # Using 0.0.0.0 so it is accessible on the network
     try:
         logging.info("Starting SocketIO server")
-        socketio.run(app, host='0.0.0.0', port=WEB_PORT, debug=False, use_reloader=False, allow_unsafe_werkzeug=True)
+        socketio.run(app, host=get('network', 'host'), port=WEB_PORT, debug=False, use_reloader=False, allow_unsafe_werkzeug=True)
     except Exception as e:
         logging.error(f"Failed to start server: {e}")
         print(f"Failed to start server: {e}")
@@ -458,7 +460,7 @@ class ServerGUI:
         self.stop_btn.config(state=tk.DISABLED)
         
     def open_browser(self):
-        webbrowser.open("http://localhost:8080")
+        webbrowser.open(f"http://localhost:{WEB_PORT}")
         
     def on_close(self):
         self.root.destroy()

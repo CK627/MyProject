@@ -4,9 +4,12 @@ import psutil
 import ipaddress
 import time
 
+from config import get
+
 class NetworkScanner:
-    def __init__(self, port=<SCANNER_PORT>):
-        self.port = port
+    def __init__(self, port=None, timeout=None):
+        self.port = port if port is not None else get('network', 'discovery_port')
+        self.timeout = timeout if timeout is not None else get('scanner', 'timeout')
         self.active_hosts = []
         self.stop_scan_flag = False
 
@@ -71,7 +74,7 @@ class NetworkScanner:
         Try to connect to the host on the specific port.
         """
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(0.5) # Short timeout for speed
+        s.settimeout(self.timeout) # Short timeout for speed
         try:
             result = s.connect_ex((str(ip), self.port))
             if result == 0:
@@ -160,7 +163,7 @@ class NetworkScanner:
         return self.active_hosts
 
 if __name__ == "__main__":
-    scanner = NetworkScanner(port=<SCANNER_PORT>)
+    scanner = NetworkScanner()
     print("Interfaces:", scanner.get_interfaces())
     hosts = scanner.scan_network()
     print(f"Active hosts found: {hosts}")

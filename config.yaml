@@ -1,0 +1,23 @@
+# ChatRoom 集中配置文件
+# 修改后重启程序生效;缺失的键会回退到 config.py 内置默认值。
+
+network:
+  discovery_port: 5555   # 局域网设备发现端口
+  web_port: 8080         # Web 服务端口
+  host: "0.0.0.0"        # 监听地址
+
+storage:
+  data_dir: "~/Documents/ChatRoomData"   # 数据根目录(实际存到其下 user_xxx 子目录)
+
+logging:
+  log_file: "~/Documents/ChatRoomData/app.log"
+
+server:
+  secret_key: "secret!"
+
+scanner:
+  timeout: 0.5           # 单主机扫描超时(秒)
+
+messaging:
+  send_timeout: 2        # 消息发送超时(秒)
+  file_timeout: 10       # 文件发送超时(秒)

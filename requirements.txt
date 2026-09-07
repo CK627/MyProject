@@ -2,4 +2,6 @@ flask
 flask-socketio
 requests
 charset-normalizer
+psutil
+pyyaml
 pyinstaller

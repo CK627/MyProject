@@ -9,7 +9,7 @@ from scanner import NetworkScanner
 
 class TestNetworkScanner(unittest.TestCase):
     def setUp(self):
-        self.scanner = NetworkScanner(port=<SCANNER_PORT>)
+        self.scanner = NetworkScanner()
 
     def test_get_local_ip(self):
         """Test if we can get a valid local IP."""

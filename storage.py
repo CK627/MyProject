@@ -6,6 +6,8 @@ import threading
 import platform
 import logging
 
+from config import get
+
 class StorageManager:
     def __init__(self, user_id="default_user"):
         self.user_id = user_id
@@ -19,8 +21,8 @@ class StorageManager:
         Get the default storage path.
         Uses the user's Documents folder to ensure write access and persistence.
         """
-        documents_dir = os.path.expanduser("~/Documents")
-        return os.path.join(documents_dir, "ChatRoomData", self.user_id)
+        data_dir = os.path.expanduser(get('storage', 'data_dir'))
+        return os.path.join(data_dir, self.user_id)
 
     def set_custom_path(self, path):
         """
