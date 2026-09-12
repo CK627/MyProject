@@ -207,3 +207,71 @@ body {
     cursor: pointer;
     font-size: 24px;
 }
+
+/* Group chat */
+.group-entry {
+    padding: 15px;
+    cursor: pointer;
+    border-bottom: 1px solid #ddd;
+    font-weight: bold;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: background 0.2s;
+}
+
+.group-entry:hover {
+    background-color: #f0f2f5;
+}
+
+.group-entry.active {
+    background-color: #e6f2ff;
+    border-left: 4px solid #007bff;
+}
+
+.unread-badge {
+    background-color: #dc3545;
+    color: white;
+    font-size: 11px;
+    font-weight: bold;
+    border-radius: 10px;
+    padding: 1px 7px;
+    line-height: 1.4;
+}
+
+.group-members {
+    padding: 10px 15px;
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #ddd;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.member-label {
+    font-size: 12px;
+    color: #666;
+    margin-right: 4px;
+}
+
+.member-chip {
+    font-size: 12px;
+    background-color: #e9ecef;
+    color: #333;
+    border-radius: 12px;
+    padding: 3px 10px;
+}
+
+.member-chip.me {
+    background-color: #007bff;
+    color: white;
+}
+
+.message .sender {
+    font-size: 11px;
+    font-weight: bold;
+    margin-bottom: 3px;
+    opacity: 0.85;
+}

@@ -1,28 +1,46 @@
 const socket = io();
-let currentTarget = null;
-let myId = null; // Will be set if needed, or we just rely on 'is_self'
+let currentTarget = null; // private chat peer IP
+let isGroup = false;      // whether we are viewing the group chat
+let groupUnread = 0;      // unread group messages while not viewing the group
+
+function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+}
 
 // Connection events
 socket.on('connect', () => {
     console.log('Connected to server');
 });
 
+// ---- Group chat events ----
+socket.on('group_message', (data) => {
+    if (isGroup) {
+        appendGroupMessage(data.nickname, data.sender, data.content, data.type, data.timestamp, data.is_self);
+    } else {
+        groupUnread++;
+        updateGroupUnread();
+    }
+});
+
+socket.on('member_list', (data) => {
+    renderGroupMembers(data.members || []);
+});
+
+// ---- Private chat events ----
 socket.on('new_message', (data) => {
     // Check if sender is in the list
     let userItem = document.getElementById(`user-${data.sender}`);
-    
+
     // If user not in list, add them dynamically
     if (!userItem) {
         addUserToList(data.sender, data.nickname || 'Unknown');
         userItem = document.getElementById(`user-${data.sender}`);
     } else {
-        // If user exists but we now have a better nickname (and it was unknown before), update it
-        // Or if the nickname changed.
         if (data.nickname && data.nickname !== 'Unknown') {
             const displayName = `${data.nickname} (${data.sender})`;
-            // Only update if current text doesn't contain the new nickname or if it was just IP
             if (!userItem.innerText.includes(data.nickname)) {
-                // Preserve (New) or (新消息) badge if present
                 const hasBadge = userItem.innerText.includes('(新消息)');
                 userItem.innerText = displayName + (hasBadge ? ' (新消息)' : '');
             }
@@ -30,10 +48,9 @@ socket.on('new_message', (data) => {
     }
 
     // If the message is from the user we are currently chatting with, show it
-    if (currentTarget === data.sender) {
+    if (!isGroup && currentTarget === data.sender) {
         appendMessage(data.content, 'received', data.timestamp);
     } else {
-        // Mark user as having new messages (visual cue)
         if (userItem) {
             userItem.style.fontWeight = 'bold';
             if (!userItem.innerText.includes('(新消息)')) {
@@ -45,15 +62,13 @@ socket.on('new_message', (data) => {
 
 function addUserToList(ip, nickname) {
     const list = document.getElementById('userList');
-    // Check again to avoid duplicates if called rapidly
     if (document.getElementById(`user-${ip}`)) return;
-    
-    // Remove "No users found" if present
+
     const noUsers = list.querySelector('li[style*="font-style: italic"]');
     if (noUsers) {
         noUsers.remove();
     }
-    
+
     const displayName = nickname !== 'Unknown' ? `${nickname} (${ip})` : ip;
     const li = document.createElement('li');
     li.id = `user-${ip}`;
@@ -63,7 +78,7 @@ function addUserToList(ip, nickname) {
 }
 
 socket.on('message_sent', (data) => {
-    if (currentTarget === data.target) {
+    if (!isGroup && currentTarget === data.target) {
         appendMessage(data.content, 'sent', data.timestamp);
     }
 });
@@ -93,8 +108,7 @@ function loadInterfaces() {
                 option.text = `${iface.name} (${iface.ip})`;
                 select.appendChild(option);
             });
-            
-            // Auto select the first interface if available
+
             if (data.interfaces.length > 0) {
                 select.value = data.interfaces[0].cidr;
             }
@@ -102,7 +116,87 @@ function loadInterfaces() {
         .catch(err => console.error('加载网络接口失败:', err));
 }
 
-// UI Functions
+// ---- Group chat ----
+function selectGroup() {
+    isGroup = true;
+    currentTarget = null;
+    groupUnread = 0;
+    updateGroupUnread();
+
+    document.getElementById('groupEntry').classList.add('active');
+    document.querySelectorAll('#userList li').forEach(li => li.classList.remove('active'));
+
+    document.getElementById('chatHeader').innerText = '群聊';
+    document.getElementById('groupMembers').style.display = 'flex';
+    document.getElementById('messages').innerHTML = '';
+
+    document.getElementById('msgInput').disabled = false;
+    document.getElementById('sendBtn').disabled = false;
+    document.getElementById('fileBtn').disabled = true; // group file sharing not yet supported
+
+    // Load group history
+    fetch('/api/group/history')
+        .then(res => res.json())
+        .then(data => {
+            (data.history || []).forEach(msg => {
+                const isSelf = (msg.ip && msg.ip === (window.MY_ID || null)) || false;
+                appendGroupMessage(msg.nickname, msg.ip, msg.content, msg.type, msg.timestamp, isSelf);
+            });
+        })
+        .catch(err => console.error('加载群聊历史失败:', err));
+
+    // Load group members
+    fetch('/api/group/members')
+        .then(res => res.json())
+        .then(data => renderGroupMembers(data.members || []))
+        .catch(err => console.error('加载群成员失败:', err));
+}
+
+function renderGroupMembers(members) {
+    const bar = document.getElementById('groupMembers');
+    bar.innerHTML = '';
+
+    const label = document.createElement('span');
+    label.className = 'member-label';
+    label.innerText = `在线 (${members.length})`;
+    bar.appendChild(label);
+
+    members.forEach(m => {
+        const chip = document.createElement('span');
+        chip.className = 'member-chip' + (m.uid === window.MY_ID ? ' me' : '');
+        chip.innerText = m.uid === window.MY_ID ? `${m.nickname} (我)` : m.nickname;
+        bar.appendChild(chip);
+    });
+}
+
+function updateGroupUnread() {
+    const badge = document.getElementById('groupUnread');
+    if (groupUnread > 0) {
+        badge.innerText = groupUnread;
+        badge.style.display = 'inline-block';
+    } else {
+        badge.innerText = '';
+        badge.style.display = 'none';
+    }
+}
+
+function appendGroupMessage(nickname, ip, content, type, timestamp, isSelf) {
+    const msgs = document.getElementById('messages');
+    const div = document.createElement('div');
+    const senderLabel = isSelf ? '我' : (nickname && nickname !== 'Unknown' ? nickname : (ip || 'Unknown'));
+    const displayContent = escapeHtml(content);
+
+    div.className = `message ${isSelf ? 'sent' : 'received'} group`;
+    div.innerHTML = `
+        <div class="sender">${escapeHtml(senderLabel)}</div>
+        <div class="content">${displayContent}</div>
+        <div class="meta">${timestamp}</div>
+    `;
+    msgs.appendChild(div);
+    msgs.scrollTop = msgs.scrollHeight;
+}
+
+// ---- UI functions ----
 let isScanning = false;
 let scanController = null;
 
@@ -124,10 +218,7 @@ function scanNetwork() {
     stopBtn.style.display = 'inline-block';
     stopBtn.disabled = false;
     select.disabled = true;
-    
-    // We can use AbortController if fetch supports it, but here we rely on backend stop
-    // Or we just send a request to start scanning.
-    
+
     fetch(`/scan?cidr=${encodeURIComponent(cidr)}`)
         .then(response => response.json())
         .then(data => {
@@ -137,10 +228,10 @@ function scanNetwork() {
                 list.innerHTML = '<li style="color: #666; font-style: italic;">未发现用户</li>';
             }
             data.hosts.forEach(host => {
-                let ip = host.ip || host; 
+                let ip = host.ip || host;
                 let nickname = host.nickname || 'Unknown';
                 let displayName = nickname !== 'Unknown' ? `${nickname} (${ip})` : ip;
-                
+
                 const li = document.createElement('li');
                 li.id = `user-${ip}`;
                 li.innerText = displayName;
@@ -159,9 +250,6 @@ function stopScan() {
     fetch('/stop_scan')
         .then(response => response.json())
         .then(data => {
-            // Backend should stop the scan loop and return partial results or empty
-            // The original /scan request will then complete.
-            // But we can also force UI reset here.
             console.log("Scan stop requested");
         });
 }
@@ -171,49 +259,47 @@ function resetScanUI() {
     const btn = document.getElementById('scanBtn');
     const stopBtn = document.getElementById('stopScanBtn');
     const select = document.getElementById('interfaceSelect');
-    
+
     btn.disabled = false;
     btn.innerText = '扫描';
     btn.style.display = 'inline-block';
-    
+
     stopBtn.style.display = 'none';
     stopBtn.disabled = true;
-    
+
     select.disabled = false;
 }
 
 function selectUser(ip, nickname) {
+    isGroup = false;
     currentTarget = ip;
     const displayName = nickname && nickname !== 'Unknown' ? `${nickname} (${ip})` : ip;
+
+    document.getElementById('groupEntry').classList.remove('active');
+    document.getElementById('groupMembers').style.display = 'none';
     document.getElementById('chatHeader').innerText = `正在与 ${displayName} 聊天`;
     document.getElementById('msgInput').disabled = false;
     document.getElementById('sendBtn').disabled = false;
     document.getElementById('fileBtn').disabled = false;
-    
+
     // Clear messages or load history
     document.getElementById('messages').innerHTML = '';
-    
-    // Fetch and load history
+
     fetch(`/api/history?peer=${ip}`)
         .then(res => res.json())
         .then(data => {
             if (data.history && data.history.length > 0) {
                 data.history.forEach(msg => {
-                    // msg: {content, type, timestamp, direction}
-                    // We need to map 'direction' to 'sent' or 'received' CSS classes if needed
-                    // In storage.py we set 'direction' to 'sent' or 'received' directly
                     appendMessage(msg.content, msg.direction, msg.timestamp);
                 });
             }
         })
         .catch(err => console.error("Failed to load history:", err));
-    
-    // Highlight active user
+
     document.querySelectorAll('#userList li').forEach(li => li.classList.remove('active'));
     const activeLi = document.getElementById(`user-${ip}`);
     if (activeLi) {
         activeLi.classList.add('active');
-        // Remove "New" badge if present
         if (activeLi.innerText.includes('(新消息)')) {
             activeLi.innerText = displayName;
             activeLi.style.fontWeight = 'normal';
@@ -248,15 +334,11 @@ function triggerFileUpload() {
 document.getElementById('fileInput').addEventListener('change', function(e) {
     const file = e.target.files[0];
     if (!file) return;
-    
-    // For large files, we might need chunking or a direct HTTP upload instead of SocketIO
-    // For simplicity, let's use FileReader and send via socket if small, 
-    // or implement an upload API. Given requirements, let's use HTTP upload API.
-    
+
     const formData = new FormData();
     formData.append('file', file);
     formData.append('target_ip', currentTarget);
-    
+
     fetch('/api/upload_file', {
         method: 'POST',
         body: formData
@@ -273,53 +355,44 @@ document.getElementById('fileInput').addEventListener('change', function(e) {
         console.error(err);
         alert('File upload error');
     });
-    
-    // Reset input
+
     this.value = '';
 });
 
 function sendMessage() {
     const input = document.getElementById('msgInput');
     const content = input.value.trim();
-    if (!content || !currentTarget) return;
-    
-    socket.emit('send_message', {
-        target_ip: currentTarget,
-        content: content,
-        type: 'text'
-    });
-    
+    if (!content) return;
+
+    if (isGroup) {
+        socket.emit('send_message', { scope: 'group', content: content, type: 'text' });
+    } else if (currentTarget) {
+        socket.emit('send_message', { target_ip: currentTarget, content: content, type: 'text' });
+    } else {
+        return;
+    }
+
     input.value = '';
 }
 
 function appendMessage(content, type, timestamp) {
     const msgs = document.getElementById('messages');
     const div = document.createElement('div');
-    
-    // Check if content looks like a file path or file message
-    // Previously we sent: "[File] filename" but content in storage was the path.
-    // The history loading might return the full path or the message content.
-    // Let's handle both.
-    
+
     let displayContent = content;
-    
+
     if (content.startsWith('[File] ')) {
-        // It's a file message notification (e.g. from receive_file)
         const filename = content.substring(7);
         displayContent = `📁 文件: <a href="/api/download/${encodeURIComponent(filename)}" target="_blank">${filename}</a>`;
     } else if (content.includes('FileStorage')) {
-        // It's a raw path from history (e.g. .../FileStorage/filename.ext)
-        // We need to extract basename
-        // Assuming path separator is / or \
         const parts = content.split(/[/\\]/);
         const filename = parts[parts.length - 1];
         displayContent = `📁 文件: <a href="/api/download/${encodeURIComponent(filename)}" target="_blank">${filename}</a>`;
     }
-    
-    // Also handle "File sent: filename" from sender side
+
     if (content.startsWith('File sent: ')) {
-         const filename = content.substring(11);
-         displayContent = `📁 已发送文件: <a href="/api/download/${encodeURIComponent(filename)}" target="_blank">${filename}</a>`;
+        const filename = content.substring(11);
+        displayContent = `📁 已发送文件: <a href="/api/download/${encodeURIComponent(filename)}" target="_blank">${filename}</a>`;
     }
 
     div.className = `message ${type}`;

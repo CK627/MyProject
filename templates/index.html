@@ -3,15 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>智慧校园聊天室</title>
+    <title>局域网聊天室</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
 </head>
 <body>
     <div class="container">
         <div class="sidebar">
+            <div class="group-entry" id="groupEntry" onclick="selectGroup()">
+                💬 群聊
+                <span class="unread-badge" id="groupUnread" style="display: none;"></span>
+            </div>
             <div class="header">
-                <h3>在线用户</h3>
+                <h3>私聊</h3>
                 <div class="scan-controls">
                     <select id="interfaceSelect">
                         <option value="">选择网络接口</option>
@@ -36,6 +40,7 @@
             <div class="chat-header" id="chatHeader">
                 请选择用户开始聊天
             </div>
+            <div class="group-members" id="groupMembers" style="display: none;"></div>
             <div class="messages" id="messages">
                 <!-- Messages will appear here -->
             </div>
@@ -62,6 +67,10 @@
         </div>
     </div>
 
+    <script>
+        window.MY_ID = "{{ user_id }}";
+        window.MY_NICKNAME = "{{ nickname }}";
+    </script>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>

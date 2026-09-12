@@ -5,6 +5,7 @@ import time
 import threading
 import platform
 import logging
+import json
 
 from config import get
 
@@ -28,7 +29,7 @@ class StorageManager:
         """
         Allow user to customize the storage path.
         """
-        self.base_path = os.path.join(path, "SmartCampusServicePlatform", self.user_id)
+        self.base_path = os.path.join(path, "ChatRoom", self.user_id)
         self.setup_directories()
 
     def setup_directories(self):
@@ -172,6 +173,46 @@ class StorageManager:
         except Exception as e:
             logging.error(f"Failed to read history file: {e}")
             
+        return history
+
+    def save_group_message(self, nickname, ip, content, msg_type="text"):
+        """
+        Save a group-chat message to a dedicated log file (JSON lines).
+        Separated from private chat history to avoid the '|'-delimiter ambiguity.
+        """
+        log_file = os.path.join(self.msg_path, "group_history.log")
+        record = {
+            'timestamp': time.time(),
+            'nickname': nickname,
+            'ip': ip,
+            'content': content,
+            'type': msg_type,
+        }
+        with open(log_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    def get_group_history(self):
+        """
+        Retrieve group-chat history (JSON lines) as a list of dicts.
+        """
+        log_file = os.path.join(self.msg_path, "group_history.log")
+        if not os.path.exists(log_file):
+            return []
+
+        history = []
+        with open(log_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                    record['timestamp'] = time.strftime(
+                        '%Y-%m-%d %H:%M:%S', time.localtime(record.get('timestamp', time.time())))
+                    history.append(record)
+                except Exception as e:
+                    logging.error(f"Error parsing group history line: {line} - {e}")
+                    continue
         return history
 
     def async_delete(self, file_path):

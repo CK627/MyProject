@@ -18,7 +18,8 @@ class TestWebServer(unittest.TestCase):
         """Test if index page loads."""
         response = self.app.get('/')
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"Smart Campus Chat", response.data)
+        self.assertIn("局域网聊天室".encode('utf-8'), response.data)
+        self.assertIn("群聊".encode('utf-8'), response.data)
 
     def test_scan_api(self):
         """Test scan API endpoint."""

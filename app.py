@@ -133,6 +133,61 @@ scanner = NetworkScanner(port=DISCOVERY_PORT)
 # Global state
 active_chats = {} # IP -> list of messages
 
+# Group chat state (broadcast model — every node is a peer and broadcasts to the LAN)
+LOCAL_IP = scanner.get_local_ip_and_network()[0]
+
+group_peers = {}              # ip -> {'nickname': ..., 'last_seen': ...}
+group_peers_lock = threading.Lock()
+
+def register_group_peer(ip, nickname):
+    """Add/refresh a peer in the group roster (skip self / loopback)."""
+    if not ip or ip == '127.0.0.1' or ip == LOCAL_IP:
+        return
+    with group_peers_lock:
+        group_peers[ip] = {'nickname': nickname or 'Unknown', 'last_seen': time.time()}
+
+def group_member_payload():
+    with group_peers_lock:
+        members = [{'uid': ip, 'ip': ip, 'nickname': info['nickname']}
+                   for ip, info in group_peers.items()]
+    members.append({'uid': USER_ID, 'ip': LOCAL_IP, 'nickname': USER_NICKNAME})
+    return sorted(members, key=lambda x: x['nickname'])
+
+def emit_member_list():
+    socketio.emit('member_list', {'members': group_member_payload()})
+
+def broadcast_group_message(nickname, ip, content, msg_type='text'):
+    """Store a group message and broadcast it to the local browser + all known peers."""
+    timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+    storage.save_group_message(nickname, ip, content, msg_type)
+
+    # 1. Show on this node's own browser
+    socketio.emit('group_message', {
+        'nickname': nickname,
+        'sender': ip,
+        'content': content,
+        'type': msg_type,
+        'timestamp': timestamp,
+        'is_self': (ip == LOCAL_IP),
+    })
+
+    # 2. Broadcast to all known peers (skip self, handled by the local emit above)
+    with group_peers_lock:
+        targets = [t for t in group_peers.keys() if t != LOCAL_IP]
+
+    def _send_to(peer_ip):
+        try:
+            url = f"http://{peer_ip}:{WEB_PORT}/api/receive_message"
+            requests.post(url, json={
+                'scope': 'group', 'content': content, 'type': msg_type,
+                'nickname': nickname, 'sender_ip': ip,
+            }, timeout=get('messaging', 'send_timeout'))
+        except Exception as e:
+            logging.error(f"Group broadcast to {peer_ip} failed: {e}")
+
+    for t in targets:
+        threading.Thread(target=_send_to, args=(t,), daemon=True).start()
+
 def discovery_listener():
     """
     Listens for discovery pings from other clients.
@@ -166,6 +221,9 @@ def index():
 def scan_network():
     target_cidr = request.args.get('cidr')
     hosts = scanner.scan_network(target_cidr=target_cidr)
+    # Register scanned hosts as group peers so group messages reach them
+    for host in hosts:
+        register_group_peer(host.get('ip'), host.get('nickname'))
     return jsonify({"hosts": hosts})
 
 @app.route('/stop_scan')
@@ -178,9 +236,17 @@ def get_history():
     peer_ip = request.args.get('peer')
     if not peer_ip:
         return jsonify({"history": []})
-        
+
     history = storage.get_history(peer_ip)
     return jsonify({"history": history})
+
+@app.route('/api/group/history')
+def get_group_history():
+    return jsonify({"history": storage.get_group_history()})
+
+@app.route('/api/group/members')
+def get_group_members():
+    return jsonify({"members": group_member_payload()})
 
 @app.route('/api/download/<path:filename>')
 def download_file(filename):
@@ -296,20 +362,35 @@ def receive_file():
 @app.route('/api/receive_message', methods=['POST'])
 def receive_message():
     """
-    Endpoint to receive messages from other peers.
+    Endpoint to receive messages from other peers (private) or group broadcasts.
     """
     data = request.json
-    sender_ip = request.remote_addr
     nickname = data.get('nickname', 'Unknown')
     content = data.get('content')
     msg_type = data.get('type', 'text')
-    
     timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
-    
-    # Save to storage
+
+    # Group broadcast: the sender_ip is carried in the payload (request.remote_addr
+    # is the relaying peer, not the original sender).
+    if data.get('scope') == 'group':
+        sender_ip = data.get('sender_ip', request.remote_addr)
+        is_self = (sender_ip == LOCAL_IP)
+        register_group_peer(sender_ip, nickname)
+        storage.save_group_message(nickname, sender_ip, content, msg_type)
+        socketio.emit('group_message', {
+            'sender': sender_ip,
+            'nickname': nickname,
+            'content': content,
+            'type': msg_type,
+            'timestamp': timestamp,
+            'is_self': is_self,
+        })
+        return jsonify({"status": "ok"})
+
+    # Private P2P message (unchanged)
+    sender_ip = request.remote_addr
     storage.save_message(f"FROM:{sender_ip}|TYPE:{msg_type}|CONTENT:{content}")
-    
-    # Push to frontend
+
     socketio.emit('new_message', {
         'sender': sender_ip,
         'nickname': nickname,
@@ -318,29 +399,35 @@ def receive_message():
         'timestamp': timestamp,
         'is_self': False
     })
-    
+
     return jsonify({"status": "ok"})
 
 @socketio.on('send_message')
 def handle_send_message(data):
     """
-    Handle message sent from frontend.
+    Handle message sent from frontend (group or private).
     """
-    target_ip = data['target_ip']
     content = data['content']
     msg_type = data.get('type', 'text')
-    
+    scope = data.get('scope', 'private')
+
+    # Group chat: broadcast to the local browser + all known peers
+    if scope == 'group':
+        broadcast_group_message(USER_NICKNAME, LOCAL_IP, content, msg_type)
+        return
+
+    # Private P2P message (unchanged)
+    target_ip = data['target_ip']
     timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
-    
+
     # 1. Save locally
     storage.save_message(f"TO:{target_ip}|TYPE:{msg_type}|CONTENT:{content}")
-    
+
     # 2. Send to remote peer
     try:
-        # Assuming remote peer is running on same port 5000
         url = f"http://{target_ip}:{WEB_PORT}/api/receive_message"
         requests.post(url, json={'content': content, 'type': msg_type, 'nickname': USER_NICKNAME}, timeout=get('messaging', 'send_timeout'))
-        
+
         # 3. Ack to frontend
         emit('message_sent', {
             'target': target_ip,
@@ -393,7 +480,7 @@ import os
 class ServerGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("智慧校园聊天室控制台")
+        self.root.title("局域网聊天室控制台")
         self.root.geometry("300x250")
         
         # Center the window
