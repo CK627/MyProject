@@ -6,6 +6,7 @@ import threading
 import platform
 import logging
 import json
+import uuid
 
 from config import get
 
@@ -175,14 +176,42 @@ class StorageManager:
             
         return history
 
-    def save_group_message(self, nickname, ip, content, msg_type="text"):
+    def _group_ids(self):
+        """Return (and cache) the set of already-stored group message ids."""
+        if not hasattr(self, '_group_id_set'):
+            ids = set()
+            log_file = os.path.join(self.msg_path, "group_history.log")
+            if os.path.exists(log_file):
+                with open(log_file, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            r = json.loads(line)
+                            if r.get('id'):
+                                ids.add(r['id'])
+                        except Exception:
+                            pass
+            self._group_id_set = ids
+        return self._group_id_set
+
+    def save_group_message(self, nickname, ip, content, msg_type="text", msg_id=None, ts=None):
         """
         Save a group-chat message to a dedicated log file (JSON lines).
-        Separated from private chat history to avoid the '|'-delimiter ambiguity.
+        Deduplicates by message id so history pulled from peers merges cleanly.
+        Returns the stored record, or None if it was a duplicate.
         """
+        if msg_id is None:
+            msg_id = uuid.uuid4().hex
+        ids = self._group_ids()
+        if msg_id in ids:
+            return None
+
         log_file = os.path.join(self.msg_path, "group_history.log")
         record = {
-            'timestamp': time.time(),
+            'id': msg_id,
+            'ts': ts if ts is not None else time.time(),
             'nickname': nickname,
             'ip': ip,
             'content': content,
@@ -190,10 +219,13 @@ class StorageManager:
         }
         with open(log_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        ids.add(msg_id)
+        return record
 
     def get_group_history(self):
         """
-        Retrieve group-chat history (JSON lines) as a list of dicts.
+        Retrieve group-chat history (JSON lines) as a list of dicts, sorted
+        chronologically. 'timestamp' is a raw epoch-seconds float.
         """
         log_file = os.path.join(self.msg_path, "group_history.log")
         if not os.path.exists(log_file):
@@ -207,13 +239,46 @@ class StorageManager:
                     continue
                 try:
                     record = json.loads(line)
-                    record['timestamp'] = time.strftime(
-                        '%Y-%m-%d %H:%M:%S', time.localtime(record.get('timestamp', time.time())))
-                    history.append(record)
+                    history.append({
+                        'id': record.get('id'),
+                        'timestamp': record.get('ts', record.get('timestamp', time.time())),
+                        'nickname': record.get('nickname', 'Unknown'),
+                        'ip': record.get('ip', ''),
+                        'content': record.get('content', ''),
+                        'type': record.get('type', 'text'),
+                    })
                 except Exception as e:
                     logging.error(f"Error parsing group history line: {line} - {e}")
                     continue
+        history.sort(key=lambda r: r['timestamp'])
         return history
+
+    def merge_group_history(self, records):
+        """
+        Merge group history pulled from a peer. Returns the list of records
+        that were actually new (for live re-render), normalized to the
+        get_group_history() shape.
+        """
+        added = []
+        for r in records or []:
+            rec = self.save_group_message(
+                r.get('nickname', 'Unknown'),
+                r.get('ip', ''),
+                r.get('content', ''),
+                r.get('type', 'text'),
+                msg_id=r.get('id'),
+                ts=r.get('timestamp'),
+            )
+            if rec is not None:
+                added.append({
+                    'id': rec['id'],
+                    'timestamp': rec['ts'],
+                    'nickname': rec['nickname'],
+                    'ip': rec['ip'],
+                    'content': rec['content'],
+                    'type': rec['type'],
+                })
+        return added
 
     def async_delete(self, file_path):
         """

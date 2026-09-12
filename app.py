@@ -35,6 +35,7 @@ try:
     import time
     import os
     import json
+    import uuid
     from storage import StorageManager
     from scanner import NetworkScanner
     import sys
@@ -76,6 +77,12 @@ logging.info(f"Starting app with config: {CONFIG_FILE}")
 
 app.config['SECRET_KEY'] = get('server', 'secret_key')
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+
+@app.after_request
+def add_cors_headers(response):
+    # 允许局域网内其他设备的前端跨域读取文件内容（文本预览等）
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    return response
 
 def load_nickname_from_config():
     if os.path.exists(CONFIG_FILE):
@@ -139,6 +146,9 @@ LOCAL_IP = scanner.get_local_ip_and_network()[0]
 group_peers = {}              # ip -> {'nickname': ..., 'last_seen': ...}
 group_peers_lock = threading.Lock()
 
+history_synced_from = set()    # peer IPs we've already pulled history from
+history_sync_lock = threading.Lock()
+
 def register_group_peer(ip, nickname):
     """Add/refresh a peer in the group roster (skip self / loopback)."""
     if not ip or ip == '127.0.0.1' or ip == LOCAL_IP:
@@ -158,11 +168,13 @@ def emit_member_list():
 
 def broadcast_group_message(nickname, ip, content, msg_type='text'):
     """Store a group message and broadcast it to the local browser + all known peers."""
+    msg_id = uuid.uuid4().hex
     timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
-    storage.save_group_message(nickname, ip, content, msg_type)
+    storage.save_group_message(nickname, ip, content, msg_type, msg_id=msg_id)
 
     # 1. Show on this node's own browser
     socketio.emit('group_message', {
+        'id': msg_id,
         'nickname': nickname,
         'sender': ip,
         'content': content,
@@ -180,13 +192,38 @@ def broadcast_group_message(nickname, ip, content, msg_type='text'):
             url = f"http://{peer_ip}:{WEB_PORT}/api/receive_message"
             requests.post(url, json={
                 'scope': 'group', 'content': content, 'type': msg_type,
-                'nickname': nickname, 'sender_ip': ip,
+                'nickname': nickname, 'sender_ip': ip, 'msg_id': msg_id,
             }, timeout=get('messaging', 'send_timeout'))
         except Exception as e:
             logging.error(f"Group broadcast to {peer_ip} failed: {e}")
 
     for t in targets:
         threading.Thread(target=_send_to, args=(t,), daemon=True).start()
+
+def sync_history_from(peer_ip):
+    """Pull group history from a peer once and merge it (dedup by message id)."""
+    with history_sync_lock:
+        if peer_ip in history_synced_from:
+            return
+        history_synced_from.add(peer_ip)
+    try:
+        r = requests.get(f"http://{peer_ip}:{WEB_PORT}/api/group/history",
+                         timeout=get('messaging', 'send_timeout'))
+        if r.status_code == 200:
+            records = r.json().get('history', [])
+            added = storage.merge_group_history(records)
+            for rec in added:
+                socketio.emit('group_message', {
+                    'id': rec['id'],
+                    'nickname': rec['nickname'],
+                    'sender': rec['ip'],
+                    'content': rec['content'],
+                    'type': rec['type'],
+                    'timestamp': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(rec['timestamp'])),
+                    'is_self': (rec['ip'] == LOCAL_IP),
+                })
+    except Exception as e:
+        logging.error(f"History sync from {peer_ip} failed: {e}")
 
 def discovery_listener():
     """
@@ -215,15 +252,17 @@ def discovery_listener():
 
 @app.route('/')
 def index():
-    return render_template('index.html', user_id=USER_ID, nickname=USER_NICKNAME)
+    return render_template('index.html', user_id=USER_ID, nickname=USER_NICKNAME, web_port=WEB_PORT)
 
 @app.route('/scan')
 def scan_network():
     target_cidr = request.args.get('cidr')
     hosts = scanner.scan_network(target_cidr=target_cidr)
-    # Register scanned hosts as group peers so group messages reach them
+    # Register scanned hosts as group peers so group messages reach them,
+    # and backfill group history from each newly discovered peer.
     for host in hosts:
         register_group_peer(host.get('ip'), host.get('nickname'))
+        threading.Thread(target=sync_history_from, args=(host.get('ip'),), daemon=True).start()
     return jsonify({"hosts": hosts})
 
 @app.route('/stop_scan')
@@ -242,7 +281,10 @@ def get_history():
 
 @app.route('/api/group/history')
 def get_group_history():
-    return jsonify({"history": storage.get_group_history()})
+    history = storage.get_group_history()
+    for rec in history:
+        rec['is_self'] = (rec.get('ip') == LOCAL_IP)
+    return jsonify({"history": history})
 
 @app.route('/api/group/members')
 def get_group_members():
@@ -277,47 +319,47 @@ def update_nickname():
 def upload_file():
     if 'file' not in request.files:
         return jsonify({"status": "error", "message": "No file part"}), 400
-    
+
     file = request.files['file']
     target_ip = request.form.get('target_ip')
-    
+    scope = request.form.get('scope', 'private')
+
     if file.filename == '':
         return jsonify({"status": "error", "message": "No selected file"}), 400
-        
-    if file and target_ip:
-        # 1. Save locally (using our storage manager to save a copy in FileStorage)
-        # We need to save it temporarily to send it? Or save permanently as "sent file"
-        # Let's save it to FileStorage
-        # But wait, storage.save_file expects a source path. 
-        # We can save the uploaded file directly to storage.file_storage_path
-        
-        filename = file.filename
-        safe_filename = os.path.basename(filename) # Basic sanitization
-        local_path = os.path.join(storage.file_storage_path, safe_filename)
-        
-        # Avoid overwrite
-        if os.path.exists(local_path):
-            base, ext = os.path.splitext(safe_filename)
-            local_path = os.path.join(storage.file_storage_path, f"{base}_{int(time.time())}{ext}")
-            
-        file.save(local_path)
-        
-        # 2. Send to remote peer
-        # We need to upload this file to the remote peer's receive endpoint
-        try:
-            # Re-open the file to stream it
-            with open(local_path, 'rb') as f:
-                files = {'file': (safe_filename, f, file.content_type)}
-                data = {'nickname': USER_NICKNAME}
-                
-                url = f"http://{target_ip}:{WEB_PORT}/api/receive_file"
-                requests.post(url, files=files, data=data, timeout=get('messaging', 'file_timeout')) # Longer timeout for files
-                
-            return jsonify({"status": "ok"})
-        except Exception as e:
-            return jsonify({"status": "error", "message": str(e)}), 500
-            
-    return jsonify({"status": "error", "message": "Missing target or file"}), 400
+
+    if not file:
+        return jsonify({"status": "error", "message": "Missing file"}), 400
+
+    filename = file.filename
+    safe_filename = os.path.basename(filename)  # Basic sanitization
+    local_path = os.path.join(storage.file_storage_path, safe_filename)
+
+    # Avoid overwrite
+    if os.path.exists(local_path):
+        base, ext = os.path.splitext(safe_filename)
+        local_path = os.path.join(storage.file_storage_path, f"{base}_{int(time.time())}{ext}")
+
+    file.save(local_path)
+    stored_name = os.path.basename(local_path)
+
+    # Group: broadcast a file message whose download link points to this node.
+    if scope == 'group':
+        broadcast_group_message(USER_NICKNAME, LOCAL_IP, stored_name, 'file')
+        return jsonify({"status": "ok"})
+
+    # Private: push the file to the target peer (unchanged).
+    if not target_ip:
+        return jsonify({"status": "error", "message": "Missing target or file"}), 400
+
+    try:
+        with open(local_path, 'rb') as f:
+            files = {'file': (safe_filename, f, file.content_type)}
+            data = {'nickname': USER_NICKNAME}
+            url = f"http://{target_ip}:{WEB_PORT}/api/receive_file"
+            requests.post(url, files=files, data=data, timeout=get('messaging', 'file_timeout'))
+        return jsonify({"status": "ok"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/api/receive_file', methods=['POST'])
 def receive_file():
@@ -375,8 +417,9 @@ def receive_message():
     if data.get('scope') == 'group':
         sender_ip = data.get('sender_ip', request.remote_addr)
         is_self = (sender_ip == LOCAL_IP)
+        msg_id = data.get('msg_id')
         register_group_peer(sender_ip, nickname)
-        storage.save_group_message(nickname, sender_ip, content, msg_type)
+        storage.save_group_message(nickname, sender_ip, content, msg_type, msg_id=msg_id)
         socketio.emit('group_message', {
             'sender': sender_ip,
             'nickname': nickname,
@@ -385,6 +428,9 @@ def receive_message():
             'timestamp': timestamp,
             'is_self': is_self,
         })
+        # Backfill history from this peer if we haven't seen it yet
+        if sender_ip != LOCAL_IP:
+            threading.Thread(target=sync_history_from, args=(sender_ip,), daemon=True).start()
         return jsonify({"status": "ok"})
 
     # Private P2P message (unchanged)
@@ -432,6 +478,8 @@ def handle_send_message(data):
         emit('message_sent', {
             'target': target_ip,
             'content': content,
+            'type': msg_type,
+            'nickname': USER_NICKNAME,
             'timestamp': timestamp,
             'is_self': True
         })

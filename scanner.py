@@ -19,11 +19,29 @@ class NetworkScanner:
         """
         self.stop_scan_flag = True
 
+    def _default_route_ip(self):
+        """Return the local IP used to reach the internet (the active connection, usually Wi-Fi)."""
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return ip
+        except:
+            return None
+
+    def _is_wifi(self, name):
+        n = name.lower()
+        return any(k in n for k in ('wlan', 'wifi', 'wl', 'wireless', 'airport', '无线', 'wlp'))
+
     def get_interfaces(self):
         """
         Get all available network interfaces with their IPv4 addresses and CIDR.
-        Returns a list of dicts: [{'name': 'eth0', 'ip': '192.168.1.5', 'cidr': '192.168.1.0/24'}]
+        The default-route interface is marked 'is_default' and sorted first so the
+        UI auto-selects the active network (usually Wi-Fi).
+        Returns a list of dicts: [{'name','ip','cidr','is_default'}, ...]
         """
+        default_ip = self._default_route_ip()
         interfaces_list = []
         for interface_name, addrs in psutil.net_if_addrs().items():
             for addr in addrs:
@@ -32,18 +50,25 @@ class NetworkScanner:
                     netmask = addr.netmask
                     if ip == '127.0.0.1':
                         continue # Skip localhost
-                    
+
                     if netmask:
                         try:
                             network = ipaddress.IPv4Network(f"{ip}/{netmask}", strict=False)
-                            cidr = str(network)
                             interfaces_list.append({
                                 'name': interface_name,
                                 'ip': ip,
-                                'cidr': cidr
+                                'cidr': str(network),
+                                'is_default': (ip == default_ip),
                             })
                         except ValueError:
                             pass
+
+        # Default route first, then Wi-Fi-looking names, then the rest.
+        interfaces_list.sort(key=lambda item: (
+            0 if item['is_default'] else 1,
+            0 if self._is_wifi(item['name']) else 1,
+            item['name'],
+        ))
         return interfaces_list
 
     def get_local_ip_and_network(self):
@@ -51,13 +76,7 @@ class NetworkScanner:
         Get the local IP address and the network (CIDR).
         Kept for backward compatibility or default behavior.
         """
-        try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            s.connect(("8.8.8.8", 80))
-            local_ip = s.getsockname()[0]
-            s.close()
-        except:
-            local_ip = "127.0.0.1"
+        local_ip = self._default_route_ip() or "127.0.0.1"
 
         network_cidr = None
         # Try to match found local_ip with interfaces
@@ -66,7 +85,7 @@ class NetworkScanner:
             if iface['ip'] == local_ip:
                 network_cidr = iface['cidr']
                 break
-        
+
         return local_ip, network_cidr
 
     def scan_host(self, ip):

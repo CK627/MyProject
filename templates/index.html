@@ -48,6 +48,7 @@
                 <input type="text" id="msgInput" placeholder="输入消息..." disabled>
                 <button id="sendBtn" onclick="sendMessage()" disabled>发送</button>
                 <button id="fileBtn" onclick="triggerFileUpload()" disabled>文件</button>
+                <button id="ticketBtn" onclick="sendTicket()" disabled>发送工单</button>
                 <input type="file" id="fileInput" style="display: none;">
             </div>
         </div>
@@ -67,9 +68,36 @@
         </div>
     </div>
 
+    <!-- Ticket (工单) Modal -->
+    <div id="ticketModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeTicketModal()">&times;</span>
+            <h2>发送工单</h2>
+            <table class="ticket-form">
+                <tr>
+                    <th>时间</th>
+                    <td><input type="text" id="ticketTime" readonly></td>
+                </tr>
+                <tr>
+                    <th>发起人</th>
+                    <td><input type="text" id="ticketInitiator" readonly></td>
+                </tr>
+                <tr>
+                    <th>发送进度</th>
+                    <td><input type="text" id="ticketProgress" placeholder="请输入进度，如：搭建网络"></td>
+                </tr>
+            </table>
+            <div class="ticket-actions">
+                <button onclick="closeTicketModal()">取消</button>
+                <button onclick="confirmSendTicket()">发送</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         window.MY_ID = "{{ user_id }}";
         window.MY_NICKNAME = "{{ nickname }}";
+        window.WEB_PORT = "{{ web_port }}";
     </script>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>

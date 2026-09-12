@@ -3,6 +3,7 @@ import sys
 import os
 import shutil
 import tempfile
+import time
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -32,6 +33,21 @@ class TestGroupStorage(unittest.TestCase):
         self.assertEqual(history[0]["content"], "hello")
         self.assertIn("ip", history[0])
         self.assertIn("timestamp", history[0])
+        self.assertIn("id", history[0])
+
+    def test_group_message_dedup_by_id(self):
+        self.storage.save_group_message("Alice", "10.0.0.2", "hello", "text", msg_id="shared-id")
+        self.storage.save_group_message("Alice", "10.0.0.2", "hello", "text", msg_id="shared-id")
+        self.assertEqual(len(self.storage.get_group_history()), 1)
+
+    def test_merge_group_history_dedup(self):
+        self.storage.save_group_message("Alice", "10.0.0.2", "one", "text", msg_id="id-1")
+        added = self.storage.merge_group_history([
+            {'id': 'id-1', 'timestamp': time.time(), 'nickname': 'Alice', 'ip': '10.0.0.2', 'content': 'one', 'type': 'text'},
+            {'id': 'id-2', 'timestamp': time.time(), 'nickname': 'Bob', 'ip': '10.0.0.3', 'content': 'two', 'type': 'text'},
+        ])
+        self.assertEqual(len(added), 1)  # only id-2 is new
+        self.assertEqual(len(self.storage.get_group_history()), 2)
 
 
 class TestGroupApi(unittest.TestCase):

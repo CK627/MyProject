@@ -275,3 +275,132 @@ body {
     margin-bottom: 3px;
     opacity: 0.85;
 }
+
+/* Work-order (工单) ticket */
+.ticket-title {
+    font-weight: bold;
+    margin-bottom: 6px;
+    opacity: 0.9;
+}
+
+.ticket-table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 13px;
+}
+
+.ticket-table th,
+.ticket-table td {
+    border: 1px solid rgba(0, 0, 0, 0.18);
+    padding: 4px 8px;
+    text-align: left;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.ticket-table th {
+    background-color: rgba(0, 0, 0, 0.05);
+    font-weight: bold;
+    width: 72px;
+    white-space: nowrap;
+}
+
+.message.sent .ticket-table th,
+.message.sent .ticket-table td {
+    border-color: rgba(255, 255, 255, 0.35);
+}
+
+.message.sent .ticket-table th {
+    background-color: rgba(255, 255, 255, 0.15);
+}
+
+/* Ticket (工单) modal form */
+.ticket-form {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+}
+
+.ticket-form th,
+.ticket-form td {
+    padding: 8px 10px;
+    text-align: left;
+    border: 1px solid #ddd;
+}
+
+.ticket-form th {
+    background-color: #f8f9fa;
+    width: 80px;
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.ticket-form input[type="text"] {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    outline: none;
+}
+
+.ticket-form input[readonly] {
+    background-color: #f1f3f5;
+    color: #555;
+}
+
+.ticket-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.ticket-actions button {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    background-color: #007bff;
+    color: white;
+}
+
+.ticket-actions button:first-child {
+    background-color: #6c757d;
+}
+
+/* File preview (image / text) */
+.file-image {
+    max-width: 100%;
+    max-height: 260px;
+    border-radius: 6px;
+    display: block;
+    margin: 4px 0;
+    cursor: pointer;
+}
+
+.file-text {
+    border: 1px solid rgba(0, 0, 0, 0.15);
+    border-radius: 6px;
+    overflow: hidden;
+    margin: 4px 0;
+    background: rgba(255, 255, 255, 0.9);
+    color: #333;
+}
+
+.file-text-name {
+    font-size: 12px;
+    padding: 6px 10px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+    background: rgba(0, 0, 0, 0.04);
+}
+
+.file-text-pre {
+    margin: 0;
+    padding: 10px;
+    max-height: 240px;
+    overflow: auto;
+    font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    white-space: pre-wrap;
+    word-break: break-all;
+}

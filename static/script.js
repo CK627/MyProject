@@ -9,6 +9,41 @@ function escapeHtml(s) {
     }[c]));
 }
 
+function formatTs(ts) {
+    if (typeof ts === 'number') {
+        return new Date(ts * 1000).toLocaleTimeString('zh-CN', { hour12: false });
+    }
+    return ts || '';
+}
+
+function ticketTableHtml(initiator, progress, time) {
+    return `
+        <div class="ticket-title">📋 工单</div>
+        <table class="ticket-table">
+            <tr><th>时间</th><td>${escapeHtml(time)}</td></tr>
+            <tr><th>发起人</th><td>${escapeHtml(initiator)}</td></tr>
+            <tr><th>发送进度</th><td>${escapeHtml(progress)}</td></tr>
+        </table>`;
+}
+
+function isImageFile(name) {
+    return /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i.test(name);
+}
+
+function isTextFile(name) {
+    return /\.(txt|md|log|json|csv|py|js|ts|css|html?|xml|yml|yaml|ini|conf|sh|bat|java|c|cpp|h|hpp|go|rs|properties)$/i.test(name);
+}
+
+function filePreviewHtml(filename, downloadUrl) {
+    if (isImageFile(filename)) {
+        return `<a href="${downloadUrl}" target="_blank"><img class="file-image" src="${downloadUrl}" alt="${escapeHtml(filename)}"></a>`;
+    }
+    if (isTextFile(filename)) {
+        return `<div class="file-text"><div class="file-text-name">📄 ${escapeHtml(filename)}</div><pre class="file-text-pre" data-url="${downloadUrl}">加载中…</pre></div>`;
+    }
+    return `📁 文件: <a href="${downloadUrl}" target="_blank">${escapeHtml(filename)}</a>`;
+}
+
 // Connection events
 socket.on('connect', () => {
     console.log('Connected to server');
@@ -49,7 +84,7 @@ socket.on('new_message', (data) => {
 
     // If the message is from the user we are currently chatting with, show it
     if (!isGroup && currentTarget === data.sender) {
-        appendMessage(data.content, 'received', data.timestamp);
+        appendMessage(data.content, 'received', data.timestamp, data.type, data.nickname);
     } else {
         if (userItem) {
             userItem.style.fontWeight = 'bold';
@@ -79,7 +114,7 @@ function addUserToList(ip, nickname) {
 
 socket.on('message_sent', (data) => {
     if (!isGroup && currentTarget === data.target) {
-        appendMessage(data.content, 'sent', data.timestamp);
+        appendMessage(data.content, 'sent', data.timestamp, data.type, data.nickname);
     }
 });
 
@@ -110,7 +145,12 @@ function loadInterfaces() {
             });
 
             if (data.interfaces.length > 0) {
-                select.value = data.interfaces[0].cidr;
+                // Prefer the default-route interface (usually the active Wi-Fi),
+                // so LAN discovery targets the right subnet out of the box.
+                const preferred = data.interfaces.find(i => i.is_default) || data.interfaces[0];
+                select.value = preferred.cidr;
+                // Auto-scan so peers are discovered and history backfills on load.
+                scanNetwork();
             }
         })
         .catch(err => console.error('加载网络接口失败:', err));
@@ -132,15 +172,15 @@ function selectGroup() {
 
     document.getElementById('msgInput').disabled = false;
     document.getElementById('sendBtn').disabled = false;
-    document.getElementById('fileBtn').disabled = true; // group file sharing not yet supported
+    document.getElementById('ticketBtn').disabled = false;
+    document.getElementById('fileBtn').disabled = false;
 
     // Load group history
     fetch('/api/group/history')
         .then(res => res.json())
         .then(data => {
             (data.history || []).forEach(msg => {
-                const isSelf = (msg.ip && msg.ip === (window.MY_ID || null)) || false;
-                appendGroupMessage(msg.nickname, msg.ip, msg.content, msg.type, msg.timestamp, isSelf);
+                appendGroupMessage(msg.nickname, msg.ip, msg.content, msg.type, msg.timestamp, !!msg.is_self);
             });
         })
         .catch(err => console.error('加载群聊历史失败:', err));
@@ -184,16 +224,41 @@ function appendGroupMessage(nickname, ip, content, type, timestamp, isSelf) {
     const msgs = document.getElementById('messages');
     const div = document.createElement('div');
     const senderLabel = isSelf ? '我' : (nickname && nickname !== 'Unknown' ? nickname : (ip || 'Unknown'));
-    const displayContent = escapeHtml(content);
 
     div.className = `message ${isSelf ? 'sent' : 'received'} group`;
-    div.innerHTML = `
-        <div class="sender">${escapeHtml(senderLabel)}</div>
-        <div class="content">${displayContent}</div>
-        <div class="meta">${timestamp}</div>
-    `;
+
+    if (type === 'ticket') {
+        const initiator = nickname && nickname !== 'Unknown' ? nickname : (ip || 'Unknown');
+        div.innerHTML = ticketTableHtml(initiator, content, formatTs(timestamp));
+    } else if (type === 'file') {
+        const filename = content;
+        const downloadUrl = `http://${ip}:${window.WEB_PORT || 8080}/api/download/${encodeURIComponent(filename)}`;
+        div.innerHTML = `
+            <div class="sender">${escapeHtml(senderLabel)}</div>
+            <div class="content">${filePreviewHtml(filename, downloadUrl)}</div>
+            <div class="meta">${formatTs(timestamp)}</div>
+        `;
+    } else {
+        const displayContent = escapeHtml(content);
+        div.innerHTML = `
+            <div class="sender">${escapeHtml(senderLabel)}</div>
+            <div class="content">${displayContent}</div>
+            <div class="meta">${formatTs(timestamp)}</div>
+        `;
+    }
     msgs.appendChild(div);
     msgs.scrollTop = msgs.scrollHeight;
+
+    // 文本文件：拉取内容内嵌显示
+    if (type === 'file') {
+        const pre = div.querySelector('.file-text-pre');
+        if (pre) {
+            fetch(pre.dataset.url)
+                .then(r => { if (!r.ok) throw new Error('bad'); return r.text(); })
+                .then(t => { pre.textContent = t.length > 20000 ? t.slice(0, 20000) + '\n…（内容过长已截断）' : t; })
+                .catch(() => { pre.textContent = '（内容加载失败，请点击文件名下载查看）'; });
+        }
+    }
 }
 
 // ---- UI functions ----
@@ -280,6 +345,7 @@ function selectUser(ip, nickname) {
     document.getElementById('chatHeader').innerText = `正在与 ${displayName} 聊天`;
     document.getElementById('msgInput').disabled = false;
     document.getElementById('sendBtn').disabled = false;
+    document.getElementById('ticketBtn').disabled = false;
     document.getElementById('fileBtn').disabled = false;
 
     // Clear messages or load history
@@ -290,7 +356,8 @@ function selectUser(ip, nickname) {
         .then(data => {
             if (data.history && data.history.length > 0) {
                 data.history.forEach(msg => {
-                    appendMessage(msg.content, msg.direction, msg.timestamp);
+                    const initiator = msg.direction === 'sent' ? (window.MY_NICKNAME || '我') : (nickname && nickname !== 'Unknown' ? nickname : ip);
+                    appendMessage(msg.content, msg.direction, msg.timestamp, msg.type, initiator);
                 });
             }
         })
@@ -337,7 +404,11 @@ document.getElementById('fileInput').addEventListener('change', function(e) {
 
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('target_ip', currentTarget);
+    if (isGroup) {
+        formData.append('scope', 'group');
+    } else {
+        formData.append('target_ip', currentTarget);
+    }
 
     fetch('/api/upload_file', {
         method: 'POST',
@@ -346,7 +417,10 @@ document.getElementById('fileInput').addEventListener('change', function(e) {
     .then(response => response.json())
     .then(data => {
         if (data.status === 'ok') {
-            appendMessage(`File sent: ${file.name}`, 'sent', new Date().toLocaleTimeString());
+            // 群聊时文件消息会通过 group_message 广播回来，无需本地追加
+            if (!isGroup) {
+                appendMessage(`File sent: ${file.name}`, 'sent', new Date().toLocaleTimeString());
+            }
         } else {
             alert('File upload failed: ' + data.message);
         }
@@ -375,9 +449,49 @@ function sendMessage() {
     input.value = '';
 }
 
-function appendMessage(content, type, timestamp) {
+function sendTicket() {
+    if (!isGroup && !currentTarget) return;
+
+    // 自动填充时间与发起人（只读）
+    document.getElementById('ticketTime').value = new Date().toLocaleString('zh-CN', { hour12: false });
+    document.getElementById('ticketInitiator').value = window.MY_NICKNAME || 'Unknown';
+    document.getElementById('ticketProgress').value = '';
+    document.getElementById('ticketModal').style.display = 'block';
+    document.getElementById('ticketProgress').focus();
+}
+
+function closeTicketModal() {
+    document.getElementById('ticketModal').style.display = 'none';
+}
+
+function confirmSendTicket() {
+    const content = document.getElementById('ticketProgress').value.trim();
+    if (!content) {
+        alert('请输入发送进度');
+        return;
+    }
+
+    if (isGroup) {
+        socket.emit('send_message', { scope: 'group', content: content, type: 'ticket' });
+    } else if (currentTarget) {
+        socket.emit('send_message', { target_ip: currentTarget, content: content, type: 'ticket' });
+    }
+    closeTicketModal();
+}
+
+function appendMessage(content, direction, timestamp, msgType, nickname) {
     const msgs = document.getElementById('messages');
     const div = document.createElement('div');
+
+    div.className = `message ${direction}`;
+
+    if (msgType === 'ticket') {
+        const initiator = nickname || (direction === 'sent' ? (window.MY_NICKNAME || '我') : '对方');
+        div.innerHTML = ticketTableHtml(initiator, content, formatTs(timestamp));
+        msgs.appendChild(div);
+        msgs.scrollTop = msgs.scrollHeight;
+        return;
+    }
 
     let displayContent = content;
 
@@ -395,7 +509,6 @@ function appendMessage(content, type, timestamp) {
         displayContent = `📁 已发送文件: <a href="/api/download/${encodeURIComponent(filename)}" target="_blank">${filename}</a>`;
     }
 
-    div.className = `message ${type}`;
     div.innerHTML = `
         <div class="content">${displayContent}</div>
         <div class="meta">${timestamp}</div>
