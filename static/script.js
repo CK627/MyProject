@@ -35,14 +35,52 @@ function isTextFile(name) {
 }
 
 function filePreviewHtml(filename, downloadUrl) {
+    const downloadBtn = `<a class="file-download" href="${downloadUrl}" title="下载">⬇ 下载</a>`;
     if (isImageFile(filename)) {
-        return `<a href="${downloadUrl}" target="_blank"><img class="file-image" src="${downloadUrl}" alt="${escapeHtml(filename)}"></a>`;
+        return `
+            <div class="file-card">
+                <div class="file-card-header">
+                    <span class="file-card-name">🖼 ${escapeHtml(filename)}</span>
+                    ${downloadBtn}
+                </div>
+                <img class="file-image" src="${downloadUrl}" alt="${escapeHtml(filename)}" title="点击放大">
+            </div>`;
     }
     if (isTextFile(filename)) {
-        return `<div class="file-text"><div class="file-text-name">📄 ${escapeHtml(filename)}</div><pre class="file-text-pre" data-url="${downloadUrl}">加载中…</pre></div>`;
+        return `
+            <div class="file-card">
+                <div class="file-card-header">
+                    <span class="file-card-name">📄 ${escapeHtml(filename)}</span>
+                    ${downloadBtn}
+                </div>
+                <pre class="file-text-pre" data-url="${downloadUrl}">加载中…</pre>
+            </div>`;
     }
-    return `📁 文件: <a href="${downloadUrl}" target="_blank">${escapeHtml(filename)}</a>`;
+    return `
+        <div class="file-card">
+            <div class="file-card-header">
+                <span class="file-card-name">📁 ${escapeHtml(filename)}</span>
+                ${downloadBtn}
+            </div>
+        </div>`;
 }
+
+function openImageModal(src) {
+    document.getElementById('imageModalImg').src = src;
+    document.getElementById('imageModal').style.display = 'block';
+}
+
+function closeImageModal() {
+    document.getElementById('imageModal').style.display = 'none';
+}
+
+// 点击图片放大查看（下载走「下载」按钮）
+document.getElementById('messages').addEventListener('click', (e) => {
+    const img = e.target.closest('img.file-image');
+    if (img) {
+        openImageModal(img.src);
+    }
+});
 
 // Connection events
 socket.on('connect', () => {
