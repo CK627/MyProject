@@ -78,14 +78,16 @@ class TestGroupApi(unittest.TestCase):
         self.assertEqual(r.get_json()['history'], [])
 
     def test_receive_group_message_stores_history_and_peer(self):
+        # 发送方 IP 现在以真实来源 IP (REMOTE_ADDR) 为准，而非 payload 自报的 sender_ip
         r = self.client.post('/api/receive_message', json={
-            'scope': 'group', 'sender_ip': '10.0.0.5',
-            'nickname': 'Alice', 'content': 'hello group', 'type': 'text'})
+            'scope': 'group', 'nickname': 'Alice', 'content': 'hello group', 'type': 'text'},
+            environ_overrides={'REMOTE_ADDR': '10.0.0.5'})
         self.assertEqual(r.status_code, 200)
 
         history = self.client.get('/api/group/history').get_json()['history']
         self.assertEqual(len(history), 1)
         self.assertEqual(history[0]['content'], 'hello group')
+        self.assertEqual(history[0]['ip'], '10.0.0.5')
 
         members = self.client.get('/api/group/members').get_json()['members']
         self.assertTrue(any(m['ip'] == '10.0.0.5' for m in members))

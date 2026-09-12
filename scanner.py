@@ -34,23 +34,64 @@ class NetworkScanner:
         n = name.lower()
         return any(k in n for k in ('wlan', 'wifi', 'wl', 'wireless', 'airport', '无线', 'wlp'))
 
+    def _is_vpn_interface(self, name):
+        n = name.lower()
+        return any(k in n for k in ('utun', 'tun', 'tap', 'ppp', 'wg', 'docker', 'vbox', 'vmnet', 'virbr', 'bridge'))
+
+    def _is_real_lan_ip(self, ip_str):
+        """Only accept real private-LAN addresses (excludes VPN fake ranges like 198.18.0.0/15)."""
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            return False
+        return any(ip in net for net in (
+            ipaddress.ip_network('10.0.0.0/8'),
+            ipaddress.ip_network('172.16.0.0/12'),
+            ipaddress.ip_network('192.168.0.0/16'),
+        ))
+
+    def _best_local_ip(self):
+        """Pick the most likely LAN IP: real private address, non-VPN, default-route preferred."""
+        default_ip = self._default_route_ip()
+        candidates = []
+        for name, addrs in psutil.net_if_addrs().items():
+            if self._is_vpn_interface(name):
+                continue
+            for addr in addrs:
+                if addr.family != socket.AF_INET:
+                    continue
+                ip = addr.address
+                if not self._is_real_lan_ip(ip):
+                    continue
+                candidates.append((name, ip, ip == default_ip))
+        if not candidates:
+            return default_ip or "127.0.0.1"
+        candidates.sort(key=lambda c: (
+            0 if c[2] else 1,                  # default-route IP preferred
+            0 if self._is_wifi(c[0]) else 1,   # Wi-Fi preferred
+            c[0],
+        ))
+        return candidates[0][1]
+
     def get_interfaces(self):
         """
-        Get all available network interfaces with their IPv4 addresses and CIDR.
-        The default-route interface is marked 'is_default' and sorted first so the
-        UI auto-selects the active network (usually Wi-Fi).
+        Get available LAN interfaces (real private IPv4, non-VPN). The best one is
+        marked 'is_default' and sorted first for the UI to auto-select.
         Returns a list of dicts: [{'name','ip','cidr','is_default'}, ...]
         """
-        default_ip = self._default_route_ip()
+        best_ip = self._best_local_ip()
         interfaces_list = []
         for interface_name, addrs in psutil.net_if_addrs().items():
+            if self._is_vpn_interface(interface_name):
+                continue
             for addr in addrs:
                 if addr.family == socket.AF_INET:
                     ip = addr.address
                     netmask = addr.netmask
                     if ip == '127.0.0.1':
-                        continue # Skip localhost
-
+                        continue
+                    if not self._is_real_lan_ip(ip):
+                        continue
                     if netmask:
                         try:
                             network = ipaddress.IPv4Network(f"{ip}/{netmask}", strict=False)
@@ -58,7 +99,7 @@ class NetworkScanner:
                                 'name': interface_name,
                                 'ip': ip,
                                 'cidr': str(network),
-                                'is_default': (ip == default_ip),
+                                'is_default': (ip == best_ip),
                             })
                         except ValueError:
                             pass
@@ -73,10 +114,9 @@ class NetworkScanner:
 
     def get_local_ip_and_network(self):
         """
-        Get the local IP address and the network (CIDR).
-        Kept for backward compatibility or default behavior.
+        Get the local LAN IP address and the network (CIDR).
         """
-        local_ip = self._default_route_ip() or "127.0.0.1"
+        local_ip = self._best_local_ip()
 
         network_cidr = None
         # Try to match found local_ip with interfaces

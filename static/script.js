@@ -1,4 +1,6 @@
-const socket = io();
+// 服务端 async_mode='threading' 不支持 WebSocket，强制用 long-polling，
+// 避免浏览器报 "Invalid frame header" 并导致消息接收不稳定。
+const socket = io({ transports: ['polling'] });
 let currentTarget = null; // private chat peer IP
 let isGroup = false;      // whether we are viewing the group chat
 let groupUnread = 0;      // unread group messages while not viewing the group
@@ -43,7 +45,8 @@ function filePreviewHtml(filename, downloadUrl) {
                     <span class="file-card-name">🖼 ${escapeHtml(filename)}</span>
                     ${downloadBtn}
                 </div>
-                <img class="file-image" src="${downloadUrl}" alt="${escapeHtml(filename)}" title="点击放大">
+                <img class="file-image" src="${downloadUrl}" alt="${escapeHtml(filename)}" title="点击放大"
+                    onerror="onImageError(this)">
             </div>`;
     }
     if (isTextFile(filename)) {
@@ -63,6 +66,32 @@ function filePreviewHtml(filename, downloadUrl) {
                 ${downloadBtn}
             </div>
         </div>`;
+}
+
+function loadTextPreview(container) {
+    const pre = container.querySelector('.file-text-pre');
+    if (!pre) return;
+    fetch(pre.dataset.url)
+        .then(r => { if (!r.ok) throw new Error('bad'); return r.text(); })
+        .then(t => { pre.textContent = t.length > 20000 ? t.slice(0, 20000) + '\n…（内容过长已截断）' : t; })
+        .catch(() => { pre.textContent = '（内容加载失败，请点击文件名下载查看）'; });
+}
+
+function extractPrivateFilename(content) {
+    if (content.startsWith('[File] ')) return content.substring(7);
+    if (content.startsWith('File sent: ')) return content.substring(11);
+    if (content.includes('FileStorage')) {
+        const parts = content.split(/[/\\]/);
+        return parts[parts.length - 1];
+    }
+    return null;
+}
+
+function onImageError(img) {
+    const fallback = document.createElement('div');
+    fallback.className = 'file-fallback';
+    fallback.textContent = '⚠️ 图片无法加载（发送者可能已离线）';
+    img.replaceWith(fallback);
 }
 
 function openImageModal(src) {
@@ -270,7 +299,10 @@ function appendGroupMessage(nickname, ip, content, type, timestamp, isSelf) {
         div.innerHTML = ticketTableHtml(initiator, content, formatTs(timestamp));
     } else if (type === 'file') {
         const filename = content;
-        const downloadUrl = `http://${ip}:${window.WEB_PORT || 8080}/api/download/${encodeURIComponent(filename)}`;
+        // 自己发的文件在本机，用同源相对路径；别人发的文件用其真实来源 IP。
+        const downloadUrl = isSelf
+            ? `/api/download/${encodeURIComponent(filename)}`
+            : `http://${ip}:${window.WEB_PORT || 8080}/api/download/${encodeURIComponent(filename)}`;
         div.innerHTML = `
             <div class="sender">${escapeHtml(senderLabel)}</div>
             <div class="content">${filePreviewHtml(filename, downloadUrl)}</div>
@@ -288,15 +320,7 @@ function appendGroupMessage(nickname, ip, content, type, timestamp, isSelf) {
     msgs.scrollTop = msgs.scrollHeight;
 
     // 文本文件：拉取内容内嵌显示
-    if (type === 'file') {
-        const pre = div.querySelector('.file-text-pre');
-        if (pre) {
-            fetch(pre.dataset.url)
-                .then(r => { if (!r.ok) throw new Error('bad'); return r.text(); })
-                .then(t => { pre.textContent = t.length > 20000 ? t.slice(0, 20000) + '\n…（内容过长已截断）' : t; })
-                .catch(() => { pre.textContent = '（内容加载失败，请点击文件名下载查看）'; });
-        }
-    }
+    loadTextPreview(div);
 }
 
 // ---- UI functions ----
@@ -531,21 +555,21 @@ function appendMessage(content, direction, timestamp, msgType, nickname) {
         return;
     }
 
+    // 文件消息：与群聊一致的内嵌预览 + 下载按钮
+    const filename = extractPrivateFilename(content);
+    if (filename) {
+        const downloadUrl = `/api/download/${encodeURIComponent(filename)}`;
+        div.innerHTML = `
+            <div class="content">${filePreviewHtml(filename, downloadUrl)}</div>
+            <div class="meta">${timestamp}</div>
+        `;
+        msgs.appendChild(div);
+        msgs.scrollTop = msgs.scrollHeight;
+        loadTextPreview(div);
+        return;
+    }
+
     let displayContent = content;
-
-    if (content.startsWith('[File] ')) {
-        const filename = content.substring(7);
-        displayContent = `📁 文件: <a href="/api/download/${encodeURIComponent(filename)}" target="_blank">${filename}</a>`;
-    } else if (content.includes('FileStorage')) {
-        const parts = content.split(/[/\\]/);
-        const filename = parts[parts.length - 1];
-        displayContent = `📁 文件: <a href="/api/download/${encodeURIComponent(filename)}" target="_blank">${filename}</a>`;
-    }
-
-    if (content.startsWith('File sent: ')) {
-        const filename = content.substring(11);
-        displayContent = `📁 已发送文件: <a href="/api/download/${encodeURIComponent(filename)}" target="_blank">${filename}</a>`;
-    }
 
     div.innerHTML = `
         <div class="content">${displayContent}</div>

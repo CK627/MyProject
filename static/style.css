@@ -428,6 +428,13 @@ body {
     word-break: break-all;
 }
 
+.file-fallback {
+    padding: 16px 10px;
+    font-size: 12px;
+    color: #999;
+    text-align: center;
+}
+
 /* Image lightbox */
 .image-modal {
     background-color: rgba(0, 0, 0, 0.85);

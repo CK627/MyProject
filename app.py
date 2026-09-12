@@ -415,7 +415,9 @@ def receive_message():
     # Group broadcast: the sender_ip is carried in the payload (request.remote_addr
     # is the relaying peer, not the original sender).
     if data.get('scope') == 'group':
-        sender_ip = data.get('sender_ip', request.remote_addr)
+        # 用真实来源 IP（request.remote_addr），而不是发送方自报的 IP。
+        # 发送方自报的 LOCAL_IP 可能被 VPN/代理干扰成假 IP，而 TCP 来源地址才是可达的真实地址。
+        sender_ip = request.remote_addr
         is_self = (sender_ip == LOCAL_IP)
         msg_id = data.get('msg_id')
         register_group_peer(sender_ip, nickname)
