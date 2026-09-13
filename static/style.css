@@ -269,6 +269,14 @@ body {
     color: white;
 }
 
+.member-chip.mentionable {
+    cursor: pointer;
+}
+
+.member-chip.mentionable:hover {
+    background-color: #cfe2ff;
+}
+
 .message .sender {
     font-size: 11px;
     font-weight: bold;

@@ -269,11 +269,27 @@ function renderGroupMembers(members) {
     bar.appendChild(label);
 
     members.forEach(m => {
+        const isMe = (m.uid === window.MY_ID);
         const chip = document.createElement('span');
-        chip.className = 'member-chip' + (m.uid === window.MY_ID ? ' me' : '');
-        chip.innerText = m.uid === window.MY_ID ? `${m.nickname} (我)` : m.nickname;
+        chip.className = 'member-chip' + (isMe ? ' me' : ' mentionable');
+        chip.innerText = isMe ? `${m.nickname} (我)` : m.nickname;
+        if (!isMe) {
+            chip.title = '点击 @ 提及';
+            chip.onclick = () => mentionMember(m.nickname);
+        }
         bar.appendChild(chip);
     });
+}
+
+function mentionMember(nickname) {
+    const input = document.getElementById('msgInput');
+    let val = input.value;
+    if (val && !val.endsWith(' ')) {
+        val += ' ';
+    }
+    input.value = val + `@${nickname} `;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
 }
 
 function updateGroupUnread() {
