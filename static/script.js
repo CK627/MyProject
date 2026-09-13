@@ -18,6 +18,28 @@ function formatTs(ts) {
     return ts || '';
 }
 
+function escapeRegex(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function highlightMentions(content) {
+    return escapeHtml(content).replace(/@([^\s@]+)/g, '<span class="mention">@$1</span>');
+}
+
+function isMentioned(content, nickname) {
+    if (!content || !nickname) return false;
+    const re = new RegExp('@' + escapeRegex(nickname) + '(?![\\w\\u4e00-\\u9fa5])');
+    return re.test(content);
+}
+
+function notifyMentioned(sender) {
+    try {
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            new Notification('有人 @ 了你', { body: `${sender} 在群聊中提到了你` });
+        }
+    } catch (e) {}
+}
+
 function ticketTableHtml(initiator, progress, time) {
     return `
         <div class="ticket-title">📋 工单</div>
@@ -230,6 +252,11 @@ function selectGroup() {
     groupUnread = 0;
     updateGroupUnread();
 
+    // 请求通知权限（用于 @ 提醒）
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+        try { Notification.requestPermission(); } catch (e) {}
+    }
+
     document.getElementById('groupEntry').classList.add('active');
     document.querySelectorAll('#userList li').forEach(li => li.classList.remove('active'));
 
@@ -325,7 +352,11 @@ function appendGroupMessage(nickname, ip, content, type, timestamp, isSelf) {
             <div class="meta">${formatTs(timestamp)}</div>
         `;
     } else {
-        const displayContent = escapeHtml(content);
+        const displayContent = highlightMentions(content);
+        if (isMentioned(content, window.MY_NICKNAME)) {
+            div.classList.add('mentioned-me');
+            notifyMentioned(senderLabel);
+        }
         div.innerHTML = `
             <div class="sender">${escapeHtml(senderLabel)}</div>
             <div class="content">${displayContent}</div>

@@ -284,6 +284,20 @@ body {
     opacity: 0.85;
 }
 
+/* @ 提及 */
+.message .mention {
+    font-weight: bold;
+    color: #0056b3;
+}
+
+.message.sent .mention {
+    color: #ffe082;
+}
+
+.message.mentioned-me {
+    box-shadow: 0 0 0 2px #ff9800, 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
 /* Work-order (工单) ticket */
 .ticket-title {
     font-weight: bold;
