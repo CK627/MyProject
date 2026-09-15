@@ -11,6 +11,60 @@ function escapeHtml(s) {
     }[c]));
 }
 
+function avatarColor(name) {
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) {
+        hash = (hash * 31 + name.charCodeAt(i)) % 360;
+    }
+    return `hsl(${hash}, 60%, 48%)`;
+}
+
+function avatarUrl(avatar, ip, isSelf) {
+    if (!avatar) return null;
+    return isSelf
+        ? `/api/avatar/${encodeURIComponent(avatar)}`
+        : `http://${ip}:${window.WEB_PORT || 8080}/api/avatar/${encodeURIComponent(avatar)}`;
+}
+
+function avatarHtml(nickname, avUrl) {
+    if (avUrl) {
+        return `<span class="avatar avatar-img" data-name="${escapeHtml(nickname || '?')}"><img src="${avUrl}" alt="" onerror="onAvatarImgError(this)"></span>`;
+    }
+    const name = nickname || '?';
+    const initial = Array.from(name)[0] || '?';
+    return `<span class="avatar" style="background-color:${avatarColor(name)}">${escapeHtml(initial)}</span>`;
+}
+
+function onAvatarImgError(img) {
+    const parent = img.parentElement;
+    const name = parent.dataset.name || '?';
+    parent.className = 'avatar';
+    parent.style.backgroundColor = avatarColor(name);
+    parent.textContent = Array.from(name)[0] || '?';
+    img.remove();
+}
+
+function createAvatar(nickname, avUrl) {
+    const avatar = document.createElement('div');
+    if (avUrl) {
+        avatar.className = 'avatar avatar-img';
+        const img = document.createElement('img');
+        img.src = avUrl;
+        img.alt = '';
+        img.onerror = () => {
+            avatar.className = 'avatar';
+            avatar.style.backgroundColor = avatarColor(nickname);
+            avatar.textContent = Array.from(nickname || '?')[0] || '?';
+        };
+        avatar.appendChild(img);
+    } else {
+        avatar.className = 'avatar';
+        avatar.style.backgroundColor = avatarColor(nickname);
+        avatar.textContent = Array.from(nickname || '?')[0] || '?';
+    }
+    return avatar;
+}
+
 function formatTs(ts) {
     if (typeof ts === 'number') {
         return new Date(ts * 1000).toLocaleTimeString('zh-CN', { hour12: false });
@@ -141,7 +195,7 @@ socket.on('connect', () => {
 // ---- Group chat events ----
 socket.on('group_message', (data) => {
     if (isGroup) {
-        appendGroupMessage(data.nickname, data.sender, data.content, data.type, data.timestamp, data.is_self);
+        appendGroupMessage(data.nickname, data.sender, data.content, data.type, data.timestamp, data.is_self, data.avatar);
     } else {
         groupUnread++;
         updateGroupUnread();
@@ -219,6 +273,7 @@ socket.on('settings_updated', (data) => {
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     loadInterfaces();
+    renderMyAvatar();
 });
 
 function loadInterfaces() {
@@ -274,7 +329,7 @@ function selectGroup() {
         .then(res => res.json())
         .then(data => {
             (data.history || []).forEach(msg => {
-                appendGroupMessage(msg.nickname, msg.ip, msg.content, msg.type, msg.timestamp, !!msg.is_self);
+                appendGroupMessage(msg.nickname, msg.ip, msg.content, msg.type, msg.timestamp, !!msg.is_self, msg.avatar);
             });
         })
         .catch(err => console.error('加载群聊历史失败:', err));
@@ -299,7 +354,8 @@ function renderGroupMembers(members) {
         const isMe = (m.uid === window.MY_ID);
         const chip = document.createElement('span');
         chip.className = 'member-chip' + (isMe ? ' me' : ' mentionable');
-        chip.innerText = isMe ? `${m.nickname} (我)` : m.nickname;
+        const displayName = isMe ? `${m.nickname} (我)` : m.nickname;
+        chip.innerHTML = `${avatarHtml(m.nickname, avatarUrl(m.avatar, m.ip, isMe))} <span>${escapeHtml(displayName)}</span>`;
         if (!isMe) {
             chip.title = '点击 @ 提及';
             chip.onclick = () => mentionMember(m.nickname);
@@ -330,44 +386,54 @@ function updateGroupUnread() {
     }
 }
 
-function appendGroupMessage(nickname, ip, content, type, timestamp, isSelf) {
+function appendGroupMessage(nickname, ip, content, type, timestamp, isSelf, avatar) {
     const msgs = document.getElementById('messages');
-    const div = document.createElement('div');
     const senderLabel = isSelf ? '我' : (nickname && nickname !== 'Unknown' ? nickname : (ip || 'Unknown'));
+    const avatarName = isSelf ? (window.MY_NICKNAME || '我') : senderLabel;
+    const avUrl = avatarUrl(avatar, ip, isSelf);
 
-    div.className = `message ${isSelf ? 'sent' : 'received'} group`;
+    const row = document.createElement('div');
+    row.className = `message-row ${isSelf ? 'sent' : 'received'}`;
+
+    const bubble = document.createElement('div');
+    bubble.className = `message ${isSelf ? 'sent' : 'received'} group`;
 
     if (type === 'ticket') {
         const initiator = nickname && nickname !== 'Unknown' ? nickname : (ip || 'Unknown');
-        div.innerHTML = ticketTableHtml(initiator, content, formatTs(timestamp));
+        bubble.innerHTML = ticketTableHtml(initiator, content, formatTs(timestamp));
     } else if (type === 'file') {
         const filename = content;
         // 自己发的文件在本机，用同源相对路径；别人发的文件用其真实来源 IP。
         const downloadUrl = isSelf
             ? `/api/download/${encodeURIComponent(filename)}`
             : `http://${ip}:${window.WEB_PORT || 8080}/api/download/${encodeURIComponent(filename)}`;
-        div.innerHTML = `
-            <div class="sender">${escapeHtml(senderLabel)}</div>
+        bubble.innerHTML = `
+            <div class="sender"><span class="sender-name">${escapeHtml(senderLabel)}</span></div>
             <div class="content">${filePreviewHtml(filename, downloadUrl)}</div>
             <div class="meta">${formatTs(timestamp)}</div>
         `;
     } else {
         const displayContent = highlightMentions(content);
         if (isMentioned(content, window.MY_NICKNAME)) {
-            div.classList.add('mentioned-me');
+            bubble.classList.add('mentioned-me');
             notifyMentioned(senderLabel);
         }
-        div.innerHTML = `
-            <div class="sender">${escapeHtml(senderLabel)}</div>
+        bubble.innerHTML = `
+            <div class="sender"><span class="sender-name">${escapeHtml(senderLabel)}</span></div>
             <div class="content">${displayContent}</div>
             <div class="meta">${formatTs(timestamp)}</div>
         `;
     }
-    msgs.appendChild(div);
+
+    // 头像在气泡外：收到(row)→头像在左；发出(row-reverse)→头像在右
+    row.appendChild(createAvatar(avatarName, avUrl));
+    row.appendChild(bubble);
+
+    msgs.appendChild(row);
     msgs.scrollTop = msgs.scrollHeight;
 
     // 文本文件：拉取内容内嵌显示
-    loadTextPreview(div);
+    loadTextPreview(bubble);
 }
 
 // ---- UI functions ----
@@ -503,6 +569,48 @@ function editNickname() {
     }
 }
 
+function triggerAvatarUpload() {
+    document.getElementById('avatarInput').click();
+}
+
+function renderMyAvatar() {
+    const el = document.getElementById('myAvatar');
+    if (!el) return;
+    if (window.MY_AVATAR) {
+        el.className = 'avatar my-avatar avatar-img';
+        el.innerHTML = '';
+        const img = document.createElement('img');
+        img.src = `/api/avatar/${encodeURIComponent(window.MY_AVATAR)}`;
+        img.alt = '';
+        el.appendChild(img);
+    } else {
+        const name = window.MY_NICKNAME || '?';
+        el.className = 'avatar my-avatar';
+        el.style.backgroundColor = avatarColor(name);
+        el.textContent = Array.from(name)[0] || '?';
+    }
+}
+
+document.getElementById('avatarInput').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    fetch('/api/upload_avatar', { method: 'POST', body: formData })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'ok') {
+                window.MY_AVATAR = data.avatar;
+                renderMyAvatar();
+                alert('头像已更新');
+            } else {
+                alert('头像上传失败');
+            }
+        })
+        .catch(() => alert('头像上传失败'));
+    this.value = '';
+});
+
 function triggerFileUpload() {
     document.getElementById('fileInput').click();
 }
@@ -637,6 +745,42 @@ function saveSettings() {
     if (path) {
         socket.emit('update_settings', { path: path });
     }
+}
+
+function clearAllHistory() {
+    if (!confirm('确定要清空所有聊天记录吗？（群聊 + 私聊，不可恢复）')) return;
+    fetch('/api/clear_history', { method: 'POST' })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'ok') {
+                document.getElementById('messages').innerHTML = '';
+                toggleSettings();
+                alert('已清空所有聊天记录');
+            } else {
+                alert('清空失败');
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            alert('清空失败');
+        });
+}
+
+function clearAllFiles() {
+    if (!confirm('确定要清空所有已收发文件吗？（不可恢复）')) return;
+    fetch('/api/clear_files', { method: 'POST' })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'ok') {
+                alert('已清空所有文件');
+            } else {
+                alert('清空失败');
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            alert('清空失败');
+        });
 }
 
 // Handle Enter key

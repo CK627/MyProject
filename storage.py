@@ -41,8 +41,9 @@ class StorageManager:
         self.msg_path = os.path.join(self.base_path, "Msg")
         self.cache_path = os.path.join(self.base_path, "Cache")
         self.trash_path = os.path.join(self.base_path, ".trash")
+        self.avatars_path = os.path.join(self.base_path, "Avatars")
 
-        for path in [self.file_storage_path, self.msg_path, self.trash_path, self.cache_path]:
+        for path in [self.file_storage_path, self.msg_path, self.trash_path, self.cache_path, self.avatars_path]:
             os.makedirs(path, exist_ok=True)
             
     # ... existing code ...
@@ -196,7 +197,7 @@ class StorageManager:
             self._group_id_set = ids
         return self._group_id_set
 
-    def save_group_message(self, nickname, ip, content, msg_type="text", msg_id=None, ts=None):
+    def save_group_message(self, nickname, ip, content, msg_type="text", msg_id=None, ts=None, avatar=None):
         """
         Save a group-chat message to a dedicated log file (JSON lines).
         Deduplicates by message id so history pulled from peers merges cleanly.
@@ -216,6 +217,7 @@ class StorageManager:
             'ip': ip,
             'content': content,
             'type': msg_type,
+            'avatar': avatar,
         }
         with open(log_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -246,6 +248,7 @@ class StorageManager:
                         'ip': record.get('ip', ''),
                         'content': record.get('content', ''),
                         'type': record.get('type', 'text'),
+                        'avatar': record.get('avatar'),
                     })
                 except Exception as e:
                     logging.error(f"Error parsing group history line: {line} - {e}")
@@ -268,6 +271,7 @@ class StorageManager:
                 r.get('type', 'text'),
                 msg_id=r.get('id'),
                 ts=r.get('timestamp'),
+                avatar=r.get('avatar'),
             )
             if rec is not None:
                 added.append({
@@ -277,8 +281,29 @@ class StorageManager:
                     'ip': rec['ip'],
                     'content': rec['content'],
                     'type': rec['type'],
+                    'avatar': rec['avatar'],
                 })
         return added
+
+    def clear_all_history(self):
+        """Delete all chat history (group + private), and reset the dedup cache."""
+        for name in ("group_history.log", "chat_history.log"):
+            path = os.path.join(self.msg_path, name)
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except Exception as e:
+                logging.error(f"Failed to delete {path}: {e}")
+        self._group_id_set = set()
+
+    def clear_all_files(self):
+        """Delete all stored files (received/sent), recreating an empty FileStorage dir."""
+        try:
+            if os.path.isdir(self.file_storage_path):
+                shutil.rmtree(self.file_storage_path)
+            os.makedirs(self.file_storage_path, exist_ok=True)
+        except Exception as e:
+            logging.error(f"Failed to clear files: {e}")
 
     def async_delete(self, file_path):
         """

@@ -32,6 +32,11 @@
                     <span>我的昵称: <b id="myNickname">{{ nickname }}</b></span>
                     <button class="edit-btn" onclick="editNickname()">✎</button>
                 </div>
+                <div class="my-avatar-row">
+                    <span>我的头像:</span>
+                    <div id="myAvatar" class="avatar my-avatar" title="点击更换头像" onclick="triggerAvatarUpload()"></div>
+                    <input type="file" id="avatarInput" accept="image/*" style="display:none;">
+                </div>
                 <button onclick="toggleSettings()">设置</button>
             </div>
         </div>
@@ -63,6 +68,11 @@
                 <label>存储路径:</label>
                 <input type="text" id="storagePath" placeholder="输入绝对路径">
                 <button onclick="saveSettings()">保存</button>
+            </div>
+            <div class="form-group">
+                <label>数据管理:</label>
+                <button onclick="clearAllHistory()" style="background-color: #dc3545;">清空所有聊天记录</button>
+                <button onclick="clearAllFiles()" style="background-color: #dc3545;">清空所有文件</button>
             </div>
             <p class="hint">当前用户ID: {{ user_id }}</p>
         </div>
@@ -103,6 +113,7 @@
         window.MY_ID = "{{ user_id }}";
         window.MY_NICKNAME = "{{ nickname }}";
         window.WEB_PORT = "{{ web_port }}";
+        window.MY_AVATAR = "{{ avatar }}";
     </script>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>

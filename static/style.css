@@ -127,8 +127,27 @@ body {
     gap: 10px;
 }
 
+.message-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    max-width: 80%;
+}
+
+.message-row.received {
+    align-self: flex-start;
+}
+
+.message-row.sent {
+    align-self: flex-end;
+    flex-direction: row-reverse;
+}
+
+.message-row .avatar {
+    flex-shrink: 0;
+}
+
 .message {
-    max-width: 70%;
     padding: 10px 15px;
     border-radius: 18px;
     font-size: 14px;
@@ -137,6 +156,7 @@ body {
 
 .message.sent {
     align-self: flex-end;
+    max-width: 70%;
     background-color: #007bff;
     color: white;
     border-bottom-right-radius: 4px;
@@ -144,9 +164,17 @@ body {
 
 .message.received {
     align-self: flex-start;
+    max-width: 70%;
     background-color: #e9ecef;
     color: black;
     border-bottom-left-radius: 4px;
+}
+
+.message-row .message {
+    align-self: auto;
+    max-width: 100%;
+    flex: 0 1 auto;
+    min-width: 0;
 }
 
 .message .meta {
@@ -257,11 +285,20 @@ body {
 }
 
 .member-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     font-size: 12px;
     background-color: #e9ecef;
     color: #333;
     border-radius: 12px;
-    padding: 3px 10px;
+    padding: 3px 8px;
+}
+
+.member-chip .avatar {
+    width: 20px;
+    height: 20px;
+    font-size: 11px;
 }
 
 .member-chip.me {
@@ -278,10 +315,52 @@ body {
 }
 
 .message .sender {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: 11px;
     font-weight: bold;
     margin-bottom: 3px;
     opacity: 0.85;
+}
+
+.avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    color: #fff;
+    font-size: 14px;
+    font-weight: bold;
+    flex-shrink: 0;
+    user-select: none;
+}
+
+.avatar.avatar-img {
+    overflow: hidden;
+    background-color: #e9ecef;
+}
+
+.avatar.avatar-img img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.my-avatar {
+    width: 40px;
+    height: 40px;
+    font-size: 18px;
+    cursor: pointer;
+}
+
+.my-avatar-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
 }
 
 /* @ 提及 */

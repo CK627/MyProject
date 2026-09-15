@@ -110,6 +110,66 @@ def save_nickname_to_config(nickname):
     except Exception as e:
         print(f"Failed to save config: {e}")
 
+def load_avatar_from_config():
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                return config.get('avatar', '')
+        except:
+            pass
+    return ''
+
+def save_avatar_to_config(avatar):
+    config = {}
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+        except:
+            pass
+    config['avatar'] = avatar
+    try:
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(config, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        print(f"Failed to save config: {e}")
+
+def load_user_id_from_config():
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                uid = config.get('user_id', '')
+                if uid:
+                    return uid
+        except:
+            pass
+    return ''
+
+def save_user_id_to_config(uid):
+    config = {}
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+        except:
+            pass
+    config['user_id'] = uid
+    try:
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(config, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        print(f"Failed to save config: {e}")
+
+def get_or_create_user_id():
+    uid = load_user_id_from_config()
+    if uid:
+        return uid
+    uid = f"user_{int(time.time())}"
+    save_user_id_to_config(uid)
+    return uid
+
 # Initialize modules
 # Default nickname logic: try to get IP suffix, but initially might be unknown until interface is picked or default route used
 def get_default_nickname():
@@ -129,7 +189,8 @@ def get_default_nickname():
         return "Unknown"
 
 USER_NICKNAME = get_default_nickname()
-USER_ID = f"user_{int(time.time())}" # Internal ID
+USER_ID = get_or_create_user_id()  # 持久化，跨重启保持稳定（存储目录/头像/记录都依赖它）
+MY_AVATAR = load_avatar_from_config() or ''  # 自定义头像文件名（空 = 用自动生成头像）
 
 DISCOVERY_PORT = get('network', 'discovery_port')
 WEB_PORT = get('network', 'web_port')
@@ -149,18 +210,25 @@ group_peers_lock = threading.Lock()
 history_synced_from = set()    # peer IPs we've already pulled history from
 history_sync_lock = threading.Lock()
 
-def register_group_peer(ip, nickname):
+def register_group_peer(ip, nickname, avatar=None):
     """Add/refresh a peer in the group roster (skip self / loopback)."""
     if not ip or ip == '127.0.0.1' or ip == LOCAL_IP:
         return
     with group_peers_lock:
-        group_peers[ip] = {'nickname': nickname or 'Unknown', 'last_seen': time.time()}
+        info = group_peers.get(ip)
+        if info is None:
+            group_peers[ip] = {'nickname': nickname or 'Unknown', 'last_seen': time.time(), 'avatar': avatar}
+        else:
+            info['nickname'] = nickname or 'Unknown'
+            info['last_seen'] = time.time()
+            if avatar:
+                info['avatar'] = avatar
 
 def group_member_payload():
     with group_peers_lock:
-        members = [{'uid': ip, 'ip': ip, 'nickname': info['nickname']}
+        members = [{'uid': ip, 'ip': ip, 'nickname': info['nickname'], 'avatar': info.get('avatar')}
                    for ip, info in group_peers.items()]
-    members.append({'uid': USER_ID, 'ip': LOCAL_IP, 'nickname': USER_NICKNAME})
+    members.append({'uid': USER_ID, 'ip': LOCAL_IP, 'nickname': USER_NICKNAME, 'avatar': MY_AVATAR})
     return sorted(members, key=lambda x: x['nickname'])
 
 def emit_member_list():
@@ -170,7 +238,7 @@ def broadcast_group_message(nickname, ip, content, msg_type='text'):
     """Store a group message and broadcast it to the local browser + all known peers."""
     msg_id = uuid.uuid4().hex
     timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
-    storage.save_group_message(nickname, ip, content, msg_type, msg_id=msg_id)
+    storage.save_group_message(nickname, ip, content, msg_type, msg_id=msg_id, avatar=MY_AVATAR)
 
     # 1. Show on this node's own browser
     socketio.emit('group_message', {
@@ -181,6 +249,7 @@ def broadcast_group_message(nickname, ip, content, msg_type='text'):
         'type': msg_type,
         'timestamp': timestamp,
         'is_self': (ip == LOCAL_IP),
+        'avatar': MY_AVATAR,
     })
 
     # 2. Broadcast to all known peers (skip self, handled by the local emit above)
@@ -193,6 +262,7 @@ def broadcast_group_message(nickname, ip, content, msg_type='text'):
             requests.post(url, json={
                 'scope': 'group', 'content': content, 'type': msg_type,
                 'nickname': nickname, 'sender_ip': ip, 'msg_id': msg_id,
+                'avatar': MY_AVATAR,
             }, timeout=get('messaging', 'send_timeout'))
         except Exception as e:
             logging.error(f"Group broadcast to {peer_ip} failed: {e}")
@@ -252,7 +322,7 @@ def discovery_listener():
 
 @app.route('/')
 def index():
-    return render_template('index.html', user_id=USER_ID, nickname=USER_NICKNAME, web_port=WEB_PORT)
+    return render_template('index.html', user_id=USER_ID, nickname=USER_NICKNAME, web_port=WEB_PORT, avatar=MY_AVATAR)
 
 @app.route('/scan')
 def scan_network():
@@ -290,6 +360,16 @@ def get_group_history():
 def get_group_members():
     return jsonify({"members": group_member_payload()})
 
+@app.route('/api/clear_history', methods=['POST'])
+def clear_history():
+    storage.clear_all_history()
+    return jsonify({"status": "ok"})
+
+@app.route('/api/clear_files', methods=['POST'])
+def clear_files():
+    storage.clear_all_files()
+    return jsonify({"status": "ok"})
+
 @app.route('/api/download/<path:filename>')
 def download_file(filename):
     """
@@ -297,6 +377,14 @@ def download_file(filename):
     """
     try:
         return send_from_directory(storage.file_storage_path, filename, as_attachment=True)
+    except FileNotFoundError:
+        abort(404)
+
+@app.route('/api/avatar/<path:filename>')
+def avatar_file(filename):
+    """Serve a user's avatar image."""
+    try:
+        return send_from_directory(storage.avatars_path, filename)
     except FileNotFoundError:
         abort(404)
 
@@ -314,6 +402,33 @@ def update_nickname():
         save_nickname_to_config(USER_NICKNAME)
         return jsonify({"status": "ok", "nickname": USER_NICKNAME})
     return jsonify({"status": "error"}), 400
+
+@app.route('/api/upload_avatar', methods=['POST'])
+def upload_avatar():
+    global MY_AVATAR
+    if 'file' not in request.files:
+        return jsonify({"status": "error", "message": "No file part"}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"status": "error", "message": "No selected file"}), 400
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'):
+        ext = '.png'
+    avatar_name = f"avatar_{USER_ID}{ext}"
+    local_path = os.path.join(storage.avatars_path, avatar_name)
+    # 删除旧头像（可能是不同扩展名）
+    if MY_AVATAR and MY_AVATAR != avatar_name:
+        old_path = os.path.join(storage.avatars_path, MY_AVATAR)
+        if os.path.exists(old_path):
+            try:
+                os.remove(old_path)
+            except Exception:
+                pass
+    file.save(local_path)
+    MY_AVATAR = avatar_name
+    save_avatar_to_config(MY_AVATAR)
+    return jsonify({"status": "ok", "avatar": MY_AVATAR})
 
 @app.route('/api/upload_file', methods=['POST'])
 def upload_file():
@@ -420,8 +535,9 @@ def receive_message():
         sender_ip = request.remote_addr
         is_self = (sender_ip == LOCAL_IP)
         msg_id = data.get('msg_id')
-        register_group_peer(sender_ip, nickname)
-        storage.save_group_message(nickname, sender_ip, content, msg_type, msg_id=msg_id)
+        avatar = data.get('avatar')
+        register_group_peer(sender_ip, nickname, avatar)
+        storage.save_group_message(nickname, sender_ip, content, msg_type, msg_id=msg_id, avatar=avatar)
         socketio.emit('group_message', {
             'sender': sender_ip,
             'nickname': nickname,
@@ -429,6 +545,7 @@ def receive_message():
             'type': msg_type,
             'timestamp': timestamp,
             'is_self': is_self,
+            'avatar': avatar,
         })
         # Backfill history from this peer if we haven't seen it yet
         if sender_ip != LOCAL_IP:
