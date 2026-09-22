@@ -171,32 +171,30 @@ def get_or_create_user_id():
     return uid
 
 # Initialize modules
-# Default nickname logic: try to get IP suffix, but initially might be unknown until interface is picked or default route used
+DISCOVERY_PORT = get('network', 'discovery_port')
+WEB_PORT = get('network', 'web_port')
+
+# Scanner is created first so nickname/IP detection reuse the same system-level
+# interface logic — with no dependency on internet reachability.
+scanner = NetworkScanner(port=DISCOVERY_PORT)
+
 def get_default_nickname():
     # 1. Try config first
     saved_nickname = load_nickname_from_config()
     if saved_nickname:
         return saved_nickname
 
-    # 2. Fallback to IP suffix
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
+    # 2. Fallback to IP suffix from the system-detected LAN interface
+    ip = scanner.best_local_ip()
+    if ip and ip != '127.0.0.1':
         return ip.split('.')[-1]
-    except:
-        return "Unknown"
+    return "Unknown"
 
 USER_NICKNAME = get_default_nickname()
 USER_ID = get_or_create_user_id()  # 持久化，跨重启保持稳定（存储目录/头像/记录都依赖它）
 MY_AVATAR = load_avatar_from_config() or ''  # 自定义头像文件名（空 = 用自动生成头像）
 
-DISCOVERY_PORT = get('network', 'discovery_port')
-WEB_PORT = get('network', 'web_port')
-
 storage = StorageManager(user_id=USER_ID)
-scanner = NetworkScanner(port=DISCOVERY_PORT)
 
 # Global state
 active_chats = {} # IP -> list of messages
