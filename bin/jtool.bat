@@ -68,8 +68,8 @@ if "%~1"=="shim" goto :cmd_shim
 REM 运行工具
 set "tool=%~1"
 if "!JAVA_BASE_DIR!"=="" (
-    echo 错误: 未配置 JAVA_BASE_DIR
-    echo 请运行: jtool scan
+    echo Error: JAVA_BASE_DIR not set
+    echo Run: jtool scan
     exit /b 1
 )
 
@@ -92,7 +92,7 @@ if not "!JTOOL_DEFAULT_VERSION!"=="" (
     shift /1
     goto :run_tool
 ) else (
-    echo 错误: 需要指定工具名和版本号
+    echo Error: need tool name and version
     exit /b 1
 )
 
@@ -103,7 +103,7 @@ set "tool_path=!jdk_home!\bin\!tool!"
 
 if not exist "!tool_path!.exe" (
     if not exist "!tool_path!" (
-        echo 错误: JDK !version! 没有 !tool! 工具
+        echo Error: JDK !version! has no !tool! tool
         exit /b 1
     )
 )
@@ -125,14 +125,14 @@ REM 列出 JDK
 REM ============================================
 :list_jdks
 if "!JAVA_BASE_DIR!"=="" (
-    echo 错误: 未配置 JAVA_BASE_DIR
-    echo 请运行: jtool scan
+    echo Error: JAVA_BASE_DIR not set
+    echo Run: jtool scan
     exit /b 1
 )
 
-echo Java 路径: !JAVA_BASE_DIR!
+echo Java path: !JAVA_BASE_DIR!
 echo.
-echo 已安装的 JDK:
+echo Installed JDKs:
 set "found=0"
 for /d %%d in ("!JAVA_BASE_DIR!\jdk-*") do (
     if exist "%%d\Contents\Home\bin\java.exe" (
@@ -153,9 +153,9 @@ for /d %%d in ("!JAVA_BASE_DIR!\jdk-*") do (
         )
     )
 )
-if "!found!"=="0" echo   (未找到)
+if "!found!"=="0" echo   None found
 echo.
-if not "!JTOOL_DEFAULT_VERSION!"=="" echo 默认版本: !JTOOL_DEFAULT_VERSION!
+if not "!JTOOL_DEFAULT_VERSION!"=="" echo Default: !JTOOL_DEFAULT_VERSION!
 exit /b 0
 
 REM ============================================
@@ -182,18 +182,18 @@ echo   jtool shim                          Rebuild shims
 echo   jtool help                          Show help
 
 :cmd_use
-if "%~2"=="" ( echo 错误: 请指定版本号 & exit /b 1 )
+if "%~2"=="" ( echo Error: specify a version & exit /b 1 )
 set "use_ver=%~2"
 if "!use_ver!"=="8" set "use_ver=1.8"
 set "use_home=!JAVA_BASE_DIR!\jdk-!use_ver!.jdk\Contents\Home"
-if not exist "!use_home!" ( echo 错误: JDK %~2 不存在 & exit /b 1 )
+if not exist "!use_home!" ( echo Error: JDK %~2 not found & exit /b 1 )
 
 REM 更新配置文件
 findstr /v "JTOOL_DEFAULT_VERSION" "%CONFIG_FILE%" > "%CONFIG_FILE%.tmp"
 echo JTOOL_DEFAULT_VERSION="%~2" >> "%CONFIG_FILE%.tmp"
 move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
 set "JTOOL_DEFAULT_VERSION=%~2"
-echo 已设置默认版本: %~2
+echo Default version set: %~2
 echo JAVA_HOME: !use_home!
 exit /b 0
 
@@ -201,10 +201,10 @@ REM ============================================
 REM current
 REM ============================================
 :cmd_current
-if "!JTOOL_DEFAULT_VERSION!"=="" ( echo 未设置默认版本 & exit /b 1 )
+if "!JTOOL_DEFAULT_VERSION!"=="" ( echo No default version & exit /b 1 )
 set "cur_ver=!JTOOL_DEFAULT_VERSION!"
 if "!cur_ver!"=="8" set "cur_ver=1.8"
-echo 默认版本: !JTOOL_DEFAULT_VERSION!
+echo Default: !JTOOL_DEFAULT_VERSION!
 echo JAVA_HOME: !JAVA_BASE_DIR!\jdk-!cur_ver!.jdk\Contents\Home
 exit /b 0
 
@@ -212,11 +212,11 @@ REM ============================================
 REM home
 REM ============================================
 :cmd_home
-if "%~2"=="" ( echo 错误: 请指定版本号 & exit /b 1 )
+if "%~2"=="" ( echo Error: specify a version & exit /b 1 )
 set "home_ver=%~2"
 if "!home_ver!"=="8" set "home_ver=1.8"
 set "home_path=!JAVA_BASE_DIR!\jdk-!home_ver!.jdk\Contents\Home"
-if not exist "!home_path!" ( echo 错误: JDK %~2 不存在 & exit /b 1 )
+if not exist "!home_path!" ( echo Error: JDK %~2 not found & exit /b 1 )
 echo !home_path!
 exit /b 0
 
@@ -224,17 +224,17 @@ REM ============================================
 REM info
 REM ============================================
 :cmd_info
-if "%~2"=="" ( echo 错误: 请指定版本号 & exit /b 1 )
+if "%~2"=="" ( echo Error: specify a version & exit /b 1 )
 set "info_ver=%~2"
 if "!info_ver!"=="8" set "info_ver=1.8"
 set "info_home=!JAVA_BASE_DIR!\jdk-!info_ver!.jdk\Contents\Home"
-if not exist "!info_home!" ( echo 错误: JDK %~2 不存在 & exit /b 1 )
+if not exist "!info_home!" ( echo Error: JDK %~2 not found & exit /b 1 )
 echo === JDK %~2 ===
 echo JAVA_HOME: !info_home!
 echo.
 "!info_home!\bin\java.exe" -version 2>&1
 echo.
-echo 工具:
+echo Tools:
 for %%f in ("!info_home!\bin\*") do echo   %%~nxf
 exit /b 0
 
@@ -242,12 +242,12 @@ REM ============================================
 REM tools
 REM ============================================
 :cmd_tools
-if "%~2"=="" ( echo 错误: 请指定版本号 & exit /b 1 )
+if "%~2"=="" ( echo Error: specify a version & exit /b 1 )
 set "tools_ver=%~2"
 if "!tools_ver!"=="8" set "tools_ver=1.8"
 set "tools_home=!JAVA_BASE_DIR!\jdk-!tools_ver!.jdk\Contents\Home"
-if not exist "!tools_home!" ( echo 错误: JDK %~2 不存在 & exit /b 1 )
-echo JDK %~2 工具:
+if not exist "!tools_home!" ( echo Error: JDK %~2 not found & exit /b 1 )
+echo JDK %~2 tools:
 for %%f in ("!tools_home!\bin\*") do echo   %%~nxf
 exit /b 0
 
@@ -255,21 +255,21 @@ REM ============================================
 REM run
 REM ============================================
 :cmd_run
-if "%~2"=="" ( echo 错误: 请指定版本号 & exit /b 1 )
-if "%~3"=="" ( echo 错误: 请指定文件 & exit /b 1 )
+if "%~2"=="" ( echo Error: specify a version & exit /b 1 )
+if "%~3"=="" ( echo Error: specify a file & exit /b 1 )
 set "run_ver=%~2"
 set "java_file=%~3"
-if not exist "!java_file!" ( echo 错误: 文件不存在 & exit /b 1 )
+if not exist "!java_file!" ( echo Error: file not found & exit /b 1 )
 if "!run_ver!"=="8" set "run_ver=1.8"
 set "run_home=!JAVA_BASE_DIR!\jdk-!run_ver!.jdk\Contents\Home"
-if not exist "!run_home!" ( echo 错误: JDK %~2 不存在 & exit /b 1 )
+if not exist "!run_home!" ( echo Error: JDK %~2 not found & exit /b 1 )
 
 for %%f in ("!java_file!") do set "class_name=%%~nf"
-echo === 编译 (JDK %~2) ===
+echo === Compile (JDK %~2) ===
 "!run_home!\bin\javac.exe" "!java_file!"
-if !errorlevel! neq 0 ( echo 编译失败 & exit /b 1 )
+if !errorlevel! neq 0 ( echo Compile failed & exit /b 1 )
 echo.
-echo === 运行 ===
+echo === Run ===
 "!run_home!\bin\java.exe" "!class_name!"
 set "exit_code=!errorlevel!"
 if exist "!class_name!.class" del "!class_name!.class"
@@ -286,9 +286,9 @@ REM ============================================
 REM config
 REM ============================================
 :cmd_config
-echo 配置文件: %CONFIG_FILE%
+echo Config file: %CONFIG_FILE%
 echo.
-if exist "%CONFIG_FILE%" ( type "%CONFIG_FILE%" ) else ( echo (不存在，请运行: jtool scan) )
+if exist "%CONFIG_FILE%" ( type "%CONFIG_FILE%" ) else ( echo (not found, run: jtool scan) )
 exit /b 0
 
 REM ============================================
@@ -305,7 +305,7 @@ REM ============================================
 REM 写安装目录需要管理员权限，非管理员时自动请求提权（弹 UAC）
 net session >nul 2>&1
 if !errorlevel! neq 0 (
-    echo update 需要管理员权限，正在请求提权...
+    echo update needs admin, requesting elevation...
     powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -ArgumentList 'update' -Verb RunAs"
     exit /b 0
 )
@@ -320,12 +320,12 @@ REM ============================================
 REM update via curl + tar (no git needed)
 REM ============================================
 :update_via_curl
-echo 正在检查更新...
+echo Checking for updates...
 set "REMOTE_VERSION="
 for /f "usebackq delims=" %%v in (`powershell -NoProfile -Command "(Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/CK627/MyProject/jtool/VERSION').Content.Trim()"`) do set "REMOTE_VERSION=%%v"
 if "!REMOTE_VERSION!"=="" for /f "usebackq delims=" %%v in (`curl -fsSL "https://raw.githubusercontent.com/CK627/MyProject/jtool/VERSION" 2^>nul`) do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
 if "!REMOTE_VERSION!"=="" (
-    echo 读取版本号失败，回退到 git 方式...
+    echo Version read failed, falling back to git...
     goto :update_via_git
 )
 
@@ -339,30 +339,30 @@ if defined LOCAL_VERSION set "LOCAL_VERSION=!LOCAL_VERSION:"=!"
 if defined LOCAL_VERSION set "LOCAL_VERSION=!LOCAL_VERSION: =!"
 
 if "!LOCAL_VERSION!"=="!REMOTE_VERSION!" (
-    echo 已是最新版本 ^(v!LOCAL_VERSION!^)
+    echo Already up to date ^(v!LOCAL_VERSION!^)
     exit /b 0
 )
 
-echo 发现新版本: v!LOCAL_VERSION! → v!REMOTE_VERSION!
+echo New version: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
 
 set "UPD_TMP=%TEMP%\jtool-update"
 rmdir /s /q "%UPD_TMP%" 2>nul
 mkdir "%UPD_TMP%"
 
-echo 下载更新...
+echo Downloading update...
 powershell -NoProfile -Command "Invoke-WebRequest -UseBasicParsing 'https://github.com/CK627/MyProject/archive/refs/heads/jtool.tar.gz' -OutFile '%UPD_TMP%\src.tar.gz'"
 if not exist "%UPD_TMP%\src.tar.gz" curl -fsSL "https://github.com/CK627/MyProject/archive/refs/heads/jtool.tar.gz" -o "%UPD_TMP%\src.tar.gz"
-if not exist "%UPD_TMP%\src.tar.gz" ( echo 下载失败，回退 git & goto :update_via_git )
+if not exist "%UPD_TMP%\src.tar.gz" ( echo Download failed, fallback to git & goto :update_via_git )
 
 tar -xzf "%UPD_TMP%\src.tar.gz" -C "%UPD_TMP%"
-if !errorlevel! neq 0 ( echo 解压失败 & exit /b 1 )
+if !errorlevel! neq 0 ( echo Extract failed & exit /b 1 )
 
 set "SRC=%UPD_TMP%\MyProject-jtool"
 
 copy /y "!SRC!\bin\jtool.bat" "%BIN_DIR%\" >nul
 if !errorlevel! neq 0 (
-    echo 错误: 无法写入 %BIN_DIR%
-    echo 请以管理员身份重新运行
+    echo Error: cannot write %BIN_DIR%
+    echo Please run as administrator
     exit /b 1
 )
 if exist "!SRC!\installer\windows\install.bat" (
@@ -376,8 +376,8 @@ move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
 
 rmdir /s /q "%UPD_TMP%" 2>nul
 
-echo 更新完成！
-echo   版本: v!LOCAL_VERSION! → v!REMOTE_VERSION!
+echo Update complete!
+echo   Version: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
 exit /b 0
 
 REM ============================================
@@ -386,7 +386,7 @@ REM ============================================
 :update_via_git
 where git >nul 2>&1
 if !errorlevel! neq 0 (
-    echo 错误: 未找到 git，且 curl/tar 也不可用，无法更新
+    echo Error: no git and no curl/tar, cannot update
     exit /b 1
 )
 
@@ -394,9 +394,9 @@ set "REPO_DIR=%USERPROFILE%\.devtools\jtool\repo"
 set "FRESH_CLONE=0"
 
 if not exist "!REPO_DIR!\.git" (
-    echo 首次更新，正在克隆仓库...
+    echo First update, cloning repo...
     git clone --branch jtool --single-branch --depth 1 https://github.com/CK627/MyProject.git "!REPO_DIR!"
-    if !errorlevel! neq 0 ( echo 克隆失败 & exit /b 1 )
+    if !errorlevel! neq 0 ( echo Clone failed & exit /b 1 )
     set "FRESH_CLONE=1"
 )
 
@@ -404,12 +404,12 @@ set "REMOTE_VERSION="
 if "!FRESH_CLONE!"=="1" (
     for /f "usebackq tokens=*" %%v in ("!REPO_DIR!\VERSION") do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
 ) else (
-    echo 正在检查更新...
+    echo Checking for updates...
     git -C "!REPO_DIR!" fetch origin jtool 2>nul
-    if !errorlevel! neq 0 ( echo 获取更新失败，请检查网络 & exit /b 1 )
+    if !errorlevel! neq 0 ( echo Fetch failed, check network & exit /b 1 )
     for /f "usebackq tokens=*" %%v in (`git -C "!REPO_DIR!" show origin/jtool:VERSION 2^>nul`) do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
 )
-if "!REMOTE_VERSION!"=="" ( echo 错误: 无法获取版本号 & exit /b 1 )
+if "!REMOTE_VERSION!"=="" ( echo Error: cannot get version & exit /b 1 )
 
 set "LOCAL_VERSION="
 if exist "%CONFIG_FILE%" (
@@ -421,22 +421,22 @@ if defined LOCAL_VERSION set "LOCAL_VERSION=!LOCAL_VERSION:"=!"
 if defined LOCAL_VERSION set "LOCAL_VERSION=!LOCAL_VERSION: =!"
 
 if "!LOCAL_VERSION!"=="!REMOTE_VERSION!" (
-    echo 已是最新版本 ^(v!LOCAL_VERSION!^)
+    echo Already up to date ^(v!LOCAL_VERSION!^)
     exit /b 0
 )
 
-echo 发现新版本: v!LOCAL_VERSION! → v!REMOTE_VERSION!
+echo New version: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
 
 if "!FRESH_CLONE!"=="0" (
     git -C "!REPO_DIR!" checkout jtool 2>nul
     git -C "!REPO_DIR!" pull origin jtool
-    if !errorlevel! neq 0 ( echo 拉取更新失败 & exit /b 1 )
+    if !errorlevel! neq 0 ( echo Pull failed & exit /b 1 )
 )
 
 copy /y "!REPO_DIR!\bin\jtool.bat" "%BIN_DIR%\" >nul
 if !errorlevel! neq 0 (
-    echo 错误: 无法写入 %BIN_DIR%
-    echo 请以管理员身份重新运行
+    echo Error: cannot write %BIN_DIR%
+    echo Please run as administrator
     exit /b 1
 )
 if exist "!REPO_DIR!\installer\windows\install.bat" (
@@ -448,8 +448,8 @@ findstr /v /b /c:"JTOOL_VERSION=" "%CONFIG_FILE%" > "%CONFIG_FILE%.tmp"
 echo JTOOL_VERSION="!REMOTE_VERSION!" >> "%CONFIG_FILE%.tmp"
 move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
 
-echo 更新完成！
-echo   版本: v!LOCAL_VERSION! → v!REMOTE_VERSION!
+echo Update complete!
+echo   Version: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
 exit /b 0
 
 REM ============================================
@@ -459,19 +459,19 @@ REM ============================================
 if "%~2"=="-y" goto :uninstall_silent
 if exist "%INSTALL_DIR%\unins000.exe" (
     start "" "%INSTALL_DIR%\unins000.exe"
-    echo 已启动卸载程序，请在弹窗中确认
+    echo Uninstaller started, confirm in dialog
 ) else (
-    echo 未找到卸载器 %INSTALL_DIR%\unins000.exe
-    echo 请通过「控制面板 - 添加或删除程序」卸载
+    echo Uninstaller not found %INSTALL_DIR%\unins000.exe
+    echo Uninstall via Control Panel - Add or Remove Programs
 )
 exit /b 0
 
 :uninstall_silent
 if exist "%INSTALL_DIR%\unins000.exe" (
     start /wait "" "%INSTALL_DIR%\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
-    echo 卸载完成
+    echo Uninstall complete
 ) else (
-    echo 未找到卸载器 %INSTALL_DIR%\unins000.exe
+    echo Uninstaller not found %INSTALL_DIR%\unins000.exe
 )
 exit /b 0
 
@@ -501,22 +501,22 @@ for %%t in (java javac jar jshell javadoc javap) do (
         echo     ^)
         echo ^)
         echo if "!JTOOL_DEFAULT_VERSION!"=="" ^(
-        echo     echo jtool: 未设置默认版本，请运行 jtool use ^<版本号^>
+        echo     echo jtool: no default version, run jtool use ^<version^>
         echo     exit /b 1
         echo ^)
         echo set "VER=!JTOOL_DEFAULT_VERSION!"
         echo if "!VER!"=="8" set "VER=1.8"
         echo set "JDK_HOME=!JAVA_BASE_DIR!\jdk-!VER!.jdk\Contents\Home"
         echo if not exist "!JDK_HOME!\bin\%%t.exe" ^(
-        echo     echo jtool: JDK !JTOOL_DEFAULT_VERSION! 没有 %%t
+        echo     echo jtool: JDK !JTOOL_DEFAULT_VERSION! has no %%t
         echo     exit /b 1
         echo ^)
         echo "!JDK_HOME!\bin\%%t.exe" %%*
     ) > "!SHIMS_DIR!\%%t.bat"
 )
 
-echo Shim 已创建: !SHIMS_DIR!
+echo Shims created: !SHIMS_DIR!
 
 REM 确保 shims 目录在用户 PATH（否则 `java` 走系统 Java，不用默认版本）
-powershell -NoProfile -Command "$d = Join-Path $env:USERPROFILE '.devtools\jtool\shims'; $p = [Environment]::GetEnvironmentVariable('Path','User'); $parts = @($p -split ';' | Where-Object { $_ -and ($_ -ne $d) }); [Environment]::SetEnvironmentVariable('Path', ($d + ';' + ($parts -join ';')).TrimEnd(';'), 'User'); Write-Output 'shims 已放到用户 PATH 最前面'"
+powershell -NoProfile -Command "$d = Join-Path $env:USERPROFILE '.devtools\jtool\shims'; $p = [Environment]::GetEnvironmentVariable('Path','User'); $parts = @($p -split ';' | Where-Object { $_ -and ($_ -ne $d) }); [Environment]::SetEnvironmentVariable('Path', ($d + ';' + ($parts -join ';')).TrimEnd(';'), 'User'); Write-Output 'shims moved to front of user PATH'"
 exit /b 0
