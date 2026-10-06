@@ -47,106 +47,24 @@ REM ============================================
 REM Main dispatch
 REM ============================================
 if "%~1"=="" goto :show_help
-
-if "%~1"=="list" goto :list_pythons
-if "%~1"=="help" goto :show_help
-if "%~1"=="-h" goto :show_help
-if "%~1"=="--help" goto :show_help
-if "%~1"=="use" goto :cmd_use
-if "%~1"=="current" goto :cmd_current
-if "%~1"=="home" goto :cmd_home
-if "%~1"=="info" goto :cmd_info
-if "%~1"=="tools" goto :cmd_tools
-if "%~1"=="run" goto :cmd_run
-if "%~1"=="scan" goto :cmd_scan
-if "%~1"=="config" goto :cmd_config
-if "%~1"=="install" goto :cmd_install
-if "%~1"=="update" goto :cmd_update
-if "%~1"=="uninstall" goto :cmd_uninstall
-if "%~1"=="shim" goto :cmd_shim
-
-REM Run a tool
-set "tool=%~1"
-set "version=%~2"
-
-REM 版本号总是数字开头；若第二个参数缺失、或以 - / 开头（是参数不是版本号），
-REM 则用默认版本。shim 转发 `python -V` 就是「工具 + 参数、无版本号」的形式。
-if "!version!"=="" goto :use_default_version
-set "_vfirst=!version:~0,1!"
-if "!_vfirst!"=="-" goto :use_default_version
-if "!_vfirst!"=="/" goto :use_default_version
-
-shift /1
-shift /1
-goto :run_tool
-
-:use_default_version
-if not "!PTOOL_DEFAULT_VERSION!"=="" (
-    set "version=!PTOOL_DEFAULT_VERSION!"
-    shift /1
-    goto :run_tool
-) else (
-    echo 错误: 需要指定工具名和版本号
-    exit /b 1
-)
-
-:run_tool
-call :resolve_py "!version!" python_exe
-if not defined python_exe (
-    echo 错误: 找不到 Python !version!
-    echo 基准目录: !PYTHON_BASE_DIR!
-    echo 请运行 "ptool scan"，或修改配置里的 PYTHON_BASE_DIR
-    exit /b 1
-)
-
-REM Args do not change with shift; rebuild remaining args here
-set "TOOL_ARGS="
-:collect_args
-if "%~1"=="" goto :args_ready
-set "TOOL_ARGS=!TOOL_ARGS! %1"
-shift /1
-goto :collect_args
-:args_ready
-
-if "!tool!"=="python"  ( "!python_exe!" !TOOL_ARGS! & exit /b !errorlevel! )
-if "!tool!"=="python3" ( "!python_exe!" !TOOL_ARGS! & exit /b !errorlevel! )
-if "!tool!"=="pip"     ( "!python_exe!" -m pip !TOOL_ARGS! & exit /b !errorlevel! )
-if "!tool!"=="pip3"    ( "!python_exe!" -m pip !TOOL_ARGS! & exit /b !errorlevel! )
-
-echo 错误: 工具 '!tool!' 不存在
-exit /b 1
-
-REM ============================================
-REM List Pythons
-REM ============================================
-:list_pythons
-echo 已安装的 Python:
-set "found=0"
-
-REM Prefer the official py launcher; covers python.org, Store, PEP 514 runtimes
-for /f "usebackq delims=" %%L in (`py --list-paths 2^>nul`) do (
-    echo   %%L
-    set "found=1"
-)
-
-if "!found!"=="1" goto :list_summary
-
-REM Fallback: scan standard dirs when py is missing (PythonXY\python.exe)
-if "!PYTHON_BASE_DIR!"=="" goto :list_none
-for /d %%d in ("!PYTHON_BASE_DIR!\Python*") do (
-    if exist "%%d\python.exe" (
-        call :ver_from_dir "%%~nxd" pyver
-        echo   !pyver! - %%d\python.exe
-        set "found=1"
-    )
-)
-
-:list_none
-if "!found!"=="0" echo   未找到
-
-:list_summary
+echo ptool - Python version manager for Windows
 echo.
-if not "!PTOOL_DEFAULT_VERSION!"=="" echo 默认版本: !PTOOL_DEFAULT_VERSION!
+echo Usage:
+echo   ptool ^<tool^> ^<version^> [args...]   Run a tool
+echo   ptool list                          List Pythons
+echo   ptool use ^<version^>                Set default version
+echo   ptool current                       Show current version
+echo   ptool home ^<version^>               Show install path
+echo   ptool info ^<version^>               Show details
+echo   ptool tools ^<version^>              List tools
+echo   ptool run ^<version^> ^<file.py^>    Run a Python file
+echo   ptool scan                          Scan Python paths
+echo   ptool config                        Show config
+echo   ptool install                       Full install
+echo   ptool update                        Check and update
+echo   ptool uninstall [-y]                Uninstall (-y silent)
+echo   ptool shim                          Rebuild shims
+echo   ptool help                          Show help
 exit /b 0
 
 REM ============================================
@@ -482,7 +400,7 @@ for %%t in (python python3 pip pip3) do (
 echo Shim 已创建: !SHIMS_DIR!
 
 REM 确保 shims 目录在用户 PATH（否则 `python` 走系统 Python，不用默认版本）
-powershell -NoProfile -Command "$d = Join-Path $env:USERPROFILE '.devtools\ptool\shims'; $p = [Environment]::GetEnvironmentVariable('Path','User'); if (-not ((';' + $p + ';') -like ('*;' + $d + ';*'))) { [Environment]::SetEnvironmentVariable('Path', ($p.TrimEnd(';') + ';' + $d), 'User'); Write-Output '已添加 shims 到用户 PATH（重开终端生效）' } else { Write-Output 'shims 已在用户 PATH' }"
+powershell -NoProfile -Command "$d = Join-Path $env:USERPROFILE '.devtools\ptool\shims'; $p = [Environment]::GetEnvironmentVariable('Path','User'); if (-not ((';' + $p + ';') -like ('*;' + $d + ';*'))) { [Environment]::SetEnvironmentVariable('Path', ($d + ';' + $p.TrimStart(';')), 'User'); Write-Output '已添加 shims 到用户 PATH 开头（重开终端生效）' } else { Write-Output 'shims 已在用户 PATH' }"
 exit /b 0
 
 REM ============================================
