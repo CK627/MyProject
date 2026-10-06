@@ -245,10 +245,12 @@ do_create_completions() {
     fi
 
     mkdir -p "$comp_dir"
-    local f
+    local f dest
     for f in "$script_dir/completions/ptool.zsh" "$script_dir/completions/ptool.bash"; do
         [ -f "$f" ] || continue
-        sed "s|@CONFIG_FILE@|$config_file|g" "$f" > "$comp_dir/$(basename "$f")"
+        dest="$comp_dir/$(basename "$f")"
+        # @SELF@ 是生成文件自身的路径，包装函数据此重新加载自己
+        sed -e "s|@CONFIG_FILE@|$config_file|g" -e "s|@SELF@|$dest|g" "$f" > "$dest"
     done
 
     echo "补全脚本已创建: $comp_dir"
@@ -272,15 +274,20 @@ do_setup_shell() {
     sed -i.bak "/^# ptool$/d; \|$install_dir|d; \|$shims_dir|d; \|$comp_dir|d" "$shell_rc"
     rm -f "${shell_rc}.bak"
 
+    # 只写固定的 3 行。包装函数不放在这里——它是多行的，按行模式清理会漏掉
+    # 函数体导致重复累积；放进被 source 的补全文件里，每次整体重新生成即可。
+    local comp_file
+    if [ "${shell_rc##*/}" = ".zshrc" ]; then
+        comp_file="$comp_dir/ptool.zsh"
+    else
+        comp_file="$comp_dir/ptool.bash"
+    fi
+
     {
         echo ""
         echo "# ptool"
         echo "export PATH=\"$shims_dir:$bin_dir:\$PATH\""
-        if [ "${shell_rc##*/}" = ".zshrc" ]; then
-            echo "[ -f \"$comp_dir/ptool.zsh\" ] && source \"$comp_dir/ptool.zsh\""
-        else
-            echo "[ -f \"$comp_dir/ptool.bash\" ] && source \"$comp_dir/ptool.bash\""
-        fi
+        echo "[ -f \"$comp_file\" ] && source \"$comp_file\""
     } >> "$shell_rc"
 
     echo "已写入: $shell_rc"
@@ -416,7 +423,7 @@ do_install() {
     echo ""
     echo "安装目录: $install_dir"
     echo "配置文件: $config_file"
-    echo "执行 source ~/.zshrc 或重新打开终端"
+    echo "重开终端或执行 source ~/.zshrc 后补全生效（仅首次安装需要）"
 }
 
 # ============================================

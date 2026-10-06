@@ -82,4 +82,22 @@ _ptool() {
 if (( ! $+functions[compdef] )); then
     autoload -Uz compinit && compinit
 fi
-compdef _ptool ptool ptool.sh
+compdef _ptool ptool
+
+# ============================================
+# 包装函数
+# 函数在父 shell 中执行，所以 ptool update / install 跑完后可以立刻重新加载
+# 本文件，不必手动 source ~/.zshrc 或重开终端。
+# （脚本本身是子进程，无法修改父 shell 的环境，只有 shell 函数能做到这一点）
+# ============================================
+ptool() {
+    command ptool "$@"
+    local _ptool_ret=$?
+    case "$1" in
+        update|install|shim)
+            [ -f "@SELF@" ] && source "@SELF@"
+            hash -r 2>/dev/null
+            ;;
+    esac
+    return $_ptool_ret
+}

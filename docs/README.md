@@ -139,6 +139,20 @@ ptool python <TAB>   # 已安装的 Python 版本
 ptool run 3.11 <TAB> # .py 文件
 ```
 
+### 更新后无需手动 source
+
+安装时会在补全脚本里定义一个 `ptool` 包装函数（`.zshrc` / `.bashrc` 只负责 source 它）。
+函数在**父 shell** 中执行，
+所以 `ptool update` / `ptool install` 跑完后会立刻重新加载补全——不需要手动
+`source ~/.zshrc`，也不需要重开终端。
+
+> 原理：脚本本身是子进程，无法修改父 shell 的环境，所以 `install.sh` 里调用
+> `source ~/.zshrc` 是无效的（只影响脚本自己的 subshell）。只有 shell 函数
+> 才能真正在当前终端里生效。
+>
+> 例外：**首次安装**时函数还没被定义（`.zshrc` 正在被写入），所以第一次仍需
+> 重开终端或 `source ~/.zshrc`。之后的每次 update 都是自动的。
+
 补全脚本位于 `~/.devtools/ptool/completions/`，由 `ptool install` / `ptool update` 自动刷新，
 不需要手动维护。修改过 `PYTHON_BASE_DIR` 后补全列表会自动跟着变（每次补全都重新读取配置）。
 
@@ -154,7 +168,7 @@ PYTHON_BASE_DIR="/usr/local/bin"
 # PTOOL_DEFAULT_VERSION="3.11"
 
 # ptool 版本（由 install / update 维护，请勿手动修改）
-PTOOL_VERSION="2.0.0"
+PTOOL_VERSION="2.1.0"
 ```
 
 `ptool scan` 会自动扫描以下路径查找 Python 安装目录：
