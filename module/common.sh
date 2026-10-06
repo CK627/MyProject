@@ -115,6 +115,106 @@ do_update() {
     local install_dir="$4"
     local config_file="$5"
 
+    # 优先 curl+tar（不依赖 git）；都不可用时回退 git
+    if command -v curl >/dev/null 2>&1 && command -v tar >/dev/null 2>&1; then
+        do_update_via_curl "$tool_name" "$branch" "$remote_url" "$install_dir" "$config_file"
+    elif command -v git >/dev/null 2>&1; then
+        do_update_via_git "$tool_name" "$branch" "$remote_url" "$install_dir" "$config_file"
+    else
+        echo "错误: 需要 curl+tar 或 git 才能更新"
+        return 1
+    fi
+}
+
+do_update_via_curl() {
+    local tool_name="$1"
+    local branch="$2"
+    local remote_url="$3"
+    local install_dir="$4"
+    local config_file="$5"
+
+    local version_key
+    version_key=$(echo "${tool_name}_VERSION" | tr 'a-z' 'A-Z')
+    # .git 地址去掉后缀，得到 GitHub 网页地址（用于 raw 和 archive 下载）
+    local base_url="${remote_url%.git}"
+
+    command -v curl >/dev/null 2>&1 || { echo "错误: 需要 curl，请先安装"; return 1; }
+    command -v tar >/dev/null 2>&1 || { echo "错误: 需要 tar，请先安装"; return 1; }
+
+    # Step 1: 读取远程版本号（raw 文件，不依赖 git）
+    echo "正在检查更新..."
+    local remote_version=""
+    remote_version=$(curl -fsSL "$base_url/raw/refs/heads/$branch/VERSION" 2>/dev/null | tr -d '[:space:]')
+    if [ -z "$remote_version" ]; then
+        echo "错误: 无法获取版本号，请检查网络"
+        return 1
+    fi
+
+    # Step 2: 读取本地版本号
+    local local_version=""
+    if [ -f "$config_file" ]; then
+        local_version=$(grep "^${version_key}=" "$config_file" 2>/dev/null | tail -1 | cut -d'"' -f2)
+    fi
+
+    # Step 3: 版本相同则补齐缺失组件后返回
+    if [ "$local_version" = "$remote_version" ]; then
+        if do_repair_artifacts "$tool_name" "$install_dir" "$install_dir" "$config_file"; then
+            echo "已是最新版本 (v$local_version)，并补齐了缺失组件"
+        else
+            echo "已是最新版本 (v$local_version)"
+        fi
+        return 0
+    fi
+
+    echo "发现新版本: v${local_version:-未知} → v$remote_version"
+
+    # Step 4: 下载源码包并解压（不依赖 git）
+    local tmp
+    tmp=$(mktemp -d)
+    if ! curl -fsSL "$base_url/archive/refs/heads/$branch.tar.gz" | tar xz -C "$tmp"; then
+        rm -rf "$tmp"
+        echo "错误: 下载更新失败，请检查网络"
+        return 1
+    fi
+    local src="$tmp/MyProject-$branch"
+
+    # Step 5: 复制文件到安装目录（保留用户配置）
+    do_install_entry "$tool_name" "$install_dir" "$src"
+    sudo cp "$src/module/common.sh" "$install_dir/module/"
+
+    # 补全模板与 VERSION 同步进安装目录（setup 以安装目录为模板来源）
+    sudo mkdir -p "$install_dir/completions"
+    local f
+    for f in "${tool_name}.zsh" "${tool_name}.bash"; do
+        [ -f "$src/completions/$f" ] && sudo cp "$src/completions/$f" "$install_dir/completions/"
+    done
+    [ -f "$src/VERSION" ] && sudo cp "$src/VERSION" "$install_dir/VERSION"
+
+    # 配置文件仅首次复制
+    [ -f "$config_file" ] || sudo cp "$src/config/${tool_name}.conf" "$config_file"
+
+    # Step 6: 记录版本号
+    sudo sed -i.bak "/^${version_key}/d" "$config_file" 2>/dev/null
+    sudo rm -f "${config_file}.bak" 2>/dev/null
+    echo "${version_key}=\"$remote_version\"" | sudo tee -a "$config_file" > /dev/null
+
+    # Step 7: 刷新补全与 shell 配置
+    do_create_completions "$install_dir" "$config_file"
+    do_setup_shell "$install_dir"
+
+    rm -rf "$tmp"
+
+    echo "更新完成！"
+    echo "  版本: v${local_version:-未知} → v$remote_version"
+}
+
+do_update_via_git() {
+    local tool_name="$1"
+    local branch="$2"
+    local remote_url="$3"
+    local install_dir="$4"
+    local config_file="$5"
+
     local repo_dir="$HOME/.devtools/${tool_name}/repo"
     local version_key
     version_key=$(echo "${tool_name}_VERSION" | tr 'a-z' 'A-Z')
@@ -174,7 +274,7 @@ do_update() {
     sudo cp "$repo_dir/module/common.sh" "$install_dir/module/"
 
     # 补全模板与 VERSION 也要同步进安装目录：安装包场景下没有仓库，
-    # `jtool setup` 以安装目录为模板来源，不同步就会把过期的补全写回去
+    # `ptool setup` 以安装目录为模板来源，不同步就会把过期的补全写回去
     sudo mkdir -p "$install_dir/completions"
     local f
     for f in "${tool_name}.zsh" "${tool_name}.bash"; do
@@ -374,9 +474,17 @@ do_repair_artifacts() {
     local comp_dir="$HOME/.devtools/${tool_name}/completions"
     local repaired=0
 
+    # lib 缺失说明安装损坏，无法 repair
+    if [ ! -f "$install_dir/lib/${tool_name}.sh" ]; then
+        echo "  警告: 缺少 $install_dir/lib/${tool_name}.sh，请重新安装"
+        return 1
+    fi
     # 入口缺失，或仍是旧布局（bin/ 下还留着 .sh）
+    # 无 git 方案下没有源仓库目录，脚本已在 lib/，只需重建软链接
     if [ ! -e "$install_dir/bin/${tool_name}" ] || [ -e "$install_dir/bin/${tool_name}.sh" ]; then
-        do_install_entry "$tool_name" "$install_dir" "$source_dir"
+        sudo mkdir -p "$install_dir/bin"
+        sudo ln -sf "../lib/${tool_name}.sh" "$install_dir/bin/${tool_name}"
+        sudo rm -f "$install_dir/bin/${tool_name}.sh"
         echo "  已重建命令入口: ${tool_name}"
         repaired=1
     fi
