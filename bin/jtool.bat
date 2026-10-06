@@ -306,6 +306,13 @@ REM ============================================
 REM update
 REM ============================================
 :cmd_update
+REM 写安装目录需要管理员权限，非管理员时自动请求提权（弹 UAC）
+net session >nul 2>&1
+if !errorlevel! neq 0 (
+    echo update 需要管理员权限，正在请求提权...
+    powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -ArgumentList 'update' -Verb RunAs"
+    exit /b 0
+)
 REM Prefer curl+tar; fall back to git
 where curl >nul 2>&1
 if !errorlevel! neq 0 goto :update_via_git
@@ -320,7 +327,10 @@ REM ============================================
 echo 正在检查更新...
 set "REMOTE_VERSION="
 for /f "usebackq delims=" %%v in (`curl -fsSL "https://raw.githubusercontent.com/CK627/MyProject/jtool/VERSION" 2^>nul`) do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
-if "!REMOTE_VERSION!"=="" ( echo 错误: 无法获取版本号，请检查网络 & exit /b 1 )
+if "!REMOTE_VERSION!"=="" (
+    echo curl 读取版本号失败，回退到 git 方式...
+    goto :update_via_git
+)
 
 set "LOCAL_VERSION="
 if exist "%CONFIG_FILE%" (
