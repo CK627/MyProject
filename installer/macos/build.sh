@@ -171,9 +171,9 @@ hdiutil create -volname "$TOOL $VERSION" -srcfolder "$DMG_SRC" \
 
 echo "==> 已生成 $DMG"
 
-# 清理中间产物
-rm -rf "$PKG_ROOT" "$SCRIPTS_DIR" "$DMG_SRC"
+# 清理中间产物；pkg 已打进 dmg，不再单独发布
+rm -rf "$PKG_ROOT" "$SCRIPTS_DIR" "$DMG_SRC" "$PKG"
 
 echo ""
 echo "==> 完成"
-ls -lh "$PKG" "$DMG" | awk '{print "    " $9 "  " $5}'
+ls -lh "$DMG" | awk '{print "    " $9 "  " $5}'
