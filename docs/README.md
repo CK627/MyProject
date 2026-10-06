@@ -4,6 +4,14 @@
 
 ## 安装
 
+### 命令行一键安装
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/CK627/MyProject/ptool/installer/install.sh | bash
+```
+
+macOS 会下载最新 Release 的 `.pkg` 安装；Linux 会下载源码安装。
+
 ### macOS / Linux
 
 ```bash
