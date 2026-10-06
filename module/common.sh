@@ -1,6 +1,14 @@
 #!/bin/bash
 # jtool 安装模块（被 jtool.sh source 调用）
 
+# 登录 shell 对应的 rc 文件（macOS 默认 zsh）
+get_shell_rc() {
+    case "${SHELL##*/}" in
+        bash) echo "$HOME/.bashrc" ;;
+        *)    echo "$HOME/.zshrc" ;;
+    esac
+}
+
 # 安装目录（不支持的系统返回空并报错，避免拼出 "/bin" 之类的危险路径）
 get_install_dir() {
     case "$(uname -s)" in
@@ -136,7 +144,12 @@ do_update() {
     fi
 
     if [ "$local_version" = "$remote_version" ]; then
-        echo "已是最新版本 (v$local_version)"
+        # 版本号相同不代表装全了（见 do_repair_artifacts 的说明），先补齐缺失组件
+        if do_repair_artifacts "$tool_name" "$install_dir" "$repo_dir" "$config_file"; then
+            echo "已是最新版本 (v$local_version)，并补齐了缺失组件"
+        else
+            echo "已是最新版本 (v$local_version)"
+        fi
         return 0
     fi
 
@@ -256,12 +269,8 @@ do_setup_shell() {
     local shims_dir="$HOME/.devtools/jtool/shims"
     local comp_dir="$HOME/.devtools/jtool/completions"
 
-    # 按登录 shell 选择 rc 文件（macOS 默认 zsh）
     local shell_rc
-    case "${SHELL##*/}" in
-        bash) shell_rc="$HOME/.bashrc" ;;
-        *)    shell_rc="$HOME/.zshrc" ;;
-    esac
+    shell_rc=$(get_shell_rc)
     [ -f "$shell_rc" ] || : > "$shell_rc"
 
     # 移除旧的 jtool 配置块，避免重复或残留
@@ -281,6 +290,44 @@ do_setup_shell() {
 
     echo "已写入: $shell_rc"
     export PATH="$shims_dir:$bin_dir:$PATH"
+}
+
+# ============================================
+# 补齐缺失的安装组件（软链接 / 补全 / shell 配置）
+# 用于「版本号已是最新但组件不全」的情况：从旧版本 update 上来的机器，
+# 第一次 update 由旧代码执行，不会创建这些组件，之后版本号相同就再也补不上。
+# 返回 0 表示补了东西，1 表示本来就齐全。
+# ============================================
+do_repair_artifacts() {
+    local tool_name="$1"
+    local install_dir="$2"
+    local source_dir="$3"
+    local config_file="$4"
+    local comp_dir="$HOME/.devtools/${tool_name}/completions"
+    local repaired=0
+
+    if [ ! -e "$install_dir/bin/${tool_name}" ]; then
+        sudo ln -sf "${tool_name}.sh" "$install_dir/bin/${tool_name}"
+        echo "  已补建命令: ${tool_name}"
+        repaired=1
+    fi
+
+    if [ ! -f "$comp_dir/${tool_name}.zsh" ]; then
+        do_create_completions "$source_dir" "$config_file" >/dev/null
+        echo "  已补建补全脚本: $comp_dir"
+        repaired=1
+    fi
+
+    local shell_rc
+    shell_rc=$(get_shell_rc)
+    if ! grep -q "^# ${tool_name}$" "$shell_rc" 2>/dev/null; then
+        do_setup_shell "$install_dir" >/dev/null
+        echo "  已补写 shell 配置: $shell_rc"
+        repaired=1
+    fi
+
+    [ "$repaired" -eq 1 ] && return 0
+    return 1
 }
 
 do_install() {
