@@ -67,24 +67,28 @@ if "%~1"=="shim" goto :cmd_shim
 
 REM Run a tool
 set "tool=%~1"
-
-if "%~2"=="" (
-    if not "!PTOOL_DEFAULT_VERSION!"=="" (
-        set "version=!PTOOL_DEFAULT_VERSION!"
-        goto :run_tool_no_shift
-    ) else (
-        echo 错误: 需要指定工具名和版本号
-        exit /b 1
-    )
-)
 set "version=%~2"
+
+REM 版本号总是数字开头；若第二个参数缺失、或以 - / 开头（是参数不是版本号），
+REM 则用默认版本。shim 转发 `python -V` 就是「工具 + 参数、无版本号」的形式。
+if "!version!"=="" goto :use_default_version
+set "_vfirst=!version:~0,1!"
+if "!_vfirst!"=="-" goto :use_default_version
+if "!_vfirst!"=="/" goto :use_default_version
+
 shift /1
 shift /1
 goto :run_tool
 
-:run_tool_no_shift
-shift /1
-goto :run_tool
+:use_default_version
+if not "!PTOOL_DEFAULT_VERSION!"=="" (
+    set "version=!PTOOL_DEFAULT_VERSION!"
+    shift /1
+    goto :run_tool
+) else (
+    echo 错误: 需要指定工具名和版本号
+    exit /b 1
+)
 
 :run_tool
 call :resolve_py "!version!" python_exe
