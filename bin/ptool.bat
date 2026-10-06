@@ -86,16 +86,16 @@ if not "!PTOOL_DEFAULT_VERSION!"=="" (
     shift /1
     goto :run_tool
 ) else (
-    echo 错误: 需要指定工具名和版本号
+    echo Error: need tool name and version
     exit /b 1
 )
 
 :run_tool
 call :resolve_py "!version!" python_exe
 if not defined python_exe (
-    echo 错误: 找不到 Python !version!
-    echo 基准目录: !PYTHON_BASE_DIR!
-    echo 请运行 "ptool scan"，或修改配置里的 PYTHON_BASE_DIR
+    echo Error: Python !version! not found
+    echo Base dir: !PYTHON_BASE_DIR!
+    echo Run "ptool scan" or edit PYTHON_BASE_DIR
     exit /b 1
 )
 
@@ -113,14 +113,14 @@ if "!tool!"=="python3" ( "!python_exe!" !TOOL_ARGS! & exit /b !errorlevel! )
 if "!tool!"=="pip"     ( "!python_exe!" -m pip !TOOL_ARGS! & exit /b !errorlevel! )
 if "!tool!"=="pip3"    ( "!python_exe!" -m pip !TOOL_ARGS! & exit /b !errorlevel! )
 
-echo 错误: 工具 '!tool!' 不存在
+echo Error: tool '!tool!' not found
 exit /b 1
 
 REM ============================================
 REM List Pythons
 REM ============================================
 :list_pythons
-echo 已安装的 Python:
+echo Installed Pythons:
 set "found=0"
 
 REM Prefer the official py launcher; covers python.org, Store, PEP 514 runtimes
@@ -142,11 +142,11 @@ for /d %%d in ("!PYTHON_BASE_DIR!\Python*") do (
 )
 
 :list_none
-if "!found!"=="0" echo   未找到
+if "!found!"=="0" echo   None found
 
 :list_summary
 echo.
-if not "!PTOOL_DEFAULT_VERSION!"=="" echo 默认版本: !PTOOL_DEFAULT_VERSION!
+if not "!PTOOL_DEFAULT_VERSION!"=="" echo Default: !PTOOL_DEFAULT_VERSION!
 exit /b 0
 
 REM ============================================
@@ -173,35 +173,35 @@ echo   ptool shim                          Rebuild shims
 echo   ptool help                          Show help
 
 :cmd_use
-if "%~2"=="" ( echo 错误: 请指定版本号 & exit /b 1 )
+if "%~2"=="" ( echo Error: specify a version & exit /b 1 )
 call :resolve_py "%~2" use_exe
-if not defined use_exe ( echo 错误: Python %~2 不存在 & exit /b 1 )
+if not defined use_exe ( echo Error: Python %~2 not found & exit /b 1 )
 
 findstr /v "PTOOL_DEFAULT_VERSION" "%CONFIG_FILE%" > "%CONFIG_FILE%.tmp"
 echo PTOOL_DEFAULT_VERSION="%~2" >> "%CONFIG_FILE%.tmp"
 move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
 set "PTOOL_DEFAULT_VERSION=%~2"
-echo 已设置默认版本: %~2
+echo Default version set: %~2
 exit /b 0
 
 REM ============================================
 REM current
 REM ============================================
 :cmd_current
-if "!PTOOL_DEFAULT_VERSION!"=="" ( echo 未设置默认版本 & exit /b 1 )
-echo 默认版本: !PTOOL_DEFAULT_VERSION!
+if "!PTOOL_DEFAULT_VERSION!"=="" ( echo No default version & exit /b 1 )
+echo Default: !PTOOL_DEFAULT_VERSION!
 call :resolve_py "!PTOOL_DEFAULT_VERSION!" cur_exe
 if not defined cur_exe set "cur_exe=(未找到，请运行 ptool scan)"
-echo 路径: !cur_exe!
+echo Path: !cur_exe!
 exit /b 0
 
 REM ============================================
 REM home
 REM ============================================
 :cmd_home
-if "%~2"=="" ( echo 错误: 请指定版本号 & exit /b 1 )
+if "%~2"=="" ( echo Error: specify a version & exit /b 1 )
 call :resolve_py "%~2" home_exe
-if not defined home_exe ( echo 错误: Python %~2 不存在 >&2 & exit /b 1 )
+if not defined home_exe ( echo Error: Python %~2 not found >&2 & exit /b 1 )
 for %%f in ("!home_exe!") do set "home_dir=%%~dpf"
 set "home_dir=!home_dir:~0,-1!"
 echo !home_dir!
@@ -211,17 +211,17 @@ REM ============================================
 REM info
 REM ============================================
 :cmd_info
-if "%~2"=="" ( echo 错误: 请指定版本号 & exit /b 1 )
+if "%~2"=="" ( echo Error: specify a version & exit /b 1 )
 call :resolve_py "%~2" info_exe
-if not defined info_exe ( echo 错误: Python %~2 不存在 & exit /b 1 )
+if not defined info_exe ( echo Error: Python %~2 not found & exit /b 1 )
 for %%f in ("!info_exe!") do set "info_dir=%%~dpf"
 set "info_dir=!info_dir:~0,-1!"
 echo === Python %~2 ===
-echo 路径: !info_exe!
+echo Path: !info_exe!
 echo.
 "!info_exe!" --version 2>&1
 echo.
-echo 工具:
+echo Tools:
 for %%f in ("!info_dir!\python*.exe" "!info_dir!\pip*.exe") do echo   %%~nxf
 exit /b 0
 
@@ -229,12 +229,12 @@ REM ============================================
 REM tools
 REM ============================================
 :cmd_tools
-if "%~2"=="" ( echo 错误: 请指定版本号 & exit /b 1 )
+if "%~2"=="" ( echo Error: specify a version & exit /b 1 )
 call :resolve_py "%~2" tools_exe
-if not defined tools_exe ( echo 错误: Python %~2 不存在 & exit /b 1 )
+if not defined tools_exe ( echo Error: Python %~2 not found & exit /b 1 )
 for %%f in ("!tools_exe!") do set "tools_dir=%%~dpf"
 set "tools_dir=!tools_dir:~0,-1!"
-echo Python %~2 工具:
+echo Python %~2 tools:
 for %%f in ("!tools_dir!\python*.exe" "!tools_dir!\pip*.exe") do echo   %%~nxf
 exit /b 0
 
@@ -242,12 +242,12 @@ REM ============================================
 REM run
 REM ============================================
 :cmd_run
-if "%~2"=="" ( echo 错误: 请指定版本号 & exit /b 1 )
-if "%~3"=="" ( echo 错误: 请指定文件 & exit /b 1 )
+if "%~2"=="" ( echo Error: specify a version & exit /b 1 )
+if "%~3"=="" ( echo Error: specify a file & exit /b 1 )
 call :resolve_py "%~2" run_exe
-if not defined run_exe ( echo 错误: Python %~2 不存在 & exit /b 1 )
-if not exist "%~3" ( echo 错误: 文件不存在 & exit /b 1 )
-echo === 运行（Python %~2）===
+if not defined run_exe ( echo Error: Python %~2 not found & exit /b 1 )
+if not exist "%~3" ( echo Error: file not found & exit /b 1 )
+echo === Run (Python %~2) ===
 "!run_exe!" "%~3"
 exit /b !errorlevel!
 
@@ -262,9 +262,9 @@ REM ============================================
 REM config
 REM ============================================
 :cmd_config
-echo 配置文件: %CONFIG_FILE%
+echo Config file: %CONFIG_FILE%
 echo.
-if exist "%CONFIG_FILE%" ( type "%CONFIG_FILE%" ) else ( echo 不存在，请运行: ptool scan )
+if exist "%CONFIG_FILE%" ( type "%CONFIG_FILE%" ) else ( echo Not found, run: ptool scan )
 exit /b 0
 
 REM ============================================
@@ -281,7 +281,7 @@ REM ============================================
 REM 写安装目录需要管理员权限，非管理员时自动请求提权（弹 UAC）
 net session >nul 2>&1
 if !errorlevel! neq 0 (
-    echo update 需要管理员权限，正在请求提权...
+    echo update needs admin, requesting elevation...
     powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -ArgumentList 'update' -Verb RunAs"
     exit /b 0
 )
@@ -296,12 +296,12 @@ REM ============================================
 REM update via curl + tar (no git needed)
 REM ============================================
 :update_via_curl
-echo 正在检查更新...
+echo Checking for updates...
 set "REMOTE_VERSION="
 for /f "usebackq delims=" %%v in (`powershell -NoProfile -Command "(Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/CK627/MyProject/ptool/VERSION').Content.Trim()"`) do set "REMOTE_VERSION=%%v"
 if "!REMOTE_VERSION!"=="" for /f "usebackq delims=" %%v in (`curl -fsSL "https://raw.githubusercontent.com/CK627/MyProject/ptool/VERSION" 2^>nul`) do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
 if "!REMOTE_VERSION!"=="" (
-    echo 读取版本号失败，回退到 git 方式...
+    echo Version read failed, falling back to git...
     goto :update_via_git
 )
 
@@ -315,30 +315,30 @@ if defined LOCAL_VERSION set "LOCAL_VERSION=!LOCAL_VERSION:"=!"
 if defined LOCAL_VERSION set "LOCAL_VERSION=!LOCAL_VERSION: =!"
 
 if "!LOCAL_VERSION!"=="!REMOTE_VERSION!" (
-    echo 已是最新版本 ^(v!LOCAL_VERSION!^)
+    echo Already up to date ^(v!LOCAL_VERSION!^)
     exit /b 0
 )
 
-echo 发现新版本: v!LOCAL_VERSION! → v!REMOTE_VERSION!
+echo New version: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
 
 set "UPD_TMP=%TEMP%\ptool-update"
 rmdir /s /q "%UPD_TMP%" 2>nul
 mkdir "%UPD_TMP%"
 
-echo 下载更新...
+echo Downloading update...
 powershell -NoProfile -Command "Invoke-WebRequest -UseBasicParsing 'https://github.com/CK627/MyProject/archive/refs/heads/ptool.tar.gz' -OutFile '%UPD_TMP%\src.tar.gz'"
 if not exist "%UPD_TMP%\src.tar.gz" curl -fsSL "https://github.com/CK627/MyProject/archive/refs/heads/ptool.tar.gz" -o "%UPD_TMP%\src.tar.gz"
-if not exist "%UPD_TMP%\src.tar.gz" ( echo 下载失败，回退 git & goto :update_via_git )
+if not exist "%UPD_TMP%\src.tar.gz" ( echo Download failed, fallback to git & goto :update_via_git )
 
 tar -xzf "%UPD_TMP%\src.tar.gz" -C "%UPD_TMP%"
-if !errorlevel! neq 0 ( echo 解压失败 & exit /b 1 )
+if !errorlevel! neq 0 ( echo Extract failed & exit /b 1 )
 
 set "SRC=%UPD_TMP%\MyProject-ptool"
 
 copy /y "!SRC!\bin\ptool.bat" "%BIN_DIR%\" >nul
 if !errorlevel! neq 0 (
-    echo 错误: 无法写入 %BIN_DIR%
-    echo 请以管理员身份重新运行
+    echo Error: cannot write %BIN_DIR%
+    echo Please run as administrator
     exit /b 1
 )
 if exist "!SRC!\installer\windows\install.bat" (
@@ -352,8 +352,8 @@ move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
 
 rmdir /s /q "%UPD_TMP%" 2>nul
 
-echo 更新完成！
-echo   版本: v!LOCAL_VERSION! → v!REMOTE_VERSION!
+echo Update complete!
+echo   Version: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
 exit /b 0
 
 REM ============================================
@@ -362,7 +362,7 @@ REM ============================================
 :update_via_git
 where git >nul 2>&1
 if !errorlevel! neq 0 (
-    echo 错误: 未找到 git，且 curl/tar 也不可用，无法更新
+    echo Error: no git and no curl/tar, cannot update
     exit /b 1
 )
 
@@ -370,9 +370,9 @@ set "REPO_DIR=%USERPROFILE%\.devtools\ptool\repo"
 set "FRESH_CLONE=0"
 
 if not exist "!REPO_DIR!\.git" (
-    echo 首次更新，正在克隆仓库...
+    echo First update, cloning repo...
     git clone --branch ptool --single-branch --depth 1 https://github.com/CK627/MyProject.git "!REPO_DIR!"
-    if !errorlevel! neq 0 ( echo 克隆失败 & exit /b 1 )
+    if !errorlevel! neq 0 ( echo Clone failed & exit /b 1 )
     set "FRESH_CLONE=1"
 )
 
@@ -380,12 +380,12 @@ set "REMOTE_VERSION="
 if "!FRESH_CLONE!"=="1" (
     for /f "usebackq tokens=*" %%v in ("!REPO_DIR!\VERSION") do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
 ) else (
-    echo 正在检查更新...
+    echo Checking for updates...
     git -C "!REPO_DIR!" fetch origin ptool 2>nul
-    if !errorlevel! neq 0 ( echo 获取更新失败，请检查网络 & exit /b 1 )
+    if !errorlevel! neq 0 ( echo Fetch failed, check network & exit /b 1 )
     for /f "usebackq tokens=*" %%v in (`git -C "!REPO_DIR!" show origin/ptool:VERSION 2^>nul`) do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
 )
-if "!REMOTE_VERSION!"=="" ( echo 错误: 无法获取版本号 & exit /b 1 )
+if "!REMOTE_VERSION!"=="" ( echo Error: cannot get version & exit /b 1 )
 
 set "LOCAL_VERSION="
 if exist "%CONFIG_FILE%" (
@@ -397,22 +397,22 @@ if defined LOCAL_VERSION set "LOCAL_VERSION=!LOCAL_VERSION:"=!"
 if defined LOCAL_VERSION set "LOCAL_VERSION=!LOCAL_VERSION: =!"
 
 if "!LOCAL_VERSION!"=="!REMOTE_VERSION!" (
-    echo 已是最新版本 ^(v!LOCAL_VERSION!^)
+    echo Already up to date ^(v!LOCAL_VERSION!^)
     exit /b 0
 )
 
-echo 发现新版本: v!LOCAL_VERSION! → v!REMOTE_VERSION!
+echo New version: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
 
 if "!FRESH_CLONE!"=="0" (
     git -C "!REPO_DIR!" checkout ptool 2>nul
     git -C "!REPO_DIR!" pull origin ptool
-    if !errorlevel! neq 0 ( echo 拉取更新失败 & exit /b 1 )
+    if !errorlevel! neq 0 ( echo Pull failed & exit /b 1 )
 )
 
 copy /y "!REPO_DIR!\bin\ptool.bat" "%BIN_DIR%\" >nul
 if !errorlevel! neq 0 (
-    echo 错误: 无法写入 %BIN_DIR%
-    echo 请以管理员身份重新运行
+    echo Error: cannot write %BIN_DIR%
+    echo Please run as administrator
     exit /b 1
 )
 if exist "!REPO_DIR!\installer\windows\install.bat" (
@@ -424,8 +424,8 @@ findstr /v /b /c:"PTOOL_VERSION=" "%CONFIG_FILE%" > "%CONFIG_FILE%.tmp"
 echo PTOOL_VERSION="!REMOTE_VERSION!" >> "%CONFIG_FILE%.tmp"
 move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
 
-echo 更新完成！
-echo   版本: v!LOCAL_VERSION! → v!REMOTE_VERSION!
+echo Update complete!
+echo   Version: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
 exit /b 0
 
 REM ============================================
@@ -435,19 +435,19 @@ REM ============================================
 if "%~2"=="-y" goto :uninstall_silent
 if exist "%INSTALL_DIR%\unins000.exe" (
     start "" "%INSTALL_DIR%\unins000.exe"
-    echo 已启动卸载程序，请在弹窗中确认
+    echo Uninstaller started, confirm in dialog
 ) else (
-    echo 未找到卸载器 %INSTALL_DIR%\unins000.exe
-    echo 请通过「控制面板 - 添加或删除程序」卸载
+    echo Uninstaller not found %INSTALL_DIR%\unins000.exe
+    echo Uninstall via Control Panel - Add or Remove Programs
 )
 exit /b 0
 
 :uninstall_silent
 if exist "%INSTALL_DIR%\unins000.exe" (
     start /wait "" "%INSTALL_DIR%\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
-    echo 卸载完成
+    echo Uninstall complete
 ) else (
-    echo 未找到卸载器 %INSTALL_DIR%\unins000.exe
+    echo Uninstaller not found %INSTALL_DIR%\unins000.exe
 )
 exit /b 0
 
@@ -468,17 +468,17 @@ for %%t in (python python3 pip pip3) do (
         echo set "CONFIG_FILE=!CONFIG_FILE!"
         echo for %%%%i in ^("%%CONFIG_FILE%%\..\.."^) do set "PTOOL_ROOT=%%%%~fi"
         echo if not exist "%%PTOOL_ROOT%%\bin\ptool.bat" ^(
-        echo     echo ptool: 找不到 %%PTOOL_ROOT%%\bin\ptool.bat ^>^&2
+        echo     echo ptool: %%PTOOL_ROOT%%\bin\ptool.bat not found ^>^&2
         echo     exit /b 1
         echo ^)
         echo "%%PTOOL_ROOT%%\bin\ptool.bat" %%t %%*
     ) > "!SHIMS_DIR!\%%t.bat"
 )
 
-echo Shim 已创建: !SHIMS_DIR!
+echo Shims created: !SHIMS_DIR!
 
 REM 确保 shims 目录在用户 PATH（否则 `python` 走系统 Python，不用默认版本）
-powershell -NoProfile -Command "$d = Join-Path $env:USERPROFILE '.devtools\ptool\shims'; $p = [Environment]::GetEnvironmentVariable('Path','User'); $parts = @($p -split ';' | Where-Object { $_ -and ($_ -ne $d) }); [Environment]::SetEnvironmentVariable('Path', ($d + ';' + ($parts -join ';')).TrimEnd(';'), 'User'); Write-Output 'shims 已放到用户 PATH 最前面'"
+powershell -NoProfile -Command "$d = Join-Path $env:USERPROFILE '.devtools\ptool\shims'; $p = [Environment]::GetEnvironmentVariable('Path','User'); $parts = @($p -split ';' | Where-Object { $_ -and ($_ -ne $d) }); [Environment]::SetEnvironmentVariable('Path', ($d + ';' + ($parts -join ';')).TrimEnd(';'), 'User'); Write-Output 'shims moved to front of user PATH'"
 exit /b 0
 
 REM ============================================
