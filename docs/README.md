@@ -6,11 +6,19 @@
 
 ### 命令行一键安装
 
+macOS / Linux（安装后自动刷新当前终端，无需手动 source）：
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/CK627/MyProject/jtool/installer/install.sh | bash
+source <(curl -fsSL https://raw.githubusercontent.com/CK627/MyProject/jtool/installer/install.sh)
 ```
 
-macOS 会下载最新 Release 的 `.pkg` 安装；Linux 会下载源码安装。
+Windows（PowerShell）：
+
+```powershell
+irm https://raw.githubusercontent.com/CK627/MyProject/jtool/installer/install.ps1 | iex
+```
+
+macOS 下载最新 Release 的 `.pkg` 安装；Linux 下载源码安装；Windows 下载 `.exe` 静默安装。
 
 ### macOS / Linux
 
