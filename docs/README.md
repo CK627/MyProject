@@ -45,8 +45,9 @@ cd /path/to/jtool
 
 在 `scripts\Windows\` 下右键 `uninstall.bat`，选择 **以管理员身份运行**。
 
-> 卸载会删除安装目录（含配置文件）、shim 目录与 `~/.devtools/jtool/repo` 缓存，
-> 并清理 shell 配置中的 PATH 行。确认后会立即执行，请提前备份自定义配置。
+> 卸载会删除安装目录（含配置文件）、`~/.devtools/jtool/` 下的 shim / 补全脚本 / repo 缓存，
+> 并清理 shell 配置里由 jtool 写入的 PATH 行与补全 source 行（不触碰其他配置）。
+> 确认后会立即执行，请提前备份自定义配置。
 
 ---
 
@@ -64,42 +65,42 @@ cd /path/to/jtool
 
 ```bash
 # 运行指定版本
-jtool.sh java 26 -version
-jtool.sh javac 21 -d out MyClass.java
-jtool.sh jar 8 cf test.jar *.class
+jtool java 26 -version
+jtool javac 21 -d out MyClass.java
+jtool jar 8 cf test.jar *.class
 
 # 设置默认版本后可省略版本号
-jtool.sh use 21
-jtool.sh java -version
+jtool use 21
+jtool java -version
 ```
 
 ### 版本管理
 
 ```bash
-jtool.sh list              # 列出所有已安装的 JDK
-jtool.sh use 21            # 设置默认版本
-jtool.sh current           # 查看当前默认版本
+jtool list              # 列出所有已安装的 JDK
+jtool use 21            # 设置默认版本
+jtool current           # 查看当前默认版本
 ```
 
 ### 信息查询
 
 ```bash
-jtool.sh info 21           # 显示详细信息
-jtool.sh tools 26          # 列出可用工具
-jtool.sh home 26           # 输出 JAVA_HOME 路径
-jtool.sh config            # 查看配置信息
+jtool info 21           # 显示详细信息
+jtool tools 26          # 列出可用工具
+jtool home 26           # 输出 JAVA_HOME 路径
+jtool config            # 查看配置信息
 ```
 
 ### 编译并运行
 
 ```bash
-jtool.sh run 26 Hello.java  # 一步到位：编译 + 运行
+jtool run 26 Hello.java  # 一步到位：编译 + 运行
 ```
 
 ### 帮助
 
 ```bash
-jtool.sh help
+jtool help
 ```
 
 ## 命令速查表
@@ -121,9 +122,24 @@ jtool.sh help
 | `jtool shim` | 重建 shim 脚本 | `jtool shim` |
 | `jtool help` | 显示帮助 | `jtool help` |
 
-> macOS / Linux 使用 `jtool.sh`，Windows 使用 `jtool`（无后缀）
+> 三个平台统一使用 `jtool`。macOS / Linux 上 `jtool` 是指向 `jtool.sh` 的软链接，
+> 两者等价，写 `jtool.sh` 也能用（脚本内部按 `$0` 定位目录，软链接方式不影响）。
 >
 > `jtool scan` 会更新 `JAVA_BASE_DIR`，但会**保留**已设置的默认版本与版本记录。
+
+## Tab 补全
+
+安装时会自动生成补全脚本并写入 shell 配置（zsh / bash 均支持），重开终端即生效。
+
+```bash
+jtool <TAB>          # 子命令 + 工具名（java / javac / jar / jshell / javadoc / javap）
+jtool use <TAB>      # 已安装的 JDK 版本
+jtool java <TAB>     # 已安装的 JDK 版本
+jtool run 21 <TAB>   # .java 文件
+```
+
+补全脚本位于 `~/.devtools/jtool/completions/`，由 `jtool install` / `jtool update` 自动刷新。
+版本列表是直接扫描 `JAVA_BASE_DIR` 下的 `jdk-*` 目录得到的，**不会执行 java**，所以按 `<TAB>` 没有延迟。
 
 ## 跨平台支持
 
@@ -157,7 +173,7 @@ JAVA_BASE_DIR="/Library/Java/JavaVirtualMachines"
 # JTOOL_DEFAULT_VERSION="21"
 
 # jtool 版本（由 install / update 维护，请勿手动修改）
-JTOOL_VERSION="1.0.6"
+JTOOL_VERSION="1.1.0"
 ```
 
 > jtool 以 `JAVA_BASE_DIR` 作为唯一基准目录，按 `jdk-<版本>.jdk/Contents/Home` 拼接 JDK 路径
@@ -182,17 +198,17 @@ JTOOL_VERSION="1.0.6"
 #!/bin/bash
 
 # 获取 JAVA_HOME
-JAVA_HOME=$(jtool.sh home 21)
+JAVA_HOME=$(jtool home 21)
 export JAVA_HOME
 
 # 使用指定版本编译
-jtool.sh javac 21 -d out src/*.java
+jtool javac 21 -d out src/*.java
 
 # 使用指定版本运行
-jtool.sh java 21 -cp out Main
+jtool java 21 -cp out Main
 
 # 或者直接设置 PATH
-export PATH="$(jtool.sh home 26)/bin:$PATH"
+export PATH="$(jtool home 26)/bin:$PATH"
 java -version
 ```
 
@@ -206,6 +222,9 @@ jtool/
 │   └── jtool.bat               # 主脚本 (Windows)
 ├── config/
 │   └── jtool.conf              # 配置文件模板（首次安装时复制）
+├── completions/
+│   ├── jtool.zsh               # zsh 补全模板（安装时替换 @CONFIG_FILE@）
+│   └── jtool.bash              # bash 补全模板
 ├── module/
 │   └── common.sh               # 安装 / 扫描 / 更新 / 卸载逻辑（被 jtool.sh source）
 ├── scripts/
@@ -247,7 +266,7 @@ echo $PATH | grep jtool
 ### Q: 如何查看所有可用的 JDK？
 
 ```bash
-jtool.sh list
+jtool list
 ```
 
 ### Q: 如何临时使用某个版本而不修改默认设置？
@@ -255,7 +274,7 @@ jtool.sh list
 直接指定版本号即可：
 
 ```bash
-jtool.sh java 26 -version
+jtool java 26 -version
 ```
 
 ## 许可证
