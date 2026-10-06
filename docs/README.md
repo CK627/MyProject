@@ -8,35 +8,45 @@
 
 ```bash
 cd /path/to/jtool
-./install.sh
+
+# macOS
+./scripts/macOS/install.sh
+
+# Linux
+./scripts/Linux/install.sh
 ```
 
 安装完成后执行 `source ~/.zshrc`（或 `source ~/.bashrc`）或重新打开终端。
 
 ### Windows
 
-右键 `install.bat`，选择 **以管理员身份运行**。
+在 `scripts\Windows\` 下右键 `install.bat`，选择 **以管理员身份运行**。
 
 安装完成后重新打开 CMD 窗口。
 
 ---
 
 > 安装过程中会引导输入 Java 安装路径，回车使用默认值即可。
+> 安装后的路径见下方「跨平台支持」表格。
 
 ## 卸载
 
 ### macOS / Linux
 
 ```bash
-cd /path/to/jtool
-./uninstall.sh
+# macOS
+./scripts/macOS/uninstall.sh
+
+# Linux
+./scripts/Linux/uninstall.sh
 ```
 
 ### Windows
 
-右键 `uninstall.bat`，选择 **以管理员身份运行**。
+在 `scripts\Windows\` 下右键 `uninstall.bat`，选择 **以管理员身份运行**。
 
-> 卸载脚本会自动删除安装目录、清理环境变量，并询问是否保留配置文件。
+> 卸载会删除安装目录（含配置文件）、shim 目录与 `~/.devtools/jtool/repo` 缓存，
+> 并清理 shell 配置中的 PATH 行。确认后会立即执行，请提前备份自定义配置。
 
 ---
 
@@ -105,17 +115,27 @@ jtool.sh help
 | `jtool tools <版本>` | 列出可用工具 | `jtool tools 26` |
 | `jtool run <版本> <文件>` | 编译并运行 | `jtool run 26 Hello.java` |
 | `jtool config` | 查看配置信息 | `jtool config` |
+| `jtool scan` | 重新扫描 Java 路径 | `jtool scan` |
+| `jtool install` | 完整安装 | `jtool install` |
+| `jtool update` | 检查并更新 jtool | `jtool update` |
+| `jtool shim` | 重建 shim 脚本 | `jtool shim` |
 | `jtool help` | 显示帮助 | `jtool help` |
 
 > macOS / Linux 使用 `jtool.sh`，Windows 使用 `jtool`（无后缀）
+>
+> `jtool scan` 会更新 `JAVA_BASE_DIR`，但会**保留**已设置的默认版本与版本记录。
 
 ## 跨平台支持
 
-| 系统 | 脚本 | 安装路径 | 配置文件 |
-|------|------|----------|----------|
-| macOS | `jtool.sh` | `/Library/devtools/jtool/` | `/Library/devtools/jtool/jtool.conf` |
-| Linux | `jtool.sh` | `/usr/local/devtools/jtool/` | `/usr/local/devtools/jtool/jtool.conf` |
-| Windows | `jtool.bat` | `C:\Program Files\devtools\jtool\` | `C:\Program Files\devtools\jtool\jtool.conf` |
+| 系统 | 主脚本 | 安装路径 | 配置文件 | 入口 |
+|------|--------|----------|----------|------|
+| macOS | `jtool.sh` | `/Library/devtools/jtool/` | `/Library/devtools/jtool/config/jtool.conf` | `scripts/macOS/` |
+| Linux | `jtool.sh` | `/usr/local/devtools/jtool/` | `/usr/local/devtools/jtool/config/jtool.conf` | `scripts/Linux/` |
+| Windows | `jtool.bat` | `C:\Program Files\devtools\jtool\` | `C:\Program Files\devtools\jtool\config\jtool.conf` | `scripts/Windows/` |
+
+macOS / Linux 还会在 `~/.devtools/jtool/shims` 下生成 `java` / `javac` / `jar` / `jshell` /
+`javadoc` / `javap` 包装脚本，它们按当前默认版本转发调用。`jtool update` 使用的仓库缓存
+在 `~/.devtools/jtool/repo`。
 
 ### 各系统默认 Java 路径
 
@@ -127,15 +147,22 @@ jtool.sh help
 
 ## 配置文件说明
 
-配置文件路径：`~/.jtool.conf`（Windows: `%USERPROFILE%\.jtool.conf`）
+配置文件位于安装目录内的 `config/jtool.conf`（完整路径见上方「跨平台支持」表格）。
 
 ```bash
-# Java 安装路径（留空自动检测）
+# Java 安装路径（父目录）
 JAVA_BASE_DIR="/Library/Java/JavaVirtualMachines"
 
 # 默认 Java 版本（设置后可省略版本号）
 # JTOOL_DEFAULT_VERSION="21"
+
+# jtool 版本（由 install / update 维护，请勿手动修改）
+JTOOL_VERSION="1.0.6"
 ```
+
+> jtool 以 `JAVA_BASE_DIR` 作为唯一基准目录，按 `jdk-<版本>.jdk/Contents/Home` 拼接 JDK 路径
+> （Linux 下为 `jdk-<版本>`）。若 JDK 装在别处（如 Eclipse Adoptium、SDKMAN），
+> 执行 `jtool scan` 后手动修改 `JAVA_BASE_DIR` 即可。
 
 ## 版本号说明
 
@@ -173,25 +200,40 @@ java -version
 
 ```
 jtool/
-├── install.sh          # macOS / Linux 安装脚本
-├── install.bat         # Windows 安装脚本
-├── uninstall.sh        # macOS / Linux 卸载脚本
-├── uninstall.bat       # Windows 卸载脚本
+├── VERSION                     # 版本号，jtool update 据此判断是否需要更新
 ├── bin/
-│   ├── jtool.sh        # 主脚本 (macOS / Linux)
-│   └── jtool.bat       # 主脚本 (Windows)
+│   ├── jtool.sh                # 主脚本 (macOS / Linux)
+│   └── jtool.bat               # 主脚本 (Windows)
 ├── config/
-│   └── jtool.conf      # 配置文件模板
+│   └── jtool.conf              # 配置文件模板（首次安装时复制）
+├── module/
+│   └── common.sh               # 安装 / 扫描 / 更新 / 卸载逻辑（被 jtool.sh source）
+├── scripts/
+│   ├── macOS/
+│   │   ├── install.sh
+│   │   └── uninstall.sh
+│   ├── Linux/
+│   │   ├── install.sh
+│   │   └── uninstall.sh
+│   └── Windows/
+│       ├── install.bat
+│       └── uninstall.bat
 └── docs/
-    └── README.md        # 本文档
+    └── README.md               # 本文档
 ```
 
 ## 常见问题
 
 ### Q: 提示 "permission denied"
 
+用安装脚本重新安装（需要 sudo），或手动补权限：
+
 ```bash
-chmod +x /usr/local/jtool/bin/jtool.sh
+# macOS
+sudo chmod +x /Library/devtools/jtool/bin/jtool.sh
+
+# Linux
+sudo chmod +x /usr/local/devtools/jtool/bin/jtool.sh
 ```
 
 ### Q: 提示 "command not found"

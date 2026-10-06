@@ -34,8 +34,9 @@ if not exist "%BIN_DIR%" mkdir "%BIN_DIR%"
 if not exist "%CONFIG_DIR%" mkdir "%CONFIG_DIR%"
 if not exist "%MODULE_DIR%" mkdir "%MODULE_DIR%"
 copy "%PROJECT_DIR%\bin\jtool.bat" "%BIN_DIR%\" >nul
-copy "%PROJECT_DIR%\config\jtool.conf" "%CONFIG_DIR%\" >nul
-copy "%PROJECT_DIR%\module\install.sh" "%MODULE_DIR%\" >nul
+if not exist "%CONFIG_FILE%" copy "%PROJECT_DIR%\config\jtool.conf" "%CONFIG_DIR%\" >nul
+REM 把本安装脚本复制到 module\ ，供 jtool install / jtool scan 调用
+copy "%PROJECT_DIR%\scripts\Windows\install.bat" "%MODULE_DIR%\install.bat" >nul
 echo 完成
 echo.
 
@@ -47,6 +48,7 @@ echo.
 
 echo [3/4] 扫描 Java...
 call :do_scan_inner
+call :write_version
 echo.
 
 echo [4/4] 配置 PATH...
@@ -111,16 +113,7 @@ for /d %%d in ("!found_dir!\jdk-*") do (
 )
 echo.
 
-if not exist "%CONFIG_DIR%" mkdir "%CONFIG_DIR%"
-(
-    echo # jtool 配置文件
-    echo.
-    echo # Java 安装路径（父目录）
-    echo JAVA_BASE_DIR="!found_dir!"
-    echo.
-    echo # 默认版本
-    echo # JTOOL_DEFAULT_VERSION="21"
-) > "%CONFIG_FILE%"
+call :write_config
 
 echo 配置文件已写入: %CONFIG_FILE%
 echo.
@@ -133,14 +126,34 @@ if exist "C:\Program Files\Java" (
     for /d %%d in ("C:\Program Files\Java\jdk-*") do (
         if exist "%%d\bin\java.exe" (
             set "found_dir=C:\Program Files\Java"
-            goto :scan_write
+            goto :scan_inner_found
         )
     )
 )
-set "found_dir=C:\Program Files\Java"
+if exist "C:\Program Files\Eclipse Adoptium" set "found_dir=C:\Program Files\Eclipse Adoptium"
 
-:scan_write
+:scan_inner_found
+if not defined found_dir set "found_dir=C:\Program Files\Java"
+call :write_config
+echo 已写入: %CONFIG_FILE%
+exit /b 0
+
+REM ============================================
+REM 写入配置文件（保留已有的默认版本与版本记录）
+REM ============================================
+:write_config
 if not exist "%CONFIG_DIR%" mkdir "%CONFIG_DIR%"
+if not defined found_dir set "found_dir=C:\Program Files\Java"
+
+set "KEEP_DEFAULT=# JTOOL_DEFAULT_VERSION="21""
+set "KEEP_VERSION=# JTOOL_VERSION="""
+if exist "%CONFIG_FILE%" (
+    for /f "usebackq tokens=1,* delims==" %%a in ("%CONFIG_FILE%") do (
+        if "%%a"=="JTOOL_DEFAULT_VERSION" set "KEEP_DEFAULT=%%a=%%b"
+        if "%%a"=="JTOOL_VERSION" set "KEEP_VERSION=%%a=%%b"
+    )
+)
+
 (
     echo # jtool 配置文件
     echo.
@@ -148,10 +161,24 @@ if not exist "%CONFIG_DIR%" mkdir "%CONFIG_DIR%"
     echo JAVA_BASE_DIR="!found_dir!"
     echo.
     echo # 默认版本
-    echo # JTOOL_DEFAULT_VERSION="21"
+    echo !KEEP_DEFAULT!
+    echo.
+    echo # jtool 版本（由 install / update 维护，请勿手动修改）
+    echo !KEEP_VERSION!
 ) > "%CONFIG_FILE%"
+exit /b 0
 
-echo 已写入: %CONFIG_FILE%
+REM ============================================
+REM 记录 jtool 版本号
+REM ============================================
+:write_version
+if not exist "%PROJECT_DIR%\VERSION" exit /b 0
+set "VER="
+for /f "usebackq tokens=*" %%v in ("%PROJECT_DIR%\VERSION") do if not defined VER set "VER=%%v"
+if not defined VER exit /b 0
+findstr /v /b /c:"JTOOL_VERSION=" "%CONFIG_FILE%" > "%CONFIG_FILE%.tmp"
+echo JTOOL_VERSION="!VER!" >> "%CONFIG_FILE%.tmp"
+move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
 exit /b 0
 
 REM ============================================

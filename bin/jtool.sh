@@ -59,7 +59,7 @@ list_jdks() {
     echo ""
     echo "已安装的 JDK:"
 
-    local found=0
+    local entries=""
     for dir in "$JAVA_BASE_DIR"/jdk-*.jdk; do
         [ -d "$dir" ] || continue
         [ -f "$dir/Contents/Home/bin/java" ] || continue
@@ -69,11 +69,16 @@ list_jdks() {
         local real_version
         real_version=$("$dir/Contents/Home/bin/java" -version 2>&1 | head -1)
 
-        echo "  $version - $real_version"
-        found=1
+        entries="${entries}  $version - $real_version"$'\n'
     done
 
-    [ "$found" -eq 0 ] && echo "  (未找到)"
+    if [ -z "$entries" ]; then
+        echo "  (未找到)"
+    elif sort -V </dev/null >/dev/null 2>&1; then
+        printf '%s' "$entries" | sort -V
+    else
+        printf '%s' "$entries" | sort
+    fi
 
     echo ""
     [ -n "$JTOOL_DEFAULT_VERSION" ] && echo "默认版本: $JTOOL_DEFAULT_VERSION" || echo "默认版本: 未设置"
@@ -242,8 +247,16 @@ case "$1" in
     scan)     do_scan "$CONFIG_FILE"; exit $? ;;
     config)   do_config "$CONFIG_FILE"; exit 0 ;;
     install)  do_install "$PROJECT_DIR"; exit $? ;;
-    update)   do_update "jtool" "jtool" "https://github.com/CK627/MyProject.git" "$(get_install_dir)" "$CONFIG_FILE"; exit $? ;;
-    shim)     do_create_shims "$(get_install_dir)/config/jtool.conf"; exit $? ;;
+    update)
+        install_dir=$(get_install_dir) || exit 1
+        do_update "jtool" "jtool" "https://github.com/CK627/MyProject.git" "$install_dir" "$CONFIG_FILE"
+        exit $?
+        ;;
+    shim)
+        install_dir=$(get_install_dir) || exit 1
+        do_create_shims "$install_dir/config/jtool.conf"
+        exit $?
+        ;;
 esac
 
 # 运行工具
