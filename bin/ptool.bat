@@ -2,29 +2,31 @@
 chcp 65001 >nul 2>&1
 setlocal enabledelayedexpansion
 
-REM ptool - 统一 Python 版本管理工具 (Windows)
+REM ptool - Python version manager for Windows
 
 REM ============================================
-REM 路径
+REM Paths
 REM ============================================
 set "SCRIPT_DIR=%~dp0"
 set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
-set "PROJECT_DIR=%SCRIPT_DIR%\.."
+for %%i in ("%SCRIPT_DIR%\..") do set "PROJECT_DIR=%%~fi"
 set "CONFIG_FILE=%PROJECT_DIR%\config\ptool.conf"
 
-REM 安装目录（与 install.bat 保持一致）
-set "INSTALL_DIR=C:\Program Files\devtools\ptool"
+REM Install path is derived from the script location, not hardcoded.
+REM The installer may target Program Files or Program Files x86,
+REM depending on installer bitness; a hardcoded path breaks update.
+set "INSTALL_DIR=%PROJECT_DIR%"
 set "BIN_DIR=%INSTALL_DIR%\bin"
 set "CONFIG_DIR=%INSTALL_DIR%\config"
 set "MODULE_DIR=%INSTALL_DIR%\module"
 
-REM 查找 install.bat：已安装布局 → 仓库布局 → 旧版根目录
+REM Locate install.bat: installed layout, repo layout, legacy root
 set "INSTALL_MODULE=%PROJECT_DIR%\module\install.bat"
 if not exist "%INSTALL_MODULE%" set "INSTALL_MODULE=%PROJECT_DIR%\scripts\Windows\install.bat"
 if not exist "%INSTALL_MODULE%" set "INSTALL_MODULE=%PROJECT_DIR%\install.bat"
 
 REM ============================================
-REM 加载配置
+REM Load config
 REM ============================================
 set "PYTHON_BASE_DIR="
 set "PTOOL_DEFAULT_VERSION="
@@ -42,7 +44,7 @@ if exist "%CONFIG_FILE%" (
 )
 
 REM ============================================
-REM 主逻辑
+REM Main dispatch
 REM ============================================
 if "%~1"=="" goto :show_help
 
@@ -62,13 +64,8 @@ if "%~1"=="install" goto :cmd_install
 if "%~1"=="update" goto :cmd_update
 if "%~1"=="shim" goto :cmd_shim
 
-REM 运行工具
+REM Run a tool
 set "tool=%~1"
-if "!PYTHON_BASE_DIR!"=="" (
-    echo 错误: 未配置 PYTHON_BASE_DIR
-    echo 请运行: ptool scan
-    exit /b 1
-)
 
 if "%~2"=="" (
     if not "!PTOOL_DEFAULT_VERSION!"=="" (
@@ -89,10 +86,15 @@ shift /1
 goto :run_tool
 
 :run_tool
-set "python_path=!PYTHON_BASE_DIR!\python!version!"
-set "tool_path=!PYTHON_BASE_DIR!\!tool!"
+call :resolve_py "!version!" python_exe
+if not defined python_exe (
+    echo 错误: 找不到 Python !version!
+    echo 基准目录: !PYTHON_BASE_DIR!
+    echo 请运行 "ptool scan"，或修改配置里的 PYTHON_BASE_DIR
+    exit /b 1
+)
 
-REM %* 不随 shift 变化，会带上工具名和版本号，这里重新拼接剩余参数
+REM Args do not change with shift; rebuild remaining args here
 set "TOOL_ARGS="
 :collect_args
 if "%~1"=="" goto :args_ready
@@ -101,55 +103,52 @@ shift /1
 goto :collect_args
 :args_ready
 
-if "!tool!"=="python" (
-    if exist "!python_path!.exe" ( "!python_path!.exe" !TOOL_ARGS! & exit /b !errorlevel! )
-    if exist "!python_path!" ( "!python_path!" !TOOL_ARGS! & exit /b !errorlevel! )
-)
-if "!tool!"=="python3" (
-    if exist "!python_path!.exe" ( "!python_path!.exe" !TOOL_ARGS! & exit /b !errorlevel! )
-)
-if "!tool!"=="pip" (
-    "!python_path!" -m pip !TOOL_ARGS!
-    exit /b !errorlevel!
-)
-if "!tool!"=="pip3" (
-    "!python_path!" -m pip !TOOL_ARGS!
-    exit /b !errorlevel!
-)
+if "!tool!"=="python"  ( "!python_exe!" !TOOL_ARGS! & exit /b !errorlevel! )
+if "!tool!"=="python3" ( "!python_exe!" !TOOL_ARGS! & exit /b !errorlevel! )
+if "!tool!"=="pip"     ( "!python_exe!" -m pip !TOOL_ARGS! & exit /b !errorlevel! )
+if "!tool!"=="pip3"    ( "!python_exe!" -m pip !TOOL_ARGS! & exit /b !errorlevel! )
 
 echo 错误: 工具 '!tool!' 不存在
 exit /b 1
 
 REM ============================================
-REM 列出 Python
+REM List Pythons
 REM ============================================
 :list_pythons
-if "!PYTHON_BASE_DIR!"=="" (
-    echo 错误: 未配置 PYTHON_BASE_DIR
-    echo 请运行: ptool scan
-    exit /b 1
-)
-
-echo Python 路径: !PYTHON_BASE_DIR!
-echo.
 echo 已安装的 Python:
 set "found=0"
-for %%f in ("!PYTHON_BASE_DIR!\python*.exe") do (
-    for /f "tokens=*" %%v in ('"%%f" --version 2^>^&1') do (
-        echo   %%~nf - %%v
+
+REM Prefer the official py launcher; covers python.org, Store, PEP 514 runtimes
+for /f "usebackq delims=" %%L in (`py --list-paths 2^>nul`) do (
+    echo   %%L
+    set "found=1"
+)
+
+if "!found!"=="1" goto :list_summary
+
+REM Fallback: scan standard dirs when py is missing (PythonXY\python.exe)
+if "!PYTHON_BASE_DIR!"=="" goto :list_none
+for /d %%d in ("!PYTHON_BASE_DIR!\Python*") do (
+    if exist "%%d\python.exe" (
+        call :ver_from_dir "%%~nxd" pyver
+        echo   !pyver! - %%d\python.exe
         set "found=1"
     )
 )
-if "!found!"=="0" echo   (未找到)
+
+:list_none
+if "!found!"=="0" echo   未找到
+
+:list_summary
 echo.
 if not "!PTOOL_DEFAULT_VERSION!"=="" echo 默认版本: !PTOOL_DEFAULT_VERSION!
 exit /b 0
 
 REM ============================================
-REM 帮助
+REM Help
 REM ============================================
 :show_help
-echo ptool - 统一 Python 版本管理工具 (Windows)
+echo ptool - 统一 Python 版本管理工具（Windows）
 echo.
 echo 用法:
 echo   ptool ^<工具名^> ^<版本号^> [参数...]   运行工具
@@ -173,8 +172,8 @@ REM use
 REM ============================================
 :cmd_use
 if "%~2"=="" ( echo 错误: 请指定版本号 & exit /b 1 )
-set "use_path=!PYTHON_BASE_DIR!\python%~2"
-if not exist "!use_path!.exe" ( echo 错误: Python %~2 不存在 & exit /b 1 )
+call :resolve_py "%~2" use_exe
+if not defined use_exe ( echo 错误: Python %~2 不存在 & exit /b 1 )
 
 findstr /v "PTOOL_DEFAULT_VERSION" "%CONFIG_FILE%" > "%CONFIG_FILE%.tmp"
 echo PTOOL_DEFAULT_VERSION="%~2" >> "%CONFIG_FILE%.tmp"
@@ -189,7 +188,9 @@ REM ============================================
 :cmd_current
 if "!PTOOL_DEFAULT_VERSION!"=="" ( echo 未设置默认版本 & exit /b 1 )
 echo 默认版本: !PTOOL_DEFAULT_VERSION!
-echo 路径: !PYTHON_BASE_DIR!\python!PTOOL_DEFAULT_VERSION!
+call :resolve_py "!PTOOL_DEFAULT_VERSION!" cur_exe
+if not defined cur_exe set "cur_exe=(未找到，请运行 ptool scan)"
+echo 路径: !cur_exe!
 exit /b 0
 
 REM ============================================
@@ -197,8 +198,11 @@ REM home
 REM ============================================
 :cmd_home
 if "%~2"=="" ( echo 错误: 请指定版本号 & exit /b 1 )
-if not exist "!PYTHON_BASE_DIR!\python%~2.exe" ( echo 错误: Python %~2 不存在 & exit /b 1 )
-echo !PYTHON_BASE_DIR!
+call :resolve_py "%~2" home_exe
+if not defined home_exe ( echo 错误: Python %~2 不存在 >&2 & exit /b 1 )
+for %%f in ("!home_exe!") do set "home_dir=%%~dpf"
+set "home_dir=!home_dir:~0,-1!"
+echo !home_dir!
 exit /b 0
 
 REM ============================================
@@ -206,16 +210,17 @@ REM info
 REM ============================================
 :cmd_info
 if "%~2"=="" ( echo 错误: 请指定版本号 & exit /b 1 )
-set "info_path=!PYTHON_BASE_DIR!\python%~2"
-if not exist "!info_path!.exe" ( echo 错误: Python %~2 不存在 & exit /b 1 )
+call :resolve_py "%~2" info_exe
+if not defined info_exe ( echo 错误: Python %~2 不存在 & exit /b 1 )
+for %%f in ("!info_exe!") do set "info_dir=%%~dpf"
+set "info_dir=!info_dir:~0,-1!"
 echo === Python %~2 ===
-echo 路径: !info_path!.exe
+echo 路径: !info_exe!
 echo.
-"!info_path!.exe" --version 2>&1
+"!info_exe!" --version 2>&1
 echo.
 echo 工具:
-for %%f in ("!PYTHON_BASE_DIR!\python*%~2*") do echo   %%~nxf
-for %%f in ("!PYTHON_BASE_DIR!\pip*%~2*") do echo   %%~nxf
+for %%f in ("!info_dir!\python*.exe" "!info_dir!\pip*.exe") do echo   %%~nxf
 exit /b 0
 
 REM ============================================
@@ -223,9 +228,12 @@ REM tools
 REM ============================================
 :cmd_tools
 if "%~2"=="" ( echo 错误: 请指定版本号 & exit /b 1 )
+call :resolve_py "%~2" tools_exe
+if not defined tools_exe ( echo 错误: Python %~2 不存在 & exit /b 1 )
+for %%f in ("!tools_exe!") do set "tools_dir=%%~dpf"
+set "tools_dir=!tools_dir:~0,-1!"
 echo Python %~2 工具:
-for %%f in ("!PYTHON_BASE_DIR!\python*%~2*") do echo   %%~nxf
-for %%f in ("!PYTHON_BASE_DIR!\pip*%~2*") do echo   %%~nxf
+for %%f in ("!tools_dir!\python*.exe" "!tools_dir!\pip*.exe") do echo   %%~nxf
 exit /b 0
 
 REM ============================================
@@ -234,11 +242,11 @@ REM ============================================
 :cmd_run
 if "%~2"=="" ( echo 错误: 请指定版本号 & exit /b 1 )
 if "%~3"=="" ( echo 错误: 请指定文件 & exit /b 1 )
-set "run_path=!PYTHON_BASE_DIR!\python%~2"
-if not exist "!run_path!.exe" ( echo 错误: Python %~2 不存在 & exit /b 1 )
+call :resolve_py "%~2" run_exe
+if not defined run_exe ( echo 错误: Python %~2 不存在 & exit /b 1 )
 if not exist "%~3" ( echo 错误: 文件不存在 & exit /b 1 )
-echo === 运行 (Python %~2) ===
-"!run_path!.exe" "%~3"
+echo === 运行（Python %~2）===
+"!run_exe!" "%~3"
 exit /b !errorlevel!
 
 REM ============================================
@@ -254,7 +262,7 @@ REM ============================================
 :cmd_config
 echo 配置文件: %CONFIG_FILE%
 echo.
-if exist "%CONFIG_FILE%" ( type "%CONFIG_FILE%" ) else ( echo (不存在，请运行: ptool scan) )
+if exist "%CONFIG_FILE%" ( type "%CONFIG_FILE%" ) else ( echo 不存在，请运行: ptool scan )
 exit /b 0
 
 REM ============================================
@@ -285,7 +293,7 @@ if not exist "!REPO_DIR!\.git" (
     set "FRESH_CLONE=1"
 )
 
-REM 获取远程版本号
+REM Get remote version
 set "REMOTE_VERSION="
 if "!FRESH_CLONE!"=="1" (
     for /f "usebackq tokens=*" %%v in ("!REPO_DIR!\VERSION") do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
@@ -297,7 +305,7 @@ if "!FRESH_CLONE!"=="1" (
 )
 if "!REMOTE_VERSION!"=="" ( echo 错误: 无法获取版本号 & exit /b 1 )
 
-REM 获取本地版本号（记录在配置文件中）
+REM Get local version from config
 set "LOCAL_VERSION="
 if exist "%CONFIG_FILE%" (
     for /f "usebackq tokens=1,* delims==" %%a in ("%CONFIG_FILE%") do (
@@ -329,7 +337,7 @@ if exist "!REPO_DIR!\scripts\Windows\install.bat" (
 )
 if not exist "%CONFIG_FILE%" copy "!REPO_DIR!\config\ptool.conf" "%CONFIG_DIR%\" >nul
 
-REM 记录版本号，供下次更新比对
+REM Record version for next update check
 findstr /v /b /c:"PTOOL_VERSION=" "%CONFIG_FILE%" > "%CONFIG_FILE%.tmp"
 echo PTOOL_VERSION="!REMOTE_VERSION!" >> "%CONFIG_FILE%.tmp"
 move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
@@ -345,36 +353,68 @@ REM ============================================
 set "SHIMS_DIR=%USERPROFILE%\.devtools\ptool\shims"
 if not exist "!SHIMS_DIR!" mkdir "!SHIMS_DIR!"
 
+REM shims are thin forwards; ptool resolves the interpreter path itself
+REM so the path logic lives only in :resolve_py, never duplicated
+REM The old code copied the logic into each shim and forgot setlocal
 for %%t in (python python3 pip pip3) do (
     (
         echo @echo off
         echo REM ptool shim - auto generated
-        echo set "CONFIG_FILE=%CONFIG_FILE%"
-        echo set "PYTHON_BASE_DIR="
-        echo set "PTOOL_DEFAULT_VERSION="
-        echo if exist "%%CONFIG_FILE%%" ^(
-        echo     for /f "usebackq tokens=1,* delims==" %%%%a in ^("%%CONFIG_FILE%%"^) do ^(
-        echo         set "key=%%%%a"
-        echo         set "val=%%%%b"
-        echo         if not "!key:~0,1!"=="#" if not "!key!"=="" ^(
-        echo             set "val=!val:"=!"
-        echo             if "!key!"=="PYTHON_BASE_DIR" set "PYTHON_BASE_DIR=!val!"
-        echo             if "!key!"=="PTOOL_DEFAULT_VERSION" set "PTOOL_DEFAULT_VERSION=!val!"
-        echo         ^)
-        echo     ^)
-        echo ^)
-        echo if "!PTOOL_DEFAULT_VERSION!"=="" ^(
-        echo     echo ptool: 未设置默认版本，请运行 ptool use ^<版本号^>
+        echo set "CONFIG_FILE=!CONFIG_FILE!"
+        echo for %%%%i in ^("%%CONFIG_FILE%%\..\.."^) do set "PTOOL_ROOT=%%%%~fi"
+        echo if not exist "%%PTOOL_ROOT%%\bin\ptool.bat" ^(
+        echo     echo ptool: 找不到 %%PTOOL_ROOT%%\bin\ptool.bat ^>^&2
         echo     exit /b 1
         echo ^)
-        echo set "BIN=!PYTHON_BASE_DIR!\%%t!PTOOL_DEFAULT_VERSION!.exe"
-        echo if not exist "!BIN!" ^(
-        echo     echo ptool: !BIN! 不存在
-        echo     exit /b 1
-        echo ^)
-        echo "!BIN!" %%*
+        echo "%%PTOOL_ROOT%%\bin\ptool.bat" %%t %%*
     ) > "!SHIMS_DIR!\%%t.bat"
 )
 
 echo Shim 已创建: !SHIMS_DIR!
+exit /b 0
+
+REM ============================================
+REM Resolve the interpreter path for a version
+REM
+REM Prefer the official py launcher to print the interpreter path
+REM Covers python.org, Store, and any PEP 514 runtime
+REM Fall back to scanning standard dirs when py is missing
+REM
+REM arg1 = version, e.g. 3.10
+REM arg2 = variable to receive the result; empty if not found
+REM ============================================
+:resolve_py
+set "%~2="
+set "_RV=%~1"
+if "!_RV!"=="" exit /b 1
+
+REM Prefer py: py -X.Y -c prints the interpreter path
+REM Covers python.org, Microsoft Store, and any PEP 514 runtime
+REM No need to guess directory layouts
+for /f "delims=" %%p in ('py -!_RV! -c "import sys; print(sys.executable)" 2^>nul') do set "%~2=%%p"
+if defined %~2 exit /b 0
+
+REM Fallback: scan standard install dirs when py is missing
+set "_RVND=!_RV:.=!"
+if exist "!PYTHON_BASE_DIR!\Python!_RVND!\python.exe" (
+    set "%~2=!PYTHON_BASE_DIR!\Python!_RVND!\python.exe"
+    exit /b 0
+)
+if exist "!PYTHON_BASE_DIR!\python!_RV!.exe" (
+    set "%~2=!PYTHON_BASE_DIR!\python!_RV!.exe"
+    exit /b 0
+)
+exit /b 1
+
+REM ============================================
+REM Derive version from dir name: Python310 to 3.10, Python27 to 2.7
+REM arg1 = dir name, arg2 = variable to receive the version
+REM ============================================
+:ver_from_dir
+set "%~2="
+set "_VD=%~1"
+REM Dir name is Python plus 1-digit major and 1-2 digit minor, split by position
+REM   Python311 to 3.11, Python27 to 2.7, Python36 to 3.6, Python312 to 3.12
+if "!_VD:~6,1!"=="" exit /b 0
+set "%~2=!_VD:~6,1!.!_VD:~7,2!"
 exit /b 0

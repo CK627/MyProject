@@ -35,7 +35,9 @@ _ptool() {
         'run:运行 Python 文件'
         'scan:扫描 Python 路径并更新配置'
         'config:显示配置'
-        'install:完整安装'
+        'install:完整安装（从源码目录）'
+        'setup:只做用户级配置（shims/补全/shell）'
+        'uninstall:卸载'
         'update:检查并更新 ptool'
         'shim:重建 shim 脚本'
         'help:显示帮助'
@@ -94,7 +96,7 @@ ptool() {
     command ptool "$@"
     local _ptool_ret=$?
     case "$1" in
-        update|install|shim)
+        update|install|setup|shim)
             [ -f "@SELF@" ] && source "@SELF@"
             hash -r 2>/dev/null
             ;;

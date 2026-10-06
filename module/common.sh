@@ -44,8 +44,16 @@ do_scan() {
     done
 
     if [ -z "$python_base_dir" ]; then
-        echo "未找到 Python 安装目录"
-        read -p "请输入 Python 安装路径: " python_base_dir
+        # 非交互环境（安装包脚本、CI、管道）不能询问：`read -p` 在无 TTY 时
+        # 要么立刻返回空、要么阻塞，两种情况都不该发生。
+        if [ -t 0 ]; then
+            echo "未找到 Python 安装目录"
+            read -p "请输入 Python 安装路径: " python_base_dir
+        else
+            echo "未找到 Python 安装目录（当前为非交互环境，无法询问）"
+            echo "请手动编辑配置文件的 PYTHON_BASE_DIR"
+            return 1
+        fi
         [ -d "$python_base_dir" ] || { echo "错误: 路径不存在"; return 1; }
     fi
 
@@ -165,6 +173,19 @@ do_update() {
     # Step 5: 复制文件到安装目录（保留用户配置）
     do_install_entry "$tool_name" "$install_dir" "$repo_dir"
     sudo cp "$repo_dir/module/common.sh" "$install_dir/module/"
+
+    # 补全模板与 VERSION 也要同步进安装目录：安装包场景下没有仓库，
+    # `ptool setup` 以安装目录为模板来源，不同步就会把过期的补全写回去
+    sudo mkdir -p "$install_dir/completions"
+    local f
+    for f in "${tool_name}.zsh" "${tool_name}.bash"; do
+        if [ -f "$repo_dir/completions/$f" ]; then
+            sudo cp "$repo_dir/completions/$f" "$install_dir/completions/"
+        fi
+    done
+    if [ -f "$repo_dir/VERSION" ]; then
+        sudo cp "$repo_dir/VERSION" "$install_dir/VERSION"
+    fi
 
     # 配置文件仅首次复制
     if [ ! -f "$config_file" ]; then
@@ -292,6 +313,28 @@ do_setup_shell() {
 
     echo "已写入: $shell_rc"
     export PATH="$shims_dir:$bin_dir:$PATH"
+}
+
+# ============================================
+# 用户级安装（供安装包的 postinstall 以登录用户身份调用）
+# 只处理 ~/.devtools 与 shell 配置，不碰系统目录，全程非交互。
+# 调用方必须保证配置文件已存在——bin/ptool.sh 的 load_config 在分发子命令
+# 之前就会检查它，配置缺失时 `ptool setup` 根本走不到这里。
+# ============================================
+do_setup_user() {
+    local install_dir="$1"
+    local config_file="$2"
+
+    if [ ! -f "$config_file" ]; then
+        echo "错误: 配置文件不存在 ($config_file)"
+        echo "安装程序应当在此步之前创建它"
+        return 1
+    fi
+
+    do_create_shims "$config_file"
+    # 补全模板从安装目录取（安装包已随包分发 completions/）
+    do_create_completions "$install_dir" "$config_file"
+    do_setup_shell "$install_dir"
 }
 
 # ============================================
@@ -430,6 +473,11 @@ do_install() {
 # 卸载
 # ============================================
 do_uninstall() {
+    local assume_yes=0
+    case "${1:-}" in
+        -y|--yes) assume_yes=1 ;;
+    esac
+
     local install_dir
     install_dir=$(get_install_dir) || return 1
 
@@ -438,8 +486,10 @@ do_uninstall() {
     echo "========================================"
     echo ""
 
-    read -p "确定要卸载吗？(y/n): " confirm
-    [ "$confirm" != "y" ] && [ "$confirm" != "Y" ] && { echo "已取消"; return 0; }
+    if [ "$assume_yes" -ne 1 ]; then
+        read -p "确定要卸载吗？(y/n): " confirm
+        [ "$confirm" != "y" ] && [ "$confirm" != "Y" ] && { echo "已取消"; return 0; }
+    fi
 
     echo ""
 

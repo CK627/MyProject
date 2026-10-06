@@ -24,7 +24,7 @@ _ptool_versions() {
 
 _ptool_complete() {
     local cur cmd
-    local subcmds="list use current home info tools run scan config install update shim help"
+    local subcmds="list use current home info tools run scan config install setup uninstall update shim help"
     local tools="python python3 pip pip3 pip2"
 
     cur="${COMP_WORDS[COMP_CWORD]}"
@@ -73,7 +73,7 @@ ptool() {
     command ptool "$@"
     local _ptool_ret=$?
     case "$1" in
-        update|install|shim)
+        update|install|setup|shim)
             [ -f "@SELF@" ] && source "@SELF@"
             hash -r 2>/dev/null
             ;;

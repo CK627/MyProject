@@ -7,3 +7,10 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# 构建产物（安装包）
+dist/
+build/
+
+# Claude Code 本地配置
+.claude/

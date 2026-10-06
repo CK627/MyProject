@@ -6,9 +6,29 @@ REM ptool 安装脚本 (Windows)
 
 set "SCRIPT_DIR=%~dp0"
 set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
-REM 向上两级到项目根目录
-for %%i in ("%SCRIPT_DIR%\..\..") do set "PROJECT_DIR=%%~fi"
-set "INSTALL_DIR=C:\Program Files\devtools\ptool"
+
+REM 布局感知：
+REM   仓库里本脚本在 <tool>\scripts\Windows\ ，往上两级才是项目根目录
+REM   安装后本脚本在 <tool>\module\         ，往上一级就是安装根目录
+REM 不区分的话，安装后 %PROJECT_DIR% 会算成 C:\Program Files\devtools，
+REM 既找不到 bin\ 也找不到 VERSION，:write_version 会静默退出，
+REM 于是每次 update 都误报有新版本。
+for %%i in ("%SCRIPT_DIR%\..") do set "APP_ROOT=%%~fi"
+for %%i in ("%SCRIPT_DIR%\..\..") do set "REPO_ROOT=%%~fi"
+if exist "%APP_ROOT%\bin\ptool.bat" (
+    set "PROJECT_DIR=%APP_ROOT%"
+    set "INSTALLED=1"
+) else (
+    set "PROJECT_DIR=%REPO_ROOT%"
+    set "INSTALLED=0"
+)
+
+REM 已在安装目录中时以实际位置为准；从仓库安装才用规范目标路径
+if "%INSTALLED%"=="1" (
+    set "INSTALL_DIR=%PROJECT_DIR%"
+) else (
+    set "INSTALL_DIR=C:\Program Files\devtools\ptool"
+)
 set "BIN_DIR=%INSTALL_DIR%\bin"
 set "CONFIG_DIR=%INSTALL_DIR%\config"
 set "MODULE_DIR=%INSTALL_DIR%\module"
@@ -18,6 +38,8 @@ REM ============================================
 REM 子命令
 REM ============================================
 if "%~1"=="scan" goto :do_scan
+REM 非交互扫描：供安装包的静默安装调用，不会停在 set /p 提示上
+if "%~1"=="scansilent" goto :do_scan_silent
 if "%~1"=="config" goto :do_config
 if "%~1"=="help" goto :do_help
 
@@ -33,10 +55,14 @@ echo [1/4] 复制文件...
 if not exist "%BIN_DIR%" mkdir "%BIN_DIR%"
 if not exist "%CONFIG_DIR%" mkdir "%CONFIG_DIR%"
 if not exist "%MODULE_DIR%" mkdir "%MODULE_DIR%"
-copy "%PROJECT_DIR%\bin\ptool.bat" "%BIN_DIR%\" >nul
-if not exist "%CONFIG_FILE%" copy "%PROJECT_DIR%\config\ptool.conf" "%CONFIG_DIR%\" >nul
-REM 把本安装脚本复制到 module\ ，供 ptool install / ptool scan 调用
-copy "%PROJECT_DIR%\scripts\Windows\install.bat" "%MODULE_DIR%\install.bat" >nul
+if "%INSTALLED%"=="1" (
+    echo 已处于安装布局，跳过文件复制
+) else (
+    copy "%PROJECT_DIR%\bin\ptool.bat" "%BIN_DIR%\" >nul
+    if not exist "%CONFIG_FILE%" copy "%PROJECT_DIR%\config\ptool.conf" "%CONFIG_DIR%\" >nul
+    REM 把本安装脚本复制到 module\ ，供 ptool install / ptool scan 调用
+    copy "%PROJECT_DIR%\scripts\Windows\install.bat" "%MODULE_DIR%\install.bat" >nul
+)
 echo 完成
 echo.
 
@@ -179,6 +205,15 @@ if not defined VER exit /b 0
 findstr /v /b /c:"PTOOL_VERSION=" "%CONFIG_FILE%" > "%CONFIG_FILE%.tmp"
 echo PTOOL_VERSION="!VER!" >> "%CONFIG_FILE%.tmp"
 move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
+exit /b 0
+
+REM ============================================
+REM 非交互扫描（安装包静默安装时调用）
+REM 复用 :do_scan_inner —— 检测不到就落到默认值，不会像 :do_scan 那样 set /p 询问
+REM ============================================
+:do_scan_silent
+call :do_scan_inner
+call :write_version
 exit /b 0
 
 REM ============================================

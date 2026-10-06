@@ -1,0 +1,60 @@
+#!/bin/bash
+# @TOOL@ 安装后脚本
+#
+# 由 Installer 以 root 执行，环境有三个坑：
+#   1. 不经过 sudo，所以 $SUDO_USER 为空、$USER 是 root
+#   2. $HOME 是 /var/root
+#   3. PATH 为最小集，且没有 TTY
+# 因此下面全部使用绝对路径，用户级配置一律降权到登录用户执行。
+
+TOOL="@TOOL@"
+VERSION_KEY="@TOOL_UPPER@_VERSION"
+INSTALL="/Library/devtools/$TOOL"
+CONF="$INSTALL/config/$TOOL.conf"
+
+# ---------------------------------------------------------------
+# 1) 配置文件：不存在才创建（升级时不覆盖用户已有的默认版本等设置）
+#    必须在这里建好——bin/$TOOL.sh 的 load_config 在分发子命令之前就要求它存在，
+#    否则紧接着的 `$TOOL setup` 会直接 exit 1。
+# ---------------------------------------------------------------
+if [ ! -f "$CONF" ]; then
+    /bin/mkdir -p "$INSTALL/config"
+    /bin/cp "$INSTALL/share/$TOOL.conf.template" "$CONF" 2>/dev/null
+fi
+
+# 版本号无论配置是否新建都要与本次安装的版本一致：
+#   - 缺了它，do_update 会认为本地版本未知，首次 `$TOOL update` 就会 clone
+#     仓库并覆盖掉安装包管理的整个目录
+#   - 已有但过旧（比如配置里是 2.1.0、装的是 2.2.0），下次 update 同样会
+#     误判为需要更新，再覆盖一遍
+VER="$(/bin/cat "$INSTALL/VERSION" 2>/dev/null | /usr/bin/tr -d '[:space:]')"
+if [ -n "$VER" ]; then
+    /usr/bin/sed -i '' "/^$VERSION_KEY=/d" "$CONF" 2>/dev/null
+    /bin/echo "$VERSION_KEY=\"$VER\"" >> "$CONF"
+fi
+
+# do_scan / $TOOL use 会以普通用户身份写这个文件
+/bin/chmod 666 "$CONF" 2>/dev/null
+
+# ---------------------------------------------------------------
+# 2) 用户级配置（shims / 补全 / shell rc）
+#    shims 与补全都写到 ~/.devtools/$TOOL，shell rc 也要改用户自己的，
+#    所以必须以登录用户身份执行，否则会全落到 /var/root。
+# ---------------------------------------------------------------
+TARGET="$(/usr/bin/stat -f%Su /dev/console 2>/dev/null)"
+case "$TARGET" in
+    ""|root|loginwindow) TARGET="" ;;   # 登录窗口 / FileVault / 无人登录
+esac
+
+if [ -n "$TARGET" ] && /usr/bin/id -u "$TARGET" >/dev/null 2>&1; then
+    if ! /usr/bin/sudo -u "$TARGET" -H /bin/bash "$INSTALL/lib/$TOOL.sh" setup; then
+        /bin/echo "$TOOL: 用户级配置失败，请手动执行: $TOOL setup"
+    fi
+else
+    /bin/echo "$TOOL: 未检测到登录用户，已跳过 shims / 补全 / shell 配置"
+    /bin/echo "       首次登录后请执行: $TOOL setup"
+fi
+
+# 无论用户级步骤是否成功都返回 0：系统文件此时已经就位，
+# postinstall 失败会让安装界面显示「安装失败」，而实际是可用的。
+exit 0
