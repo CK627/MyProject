@@ -70,19 +70,14 @@ icacls "%BIN_DIR%\jtool.bat" /grant Everyone:RX >nul 2>&1
 echo 完成
 echo.
 
-echo [3/4] 扫描 Java...
+echo [3/4] 扫描并生成 shim...
 call :do_scan_inner
 call :write_version
+"%BIN_DIR%\jtool.bat" shim
 echo.
 
 echo [4/4] 配置 PATH...
-echo %PATH% | findstr /i /c:"%BIN_DIR%" >nul
-if !errorlevel! equ 0 (
-    echo 已存在
-) else (
-    setx PATH "%PATH%;%BIN_DIR%" >nul 2>&1
-    echo 已添加到 PATH
-)
+powershell -NoProfile -Command "$p=[Environment]::GetEnvironmentVariable('Path','User'); $add=@('%BIN_DIR%','%USERPROFILE%\.devtools\jtool\shims'); $chg=$false; foreach($d in $add){ if(-not ((';'+$p+';') -like ('*;'+$d+';*'))){ $p=($p.TrimEnd(';')+';'+$d); $chg=$true } }; if($chg){ [Environment]::SetEnvironmentVariable('Path',$p,'User') }; Write-Output '已添加到用户 PATH'"
 
 echo.
 echo ========================================
