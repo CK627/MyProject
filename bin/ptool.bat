@@ -47,6 +47,112 @@ REM ============================================
 REM Main dispatch
 REM ============================================
 if "%~1"=="" goto :show_help
+
+if "%~1"=="list" goto :list_pythons
+if "%~1"=="help" goto :show_help
+if "%~1"=="-h" goto :show_help
+if "%~1"=="--help" goto :show_help
+if "%~1"=="use" goto :cmd_use
+if "%~1"=="current" goto :cmd_current
+if "%~1"=="home" goto :cmd_home
+if "%~1"=="info" goto :cmd_info
+if "%~1"=="tools" goto :cmd_tools
+if "%~1"=="run" goto :cmd_run
+if "%~1"=="scan" goto :cmd_scan
+if "%~1"=="config" goto :cmd_config
+if "%~1"=="install" goto :cmd_install
+if "%~1"=="update" goto :cmd_update
+if "%~1"=="uninstall" goto :cmd_uninstall
+if "%~1"=="shim" goto :cmd_shim
+
+REM Run a tool
+set "tool=%~1"
+set "version=%~2"
+
+REM 版本号总是数字开头；若第二个参数缺失、或以 - / 开头（是参数不是版本号），
+REM 则用默认版本。shim 转发 `python -V` 就是「工具 + 参数、无版本号」的形式。
+if "!version!"=="" goto :use_default_version
+set "_vfirst=!version:~0,1!"
+if "!_vfirst!"=="-" goto :use_default_version
+if "!_vfirst!"=="/" goto :use_default_version
+
+shift /1
+shift /1
+goto :run_tool
+
+:use_default_version
+if not "!PTOOL_DEFAULT_VERSION!"=="" (
+    set "version=!PTOOL_DEFAULT_VERSION!"
+    shift /1
+    goto :run_tool
+) else (
+    echo 错误: 需要指定工具名和版本号
+    exit /b 1
+)
+
+:run_tool
+call :resolve_py "!version!" python_exe
+if not defined python_exe (
+    echo 错误: 找不到 Python !version!
+    echo 基准目录: !PYTHON_BASE_DIR!
+    echo 请运行 "ptool scan"，或修改配置里的 PYTHON_BASE_DIR
+    exit /b 1
+)
+
+REM Args do not change with shift; rebuild remaining args here
+set "TOOL_ARGS="
+:collect_args
+if "%~1"=="" goto :args_ready
+set "TOOL_ARGS=!TOOL_ARGS! %1"
+shift /1
+goto :collect_args
+:args_ready
+
+if "!tool!"=="python"  ( "!python_exe!" !TOOL_ARGS! & exit /b !errorlevel! )
+if "!tool!"=="python3" ( "!python_exe!" !TOOL_ARGS! & exit /b !errorlevel! )
+if "!tool!"=="pip"     ( "!python_exe!" -m pip !TOOL_ARGS! & exit /b !errorlevel! )
+if "!tool!"=="pip3"    ( "!python_exe!" -m pip !TOOL_ARGS! & exit /b !errorlevel! )
+
+echo 错误: 工具 '!tool!' 不存在
+exit /b 1
+
+REM ============================================
+REM List Pythons
+REM ============================================
+:list_pythons
+echo 已安装的 Python:
+set "found=0"
+
+REM Prefer the official py launcher; covers python.org, Store, PEP 514 runtimes
+for /f "usebackq delims=" %%L in (`py --list-paths 2^>nul`) do (
+    echo   %%L
+    set "found=1"
+)
+
+if "!found!"=="1" goto :list_summary
+
+REM Fallback: scan standard dirs when py is missing (PythonXY\python.exe)
+if "!PYTHON_BASE_DIR!"=="" goto :list_none
+for /d %%d in ("!PYTHON_BASE_DIR!\Python*") do (
+    if exist "%%d\python.exe" (
+        call :ver_from_dir "%%~nxd" pyver
+        echo   !pyver! - %%d\python.exe
+        set "found=1"
+    )
+)
+
+:list_none
+if "!found!"=="0" echo   未找到
+
+:list_summary
+echo.
+if not "!PTOOL_DEFAULT_VERSION!"=="" echo 默认版本: !PTOOL_DEFAULT_VERSION!
+exit /b 0
+
+REM ============================================
+REM Help
+REM ============================================
+:show_help
 echo ptool - Python version manager for Windows
 echo.
 echo Usage:
@@ -65,35 +171,7 @@ echo   ptool update                        Check and update
 echo   ptool uninstall [-y]                Uninstall (-y silent)
 echo   ptool shim                          Rebuild shims
 echo   ptool help                          Show help
-exit /b 0
 
-REM ============================================
-REM Help
-REM ============================================
-:show_help
-echo ptool - 统一 Python 版本管理工具（Windows）
-echo.
-echo 用法:
-echo   ptool ^<工具名^> ^<版本号^> [参数...]   运行工具
-echo   ptool list                          列出 Python
-echo   ptool use ^<版本号^>                  设置默认版本
-echo   ptool current                       当前默认版本
-echo   ptool home ^<版本号^>                 输出路径
-echo   ptool info ^<版本号^>                 详细信息
-echo   ptool tools ^<版本号^>                可用工具
-echo   ptool run ^<版本号^> ^<python文件^>     运行文件
-echo   ptool scan                          扫描路径
-echo   ptool config                        显示配置
-echo   ptool install                       完整安装
-echo   ptool update                        检查并更新 ptool
-echo   ptool uninstall [-y]                卸载（-y 静默）
-echo   ptool shim                          重建 shim 脚本
-echo   ptool help                          帮助
-exit /b 0
-
-REM ============================================
-REM use
-REM ============================================
 :cmd_use
 if "%~2"=="" ( echo 错误: 请指定版本号 & exit /b 1 )
 call :resolve_py "%~2" use_exe
