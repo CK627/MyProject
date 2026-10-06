@@ -76,6 +76,12 @@ jtool() {
             [ -f "@SELF@" ] && source "@SELF@"
             hash -r 2>/dev/null
             ;;
+        uninstall)
+            # 卸载后重新加载 shell 配置，移除 PATH 里的工具路径并清除本函数
+            source ~/.bashrc 2>/dev/null
+            unset -f jtool 2>/dev/null
+            hash -r 2>/dev/null
+            ;;
     esac
     return $_jtool_ret
 }
