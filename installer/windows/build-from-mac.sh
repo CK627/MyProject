@@ -83,7 +83,7 @@ rm -rf "$STAGE"
 mkdir -p "$STAGE/src/bin" "$STAGE/src/config" "$STAGE/src/module"
 
 install -m 755 "$REPO_DIR/bin/$TOOL.bat"                     "$STAGE/src/bin/$TOOL.bat"
-install -m 755 "$REPO_DIR/scripts/Windows/install.bat"       "$STAGE/src/module/install.bat"
+install -m 755 "$REPO_DIR/installer/windows/install.bat"       "$STAGE/src/module/install.bat"
 install -m 644 "$REPO_DIR/VERSION"                           "$STAGE/src/VERSION"
 install -m 644 "$REPO_DIR/config/$TOOL.conf"                 "$STAGE/src/config/$TOOL.conf"
 

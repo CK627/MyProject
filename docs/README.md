@@ -24,19 +24,14 @@ macOS 下载最新 Release 的 `.pkg` 安装；Linux 下载源码安装；Window
 
 ```bash
 cd /path/to/jtool
-
-# macOS
-./scripts/macOS/install.sh
-
-# Linux
-./scripts/Linux/install.sh
+./installer/install-from-source.sh install
 ```
 
 安装完成后执行 `source ~/.zshrc`（或 `source ~/.bashrc`）或重新打开终端。
 
 ### Windows
 
-在 `scripts\Windows\` 下右键 `install.bat`，选择 **以管理员身份运行**。
+在 `installer\windows\` 下右键 `install.bat`，选择 **以管理员身份运行**。
 
 安装完成后重新打开 CMD 窗口。
 
@@ -50,16 +45,12 @@ cd /path/to/jtool
 ### macOS / Linux
 
 ```bash
-# macOS
-./scripts/macOS/uninstall.sh
-
-# Linux
-./scripts/Linux/uninstall.sh
+./installer/install-from-source.sh uninstall
 ```
 
 ### Windows
 
-在 `scripts\Windows\` 下右键 `uninstall.bat`，选择 **以管理员身份运行**。
+在 `installer\windows\` 下右键 `uninstall.bat`，选择 **以管理员身份运行**。
 
 > 卸载会删除安装目录（含配置文件）、`~/.devtools/jtool/` 下的 shim / 补全脚本 / repo 缓存，
 > 并清理 shell 配置里由 jtool 写入的 PATH 行与补全 source 行（不触碰其他配置）。
@@ -177,9 +168,9 @@ jtool run 21 <TAB>   # .java 文件
 
 | 系统 | 主脚本 | 安装路径 | 配置文件 | 入口 |
 |------|--------|----------|----------|------|
-| macOS | `jtool` | `/Library/devtools/jtool/` | `/Library/devtools/jtool/config/jtool.conf` | `scripts/macOS/` |
-| Linux | `jtool` | `/usr/local/devtools/jtool/` | `/usr/local/devtools/jtool/config/jtool.conf` | `scripts/Linux/` |
-| Windows | `jtool.bat` | `C:\Program Files\devtools\jtool\` | `C:\Program Files\devtools\jtool\config\jtool.conf` | `scripts/Windows/` |
+| macOS | `jtool` | `/Library/devtools/jtool/` | `/Library/devtools/jtool/config/jtool.conf` | `installer/` |
+| Linux | `jtool` | `/usr/local/devtools/jtool/` | `/usr/local/devtools/jtool/config/jtool.conf` | `installer/` |
+| Windows | `jtool.bat` | `C:\Program Files\devtools\jtool\` | `C:\Program Files\devtools\jtool\config\jtool.conf` | `installer/windows/` |
 
 macOS / Linux 还会在 `~/.devtools/jtool/shims` 下生成 `java` / `javac` / `jar` / `jshell` /
 `javadoc` / `javap` 包装脚本，它们按当前默认版本转发调用。`jtool update` 使用的仓库缓存
@@ -259,16 +250,21 @@ jtool/
 │   └── jtool.bash              # bash 补全模板
 ├── module/
 │   └── common.sh               # 安装 / 扫描 / 更新 / 卸载逻辑（被 jtool.sh source）
-├── scripts/
-│   ├── macOS/
-│   │   ├── install.sh
-│   │   └── uninstall.sh
-│   ├── Linux/
-│   │   ├── install.sh
-│   │   └── uninstall.sh
-│   └── Windows/
-│       ├── install.bat
-│       └── uninstall.bat
+├── installer/
+│   ├── install.sh              # 一键安装（macOS / Linux）
+│   ├── install.ps1             # 一键安装（Windows）
+│   ├── install-from-source.sh  # 从源码安装 / 卸载（macOS / Linux）
+│   ├── macos/
+│   │   ├── build.sh            # 打包 .pkg / .dmg
+│   │   ├── distribution.xml.in
+│   │   ├── postinstall.in
+│   │   └── uninstall.in
+│   └── windows/
+│       ├── install.bat         # Windows 安装（也是 module/install.bat 的来源）
+│       ├── uninstall.bat
+│       ├── build-from-mac.sh
+│       ├── build-remote.bat
+│       └── jtool.iss.in
 └── docs/
     └── README.md               # 本文档
 ```

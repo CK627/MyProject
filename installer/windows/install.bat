@@ -8,7 +8,7 @@ set "SCRIPT_DIR=%~dp0"
 set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
 
 REM 布局感知：
-REM   仓库里本脚本在 <tool>\scripts\Windows\ ，往上两级才是项目根目录
+REM   仓库里本脚本在 <tool>\installer\windows\ ，往上两级才是项目根目录
 REM   安装后本脚本在 <tool>\module\         ，往上一级就是安装根目录
 REM 不区分的话，安装后 %PROJECT_DIR% 会算成 C:\Program Files\devtools，
 REM 既找不到 bin\ 也找不到 VERSION，:write_version 会静默退出，
@@ -59,7 +59,7 @@ if "%INSTALLED%"=="1" (
     copy "%PROJECT_DIR%\bin\jtool.bat" "%BIN_DIR%\" >nul
     if not exist "%CONFIG_FILE%" copy "%PROJECT_DIR%\config\jtool.conf" "%CONFIG_DIR%\" >nul
     REM 把本安装脚本复制到 module\ ，供 jtool install / jtool scan 调用
-    copy "%PROJECT_DIR%\scripts\Windows\install.bat" "%MODULE_DIR%\install.bat" >nul
+    copy "%PROJECT_DIR%\installer\windows\install.bat" "%MODULE_DIR%\install.bat" >nul
 )
 echo 完成
 echo.

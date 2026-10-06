@@ -22,7 +22,7 @@ set "MODULE_DIR=%INSTALL_DIR%\module"
 
 REM 查找 install.bat：已安装布局 → 仓库布局 → 旧版根目录
 set "INSTALL_MODULE=%PROJECT_DIR%\module\install.bat"
-if not exist "%INSTALL_MODULE%" set "INSTALL_MODULE=%PROJECT_DIR%\scripts\Windows\install.bat"
+if not exist "%INSTALL_MODULE%" set "INSTALL_MODULE=%PROJECT_DIR%\installer\windows\install.bat"
 if not exist "%INSTALL_MODULE%" set "INSTALL_MODULE=%PROJECT_DIR%\install.bat"
 
 REM ============================================
@@ -350,8 +350,8 @@ if !errorlevel! neq 0 (
     echo 请以管理员身份重新运行
     exit /b 1
 )
-if exist "!SRC!\scripts\Windows\install.bat" (
-    copy /y "!SRC!\scripts\Windows\install.bat" "%MODULE_DIR%\install.bat" >nul
+if exist "!SRC!\installer\windows\install.bat" (
+    copy /y "!SRC!\installer\windows\install.bat" "%MODULE_DIR%\install.bat" >nul
 )
 if not exist "%CONFIG_FILE%" copy "!SRC!\config\jtool.conf" "%CONFIG_DIR%\" >nul
 
@@ -422,8 +422,8 @@ if !errorlevel! neq 0 (
     echo 请以管理员身份重新运行
     exit /b 1
 )
-if exist "!REPO_DIR!\scripts\Windows\install.bat" (
-    copy /y "!REPO_DIR!\scripts\Windows\install.bat" "%MODULE_DIR%\install.bat" >nul
+if exist "!REPO_DIR!\installer\windows\install.bat" (
+    copy /y "!REPO_DIR!\installer\windows\install.bat" "%MODULE_DIR%\install.bat" >nul
 )
 if not exist "%CONFIG_FILE%" copy "!REPO_DIR!\config\jtool.conf" "%CONFIG_DIR%\" >nul
 
