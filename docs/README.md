@@ -24,19 +24,14 @@ macOS 下载最新 Release 的 `.pkg` 安装；Linux 下载源码安装；Window
 
 ```bash
 cd /path/to/ptool
-
-# macOS
-./scripts/macOS/install.sh
-
-# Linux
-./scripts/Linux/install.sh
+./installer/install-from-source.sh install
 ```
 
 安装完成后执行 `source ~/.zshrc`（或 `source ~/.bashrc`）或重新打开终端。
 
 ### Windows
 
-在 `scripts\Windows\` 下右键 `install.bat`，选择 **以管理员身份运行**。
+在 `installer\windows\` 下右键 `install.bat`，选择 **以管理员身份运行**。
 
 安装完成后重新打开 CMD 窗口。
 
@@ -49,16 +44,12 @@ cd /path/to/ptool
 ### macOS / Linux
 
 ```bash
-# macOS
-./scripts/macOS/uninstall.sh
-
-# Linux
-./scripts/Linux/uninstall.sh
+./installer/install-from-source.sh uninstall
 ```
 
 ### Windows
 
-在 `scripts\Windows\` 下右键 `uninstall.bat`，选择 **以管理员身份运行**。
+在 `installer\windows\` 下右键 `uninstall.bat`，选择 **以管理员身份运行**。
 
 ---
 
@@ -202,9 +193,9 @@ PTOOL_VERSION="2.1.0"
 
 | 系统 | 主脚本 | 安装路径 | 配置文件 | 入口 |
 |------|--------|----------|----------|------|
-| macOS | `ptool` | `/Library/devtools/ptool/` | `/Library/devtools/ptool/config/ptool.conf` | `scripts/macOS/` |
-| Linux | `ptool` | `/usr/local/devtools/ptool/` | `/usr/local/devtools/ptool/config/ptool.conf` | `scripts/Linux/` |
-| Windows | `ptool.bat` | `C:\Program Files\devtools\ptool\` | `C:\Program Files\devtools\ptool\config\ptool.conf` | `scripts/Windows/` |
+| macOS | `ptool` | `/Library/devtools/ptool/` | `/Library/devtools/ptool/config/ptool.conf` | `installer/` |
+| Linux | `ptool` | `/usr/local/devtools/ptool/` | `/usr/local/devtools/ptool/config/ptool.conf` | `installer/` |
+| Windows | `ptool.bat` | `C:\Program Files\devtools\ptool\` | `C:\Program Files\devtools\ptool\config\ptool.conf` | `installer/windows/` |
 
 macOS / Linux 还会在 `~/.devtools/ptool/shims` 下生成 `python` / `python3` / `pip` / `pip3` 包装脚本，
 它们优先于系统 Python，并按当前默认版本转发调用。`ptool update` 使用的仓库缓存在 `~/.devtools/ptool/repo`。
@@ -239,16 +230,21 @@ ptool/
 │   └── ptool.bash              # bash 补全模板
 ├── module/
 │   └── common.sh               # 安装 / 扫描 / 更新 / 卸载逻辑（被 ptool.sh source）
-├── scripts/
-│   ├── macOS/
-│   │   ├── install.sh
-│   │   └── uninstall.sh
-│   ├── Linux/
-│   │   ├── install.sh
-│   │   └── uninstall.sh
-│   └── Windows/
-│       ├── install.bat
-│       └── uninstall.bat
+├── installer/
+│   ├── install.sh              # 一键安装（macOS / Linux）
+│   ├── install.ps1             # 一键安装（Windows）
+│   ├── install-from-source.sh  # 从源码安装 / 卸载（macOS / Linux）
+│   ├── macos/
+│   │   ├── build.sh            # 打包 .pkg / .dmg
+│   │   ├── distribution.xml.in
+│   │   ├── postinstall.in
+│   │   └── uninstall.in
+│   └── windows/
+│       ├── install.bat         # Windows 安装（也是 module/install.bat 的来源）
+│       ├── uninstall.bat
+│       ├── build-from-mac.sh
+│       ├── build-remote.bat
+│       └── ptool.iss.in
 └── docs/
     └── README.md               # 本文档
 ```

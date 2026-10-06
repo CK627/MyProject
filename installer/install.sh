@@ -8,7 +8,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/CK627/MyProject/ptool/installer/install.sh | bash
 #
 # macOS : 下载最新 Release 的 .pkg 并安装（带安装器收据）
-# Linux : 下载源码后运行 scripts/Linux/install.sh
+# Linux : 下载源码后运行 installer/install-from-source.sh
 # Windows: 请用 PowerShell 一键安装（install.ps1）
 #
 # 注意：本脚本设计为可被 source 加载，因此不能用顶层 exit（会退出用户 shell），
@@ -52,7 +52,7 @@
             TMP=$(mktemp -d)
             trap 'rm -rf "$TMP"' EXIT
             curl -fsSL "$BASE/archive/refs/heads/${TOOL}.tar.gz" | tar xz -C "$TMP"
-            (cd "$TMP/${REPO}-${TOOL}" && ./scripts/Linux/install.sh)
+            (cd "$TMP/${REPO}-${TOOL}" && ./installer/install-from-source.sh)
             ;;
         *)
             err "不支持的系统。Windows 请用 PowerShell 一键安装"
