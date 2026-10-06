@@ -7,12 +7,12 @@ REM jtool 安装脚本 (Windows)
 set "SCRIPT_DIR=%~dp0"
 set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
 
-REM 布局感知：
-REM   仓库里本脚本在 <tool>\installer\windows\ ，往上两级才是项目根目录
-REM   安装后本脚本在 <tool>\module\         ，往上一级就是安装根目录
-REM 不区分的话，安装后 %PROJECT_DIR% 会算成 C:\Program Files\devtools，
-REM 既找不到 bin\ 也找不到 VERSION，:write_version 会静默退出，
-REM 于是每次 update 都误报有新版本。
+REM Layout detection:
+REM   In repo: <tool>\installer\windows\ (two levels up to root)
+REM   Installed: <tool>\module\ (one level up)
+REM   Otherwise %PROJECT_DIR% resolves wrong after install,
+REM   breaking bin\ and VERSION lookup,
+REM   causing update to always report a new version.
 for %%i in ("%SCRIPT_DIR%\..") do set "APP_ROOT=%%~fi"
 for %%i in ("%SCRIPT_DIR%\..\..") do set "REPO_ROOT=%%~fi"
 if exist "%APP_ROOT%\bin\jtool.bat" (
@@ -23,7 +23,7 @@ if exist "%APP_ROOT%\bin\jtool.bat" (
     set "INSTALLED=0"
 )
 
-REM 已在安装目录中时以实际位置为准；从仓库安装才用规范目标路径
+REM Installed: use actual location; repo: use canonical path
 if "%INSTALLED%"=="1" (
     set "INSTALL_DIR=%PROJECT_DIR%"
 ) else (
@@ -35,64 +35,64 @@ set "MODULE_DIR=%INSTALL_DIR%\module"
 set "CONFIG_FILE=%CONFIG_DIR%\jtool.conf"
 
 REM ============================================
-REM 子命令
+REM Subcommands
 REM ============================================
 if "%~1"=="scan" goto :do_scan
 if "%~1"=="config" goto :do_config
 if "%~1"=="help" goto :do_help
 
 REM ============================================
-REM 完整安装
+REM Full install
 REM ============================================
 echo ========================================
 echo   jtool 安装程序 (Windows)
 echo ========================================
 echo.
 
-echo [1/4] 复制文件...
+echo [1/4] Copying files...
 if not exist "%BIN_DIR%" mkdir "%BIN_DIR%"
 if not exist "%CONFIG_DIR%" mkdir "%CONFIG_DIR%"
 if not exist "%MODULE_DIR%" mkdir "%MODULE_DIR%"
 if "%INSTALLED%"=="1" (
-    echo 已处于安装布局，跳过文件复制
+    echo Installed layout, skip copying
 ) else (
     copy "%PROJECT_DIR%\bin\jtool.bat" "%BIN_DIR%\" >nul
     if not exist "%CONFIG_FILE%" copy "%PROJECT_DIR%\config\jtool.conf" "%CONFIG_DIR%\" >nul
     REM 把本安装脚本复制到 module\ ，供 jtool install / jtool scan 调用
     copy "%PROJECT_DIR%\installer\windows\install.bat" "%MODULE_DIR%\install.bat" >nul
 )
-echo 完成
+echo Done
 echo.
 
-echo [2/4] 设置权限...
+echo [2/4] Setting permissions...
 icacls "%INSTALL_DIR%" /grant Everyone:(OI)(CI)RX >nul 2>&1
 icacls "%BIN_DIR%\jtool.bat" /grant Everyone:RX >nul 2>&1
-echo 完成
+echo Done
 echo.
 
-echo [3/4] 扫描并生成 shim...
+echo [3/4] Scanning and generating shims...
 call :do_scan_inner
 call :write_version
 "%BIN_DIR%\jtool.bat" shim
 echo.
 
-echo [4/4] 配置 PATH...
+echo [4/4] Configuring PATH...
 powershell -NoProfile -Command "$p=[Environment]::GetEnvironmentVariable('Path','User'); $add=@('%BIN_DIR%','%USERPROFILE%\.devtools\jtool\shims'); $chg=$false; foreach($d in $add){ if(-not ((';'+$p+';') -like ('*;'+$d+';*'))){ $p=($d+';'+$p.TrimStart(';')); $chg=$true } }; if($chg){ [Environment]::SetEnvironmentVariable('Path',$p,'User') }; Write-Output '已添加到用户 PATH'"
 
 echo.
 echo ========================================
-echo   安装完成！
+echo   Install complete!
 echo ========================================
 echo.
-echo 安装目录: %INSTALL_DIR%
-echo 配置文件: %CONFIG_FILE%
-echo 请重新打开 CMD 窗口
+echo Install dir: %INSTALL_DIR%
+echo Config file: %CONFIG_FILE%
+echo Please reopen a new CMD window
 echo.
 pause
 exit /b 0
 
 REM ============================================
-REM 扫描
+REM Scan
 REM ============================================
 :do_scan
 echo [扫描] 检测 Java 安装路径...
@@ -115,12 +115,12 @@ if exist "C:\Program Files\Eclipse Adoptium" (
 echo 未找到 Java 安装目录
 set /p "found_dir=请输入 Java 安装路径: "
 if not exist "!found_dir!" (
-    echo 错误: 路径不存在
+    echo Error: path does not exist
     exit /b 1
 )
 
 :scan_found
-echo 找到: !found_dir!
+echo Found: !found_dir!
 echo.
 echo 已安装的 JDK:
 for /d %%d in ("!found_dir!\jdk-*") do (
@@ -134,7 +134,7 @@ echo.
 
 call :write_config
 
-echo 配置文件已写入: %CONFIG_FILE%
+echo Config written: %CONFIG_FILE%
 echo.
 type "%CONFIG_FILE%"
 exit /b 0
@@ -154,11 +154,11 @@ if exist "C:\Program Files\Eclipse Adoptium" set "found_dir=C:\Program Files\Ecl
 :scan_inner_found
 if not defined found_dir set "found_dir=C:\Program Files\Java"
 call :write_config
-echo 已写入: %CONFIG_FILE%
+echo Written: %CONFIG_FILE%
 exit /b 0
 
 REM ============================================
-REM 写入配置文件（保留已有的默认版本与版本记录）
+REM Write config (preserve existing default version)
 REM ============================================
 :write_config
 if not exist "%CONFIG_DIR%" mkdir "%CONFIG_DIR%"
@@ -204,7 +204,7 @@ REM ============================================
 REM 查看配置
 REM ============================================
 :do_config
-echo 配置文件: %CONFIG_FILE%
+echo Config file: %CONFIG_FILE%
 echo.
 if exist "%CONFIG_FILE%" (
     type "%CONFIG_FILE%"

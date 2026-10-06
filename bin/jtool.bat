@@ -431,5 +431,5 @@ for %%t in (java javac jar jshell javadoc javap) do (
 echo Shim 已创建: !SHIMS_DIR!
 
 REM 确保 shims 目录在用户 PATH（否则 `java` 走系统 Java，不用默认版本）
-powershell -NoProfile -Command "$d = Join-Path $env:USERPROFILE '.devtools\jtool\shims'; $p = [Environment]::GetEnvironmentVariable('Path','User'); if (-not ((';' + $p + ';') -like ('*;' + $d + ';*'))) { [Environment]::SetEnvironmentVariable('Path', ($d + ';' + $p.TrimStart(';')), 'User'); Write-Output '已添加 shims 到用户 PATH 开头（重开终端生效）' } else { Write-Output 'shims 已在用户 PATH' }"
+powershell -NoProfile -Command "$d = Join-Path $env:USERPROFILE '.devtools\jtool\shims'; $p = [Environment]::GetEnvironmentVariable('Path','User'); $parts = @($p -split ';' | Where-Object { $_ -and ($_ -ne $d) }); [Environment]::SetEnvironmentVariable('Path', ($d + ';' + ($parts -join ';')).TrimEnd(';'), 'User'); Write-Output 'shims 已放到用户 PATH 最前面'"
 exit /b 0
