@@ -121,8 +121,10 @@ ptool help
 | `ptool shim` | 重建 shim 脚本 | `ptool shim` |
 | `ptool help` | 显示帮助 | `ptool help` |
 
-> 三个平台统一使用 `ptool`。macOS / Linux 上 `ptool` 是指向 `ptool.sh` 的软链接，
-> 两者等价，写 `ptool.sh` 也能用（脚本内部按 `$0` 定位目录，软链接方式不影响）。
+> 三个平台统一使用 `ptool`（无后缀）。macOS / Linux 上真实脚本装在 `ptool/lib/ptool.sh`，
+> `ptool/bin/ptool` 是指向它的软链接——`bin/` 在 PATH 上，若把 `ptool.sh` 也放在那里，
+> 命令名补全就会同时列出 `ptool` 和 `ptool.sh`。所以 `ptool.sh` **不在 PATH 上**，
+> 需要时用完整路径调用：`/Library/devtools/ptool/lib/ptool.sh`。
 >
 > `ptool scan` 会更新 `PYTHON_BASE_DIR`，但会**保留**已设置的默认版本与版本记录。
 
@@ -152,7 +154,7 @@ PYTHON_BASE_DIR="/usr/local/bin"
 # PTOOL_DEFAULT_VERSION="3.11"
 
 # ptool 版本（由 install / update 维护，请勿手动修改）
-PTOOL_VERSION="1.1.0"
+PTOOL_VERSION="2.0.0"
 ```
 
 `ptool scan` 会自动扫描以下路径查找 Python 安装目录：
@@ -170,8 +172,8 @@ PTOOL_VERSION="1.1.0"
 
 | 系统 | 主脚本 | 安装路径 | 配置文件 | 入口 |
 |------|--------|----------|----------|------|
-| macOS | `ptool.sh` | `/Library/devtools/ptool/` | `/Library/devtools/ptool/config/ptool.conf` | `scripts/macOS/` |
-| Linux | `ptool.sh` | `/usr/local/devtools/ptool/` | `/usr/local/devtools/ptool/config/ptool.conf` | `scripts/Linux/` |
+| macOS | `ptool` | `/Library/devtools/ptool/` | `/Library/devtools/ptool/config/ptool.conf` | `scripts/macOS/` |
+| Linux | `ptool` | `/usr/local/devtools/ptool/` | `/usr/local/devtools/ptool/config/ptool.conf` | `scripts/Linux/` |
 | Windows | `ptool.bat` | `C:\Program Files\devtools\ptool\` | `C:\Program Files\devtools\ptool\config\ptool.conf` | `scripts/Windows/` |
 
 macOS / Linux 还会在 `~/.devtools/ptool/shims` 下生成 `python` / `python3` / `pip` / `pip3` 包装脚本，
@@ -221,6 +223,10 @@ ptool/
     └── README.md               # 本文档
 ```
 
+> 注意仓库布局与**安装后**布局不同：安装时 `bin/ptool.sh` 会被复制到 `ptool/lib/ptool.sh`，
+> 并在 `ptool/bin/ptool` 建立指向它的软链接。`bin/` 在 PATH 上、`lib/` 不在，
+> 这样保证 PATH 里只有无后缀的 `ptool` 一个名字（见上方命名说明）。
+
 ## 常见问题
 
 ### Q: 提示 "permission denied"
@@ -229,10 +235,10 @@ ptool/
 
 ```bash
 # macOS
-sudo chmod +x /Library/devtools/ptool/bin/ptool.sh
+sudo chmod +x /Library/devtools/ptool/lib/ptool.sh
 
 # Linux
-sudo chmod +x /usr/local/devtools/ptool/bin/ptool.sh
+sudo chmod +x /usr/local/devtools/ptool/lib/ptool.sh
 ```
 
 ### Q: 提示 "command not found"

@@ -163,11 +163,8 @@ do_update() {
     fi
 
     # Step 5: 复制文件到安装目录（保留用户配置）
-    sudo cp "$repo_dir/bin/${tool_name}.sh" "$install_dir/bin/"
+    do_install_entry "$tool_name" "$install_dir" "$repo_dir"
     sudo cp "$repo_dir/module/common.sh" "$install_dir/module/"
-    sudo chmod +x "$install_dir/bin/${tool_name}.sh"
-    # 无后缀命令名，与 Windows 用法保持一致
-    sudo ln -sf "${tool_name}.sh" "$install_dir/bin/${tool_name}"
 
     # 配置文件仅首次复制
     if [ ! -f "$config_file" ]; then
@@ -291,6 +288,27 @@ do_setup_shell() {
 }
 
 # ============================================
+# 安装可执行入口
+# 真实脚本放 lib/，bin/ 里只放无后缀的软链接。bin/ 在 PATH 上，
+# 若把 ptool.sh 也留在 bin/，命令名补全就会同时列出 ptool 和 ptool.sh。
+# $0 始终是 bin/ptool，脚本据此推导目录，所以真实文件在 lib/ 不影响运行。
+# ============================================
+do_install_entry() {
+    local tool_name="$1"
+    local install_dir="$2"
+    local source_dir="$3"
+    local bin_dir="$install_dir/bin"
+    local lib_dir="$install_dir/lib"
+
+    sudo mkdir -p "$bin_dir" "$lib_dir"
+    sudo cp "$source_dir/bin/${tool_name}.sh" "$lib_dir/${tool_name}.sh"
+    sudo chmod +x "$lib_dir/${tool_name}.sh"
+    sudo ln -sf "../lib/${tool_name}.sh" "$bin_dir/${tool_name}"
+    # 清理旧布局残留，否则它仍在 PATH 上、仍会出现在补全里
+    sudo rm -f "$bin_dir/${tool_name}.sh"
+}
+
+# ============================================
 # 补齐缺失的安装组件（软链接 / 补全 / shell 配置）
 # 用于「版本号已是最新但组件不全」的情况：从旧版本 update 上来的机器，
 # 第一次 update 由旧代码执行，不会创建这些组件，之后版本号相同就再也补不上。
@@ -304,9 +322,10 @@ do_repair_artifacts() {
     local comp_dir="$HOME/.devtools/${tool_name}/completions"
     local repaired=0
 
-    if [ ! -e "$install_dir/bin/${tool_name}" ]; then
-        sudo ln -sf "${tool_name}.sh" "$install_dir/bin/${tool_name}"
-        echo "  已补建命令: ${tool_name}"
+    # 入口缺失，或仍是旧布局（bin/ 下还留着 .sh）
+    if [ ! -e "$install_dir/bin/${tool_name}" ] || [ -e "$install_dir/bin/${tool_name}.sh" ]; then
+        do_install_entry "$tool_name" "$install_dir" "$source_dir"
+        echo "  已重建命令入口: ${tool_name}"
         repaired=1
     fi
 
@@ -333,6 +352,7 @@ do_install() {
     local install_dir
     install_dir=$(get_install_dir) || return 1
     local bin_dir="$install_dir/bin"
+    local lib_dir="$install_dir/lib"
     local config_dir="$install_dir/config"
     local module_dir="$install_dir/module"
     local config_file="$config_dir/ptool.conf"
@@ -343,10 +363,10 @@ do_install() {
     echo ""
 
     echo "[1/5] 复制文件..."
-    sudo mkdir -p "$bin_dir" "$config_dir" "$module_dir"
+    sudo mkdir -p "$bin_dir" "$config_dir" "$module_dir" "$lib_dir"
     case "$(uname -s)" in
         Darwin|Linux)
-            sudo cp "$script_dir/bin/ptool.sh" "$bin_dir/"
+            do_install_entry "ptool" "$install_dir" "$script_dir"
             ;;
         *)
             sudo cp "$script_dir/bin/ptool.bat" "$bin_dir/"
@@ -359,13 +379,13 @@ do_install() {
     # 安装目录属 root，配置文件必须可写，否则 do_scan / ptool use 无法写入
     sudo chmod 666 "$config_file"
     sudo cp "$script_dir/module/common.sh" "$module_dir/"
-    # 建立无后缀命令名 ptool -> ptool.sh，与 Windows 用法保持一致
-    sudo ln -sf "ptool.sh" "$bin_dir/ptool"
     echo "完成"
     echo ""
 
     echo "[2/5] 设置权限..."
-    sudo chmod +x "$bin_dir/ptool.sh"
+    case "$(uname -s)" in
+        Darwin|Linux) sudo chmod +x "$lib_dir/ptool.sh" ;;
+    esac
     echo "完成"
     echo ""
 
