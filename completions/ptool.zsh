@@ -100,6 +100,12 @@ ptool() {
             [ -f "@SELF@" ] && source "@SELF@"
             hash -r 2>/dev/null
             ;;
+        uninstall)
+            # 卸载后重新加载 shell 配置，移除 PATH 里的工具路径并清除本函数
+            source ~/.zshrc 2>/dev/null
+            unfunction ptool 2>/dev/null
+            hash -r 2>/dev/null
+            ;;
     esac
     return $_ptool_ret
 }
