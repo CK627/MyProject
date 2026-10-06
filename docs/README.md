@@ -46,6 +46,10 @@ cd /path/to/ptool
 
 ---
 
+> 卸载会删除安装目录（含配置文件）、`~/.devtools/ptool/` 下的 shim / 补全脚本 / repo 缓存，
+> 并清理 shell 配置里由 ptool 写入的 PATH 行与补全 source 行（不触碰其他配置）。
+> 确认后会立即执行，请提前备份自定义配置。
+
 ## 功能特性
 
 - 🚀 一行命令运行任意版本的 Python
@@ -117,9 +121,24 @@ ptool help
 | `ptool shim` | 重建 shim 脚本 | `ptool shim` |
 | `ptool help` | 显示帮助 | `ptool help` |
 
-> macOS / Linux 使用 `ptool.sh`，Windows 使用 `ptool`（无后缀）
+> 三个平台统一使用 `ptool`。macOS / Linux 上 `ptool` 是指向 `ptool.sh` 的软链接，
+> 两者等价，写 `ptool.sh` 也能用（脚本内部按 `$0` 定位目录，软链接方式不影响）。
 >
 > `ptool scan` 会更新 `PYTHON_BASE_DIR`，但会**保留**已设置的默认版本与版本记录。
+
+## Tab 补全
+
+安装时会自动生成补全脚本并写入 shell 配置（zsh / bash 均支持），重开终端即生效。
+
+```bash
+ptool <TAB>          # 子命令 + 工具名
+ptool use <TAB>      # 已安装的 Python 版本
+ptool python <TAB>   # 已安装的 Python 版本
+ptool run 3.11 <TAB> # .py 文件
+```
+
+补全脚本位于 `~/.devtools/ptool/completions/`，由 `ptool install` / `ptool update` 自动刷新，
+不需要手动维护。修改过 `PYTHON_BASE_DIR` 后补全列表会自动跟着变（每次补全都重新读取配置）。
 
 ## 配置文件
 
@@ -133,7 +152,7 @@ PYTHON_BASE_DIR="/usr/local/bin"
 # PTOOL_DEFAULT_VERSION="3.11"
 
 # ptool 版本（由 install / update 维护，请勿手动修改）
-PTOOL_VERSION="1.0.6"
+PTOOL_VERSION="1.1.0"
 ```
 
 `ptool scan` 会自动扫描以下路径查找 Python 安装目录：
@@ -183,6 +202,9 @@ ptool/
 │   └── ptool.bat               # 主脚本 (Windows)
 ├── config/
 │   └── ptool.conf              # 配置文件模板（首次安装时复制）
+├── completions/
+│   ├── ptool.zsh               # zsh 补全模板（安装时替换 @CONFIG_FILE@）
+│   └── ptool.bash              # bash 补全模板
 ├── module/
 │   └── common.sh               # 安装 / 扫描 / 更新 / 卸载逻辑（被 ptool.sh source）
 ├── scripts/

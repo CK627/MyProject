@@ -153,6 +153,8 @@ do_update() {
     sudo cp "$repo_dir/bin/${tool_name}.sh" "$install_dir/bin/"
     sudo cp "$repo_dir/module/common.sh" "$install_dir/module/"
     sudo chmod +x "$install_dir/bin/${tool_name}.sh"
+    # 无后缀命令名，与 Windows 用法保持一致
+    sudo ln -sf "${tool_name}.sh" "$install_dir/bin/${tool_name}"
 
     # 配置文件仅首次复制
     if [ ! -f "$config_file" ]; then
@@ -164,7 +166,11 @@ do_update() {
     sudo rm -f "${config_file}.bak" 2>/dev/null
     echo "${version_key}=\"$remote_version\"" | sudo tee -a "$config_file" > /dev/null
 
-    # Step 7: 输出结果
+    # Step 7: 刷新补全脚本与 shell 配置（老版本安装的机器也会补上）
+    do_create_completions "$repo_dir" "$config_file"
+    do_setup_shell "$install_dir"
+
+    # Step 8: 输出结果
     echo "更新完成！"
     echo "  版本: v${local_version:-未知} → v$remote_version"
 }
@@ -214,6 +220,67 @@ SHIM
     echo "Shim 已创建: $shims_dir"
 }
 
+# ============================================
+# 生成补全脚本（zsh / bash）
+# 模板里的 @CONFIG_FILE@ 会被替换成实际配置路径
+# ============================================
+do_create_completions() {
+    local script_dir="$1"
+    local config_file="$2"
+    local comp_dir="$HOME/.devtools/ptool/completions"
+
+    if [ ! -d "$script_dir/completions" ]; then
+        echo "跳过补全脚本（未找到 completions 目录）"
+        return 0
+    fi
+
+    mkdir -p "$comp_dir"
+    local f
+    for f in "$script_dir/completions/ptool.zsh" "$script_dir/completions/ptool.bash"; do
+        [ -f "$f" ] || continue
+        sed "s|@CONFIG_FILE@|$config_file|g" "$f" > "$comp_dir/$(basename "$f")"
+    done
+
+    echo "补全脚本已创建: $comp_dir"
+}
+
+# ============================================
+# 写入 shell 配置（PATH + 补全）
+# 幂等：每次先移除旧配置块再追加，便于升级时刷新
+# ============================================
+do_setup_shell() {
+    local install_dir="$1"
+    local bin_dir="$install_dir/bin"
+    local shims_dir="$HOME/.devtools/ptool/shims"
+    local comp_dir="$HOME/.devtools/ptool/completions"
+
+    # 按登录 shell 选择 rc 文件（macOS 默认 zsh）
+    local shell_rc
+    case "${SHELL##*/}" in
+        bash) shell_rc="$HOME/.bashrc" ;;
+        *)    shell_rc="$HOME/.zshrc" ;;
+    esac
+    [ -f "$shell_rc" ] || : > "$shell_rc"
+
+    # 移除旧的 ptool 配置块，避免重复或残留
+    sed -i.bak "/^# ptool$/d; \|$install_dir|d; \|$shims_dir|d; \|$comp_dir|d" "$shell_rc"
+    rm -f "${shell_rc}.bak"
+
+    {
+        echo ""
+        echo "# ptool"
+        echo "export PATH=\"$shims_dir:$bin_dir:\$PATH\""
+        if [ "${shell_rc##*/}" = ".zshrc" ]; then
+            echo "[ -f \"$comp_dir/ptool.zsh\" ] && source \"$comp_dir/ptool.zsh\""
+        else
+            echo "[ -f \"$comp_dir/ptool.bash\" ] && source \"$comp_dir/ptool.bash\""
+        fi
+    } >> "$shell_rc"
+
+    echo "已写入: $shell_rc"
+    export PATH="$shims_dir:$bin_dir:$PATH"
+}
+
 do_install() {
     local script_dir="$1"
     local install_dir
@@ -245,6 +312,8 @@ do_install() {
     # 安装目录属 root，配置文件必须可写，否则 do_scan / ptool use 无法写入
     sudo chmod 666 "$config_file"
     sudo cp "$script_dir/module/common.sh" "$module_dir/"
+    # 建立无后缀命令名 ptool -> ptool.sh，与 Windows 用法保持一致
+    sudo ln -sf "ptool.sh" "$bin_dir/ptool"
     echo "完成"
     echo ""
 
@@ -265,34 +334,22 @@ do_install() {
     fi
     echo ""
 
-    echo "[4/5] 创建 shim..."
+    echo "[4/5] 创建 shim 与补全..."
     do_create_shims "$config_file"
+    do_create_completions "$script_dir" "$config_file"
     echo ""
 
     echo "[5/5] 配置 PATH..."
-    local shims_dir="$HOME/.devtools/ptool/shims"
-    local shell_rc="$HOME/.zshrc"
-    [ -f "$HOME/.bashrc" ] && shell_rc="$HOME/.bashrc"
-
-    if ! grep -q "ptool" "$shell_rc" 2>/dev/null; then
-        echo "" >> "$shell_rc"
-        echo "# ptool" >> "$shell_rc"
-        echo "export PATH=\"$shims_dir:$bin_dir:\$PATH\"" >> "$shell_rc"
-        echo "已添加到 $shell_rc"
-    else
-        echo "已存在"
-    fi
-
-    export PATH="$shims_dir:$bin_dir:$PATH"
-
+    do_setup_shell "$install_dir"
     echo ""
+
     echo "========================================"
     echo "  安装完成！"
     echo "========================================"
     echo ""
     echo "安装目录: $install_dir"
     echo "配置文件: $config_file"
-    echo "执行 source $shell_rc 或重新打开终端"
+    echo "执行 source ~/.zshrc 或重新打开终端"
 }
 
 # ============================================
@@ -326,6 +383,13 @@ do_uninstall() {
         echo "已删除: $shims_dir"
     fi
 
+    # 清理补全脚本
+    local comp_dir="$HOME/.devtools/ptool/completions"
+    if [ -d "$comp_dir" ]; then
+        rm -rf "$comp_dir"
+        echo "已删除: $comp_dir"
+    fi
+
     # 清理 .repo 目录
     local repo_dir="$HOME/.devtools/ptool/repo"
     if [ -d "$repo_dir" ]; then
@@ -333,17 +397,13 @@ do_uninstall() {
         echo "已删除: $repo_dir"
     fi
 
-    for rc_file in "$HOME/.zshrc" "$HOME/.bashrc"; do
-        if [ -f "$rc_file" ] && grep -q "$install_dir" "$rc_file" 2>/dev/null; then
-            sed -i.bak "/^# ptool$/d" "$rc_file"
-            sed -i.bak "\|$install_dir|d" "$rc_file"
-            rm -f "${rc_file}.bak"
-            echo "已清理: $rc_file"
-        fi
-        if [ -f "$rc_file" ] && grep -q "$shims_dir" "$rc_file" 2>/dev/null; then
-            sed -i.bak "\|$shims_dir|d" "$rc_file"
-            rm -f "${rc_file}.bak"
-        fi
+    # 清理 shell 配置中的 PATH 行、补全 source 行与 # ptool 标记
+    for rc_file in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile"; do
+        [ -f "$rc_file" ] || continue
+        grep -q -e "$install_dir" -e "$shims_dir" -e "$comp_dir" -e "^# ptool$" "$rc_file" 2>/dev/null || continue
+        sed -i.bak "/^# ptool$/d; \|$install_dir|d; \|$shims_dir|d; \|$comp_dir|d" "$rc_file"
+        rm -f "${rc_file}.bak"
+        echo "已清理: $rc_file"
     done
 
     echo ""
