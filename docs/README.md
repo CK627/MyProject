@@ -140,6 +140,20 @@ jtool java <TAB>     # 已安装的 JDK 版本
 jtool run 21 <TAB>   # .java 文件
 ```
 
+### 更新后无需手动 source
+
+安装时会在补全脚本里定义一个 `jtool` 包装函数（`.zshrc` / `.bashrc` 只负责 source 它）。
+函数在**父 shell** 中执行，
+所以 `jtool update` / `jtool install` 跑完后会立刻重新加载补全——不需要手动
+`source ~/.zshrc`，也不需要重开终端。
+
+> 原理：脚本本身是子进程，无法修改父 shell 的环境，所以 `install.sh` 里调用
+> `source ~/.zshrc` 是无效的（只影响脚本自己的 subshell）。只有 shell 函数
+> 才能真正在当前终端里生效。
+>
+> 例外：**首次安装**时函数还没被定义（`.zshrc` 正在被写入），所以第一次仍需
+> 重开终端或 `source ~/.zshrc`。之后的每次 update 都是自动的。
+
 补全脚本位于 `~/.devtools/jtool/completions/`，由 `jtool install` / `jtool update` 自动刷新。
 版本列表是直接扫描 `JAVA_BASE_DIR` 下的 `jdk-*` 目录得到的，**不会执行 java**，所以按 `<TAB>` 没有延迟。
 
@@ -175,7 +189,7 @@ JAVA_BASE_DIR="/Library/Java/JavaVirtualMachines"
 # JTOOL_DEFAULT_VERSION="21"
 
 # jtool 版本（由 install / update 维护，请勿手动修改）
-JTOOL_VERSION="2.0.0"
+JTOOL_VERSION="2.1.0"
 ```
 
 > jtool 以 `JAVA_BASE_DIR` 作为唯一基准目录，按 `jdk-<版本>.jdk/Contents/Home` 拼接 JDK 路径
