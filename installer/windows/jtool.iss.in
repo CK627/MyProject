@@ -58,7 +58,7 @@ Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environmen
 ; python/python3/pip/pip3 包装脚本。不加进 PATH 的话，`jtool use` 之后
 ; 直接敲 `python` 走的是系统 Python，不会用 jtool 设的默认版本。
 Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; \
-  ValueData: "{olddata};{%USERPROFILE}\.devtools\@TOOL@\shims"; \
+  ValueData: "{%USERPROFILE}\.devtools\@TOOL@\shims;{olddata}"; \
   Flags: preservestringtype; Check: NeedsAddUserPath('{%USERPROFILE}\.devtools\@TOOL@\shims')
 
 [Run]

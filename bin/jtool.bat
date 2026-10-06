@@ -47,115 +47,24 @@ REM ============================================
 REM 主逻辑
 REM ============================================
 if "%~1"=="" goto :show_help
-
-if "%~1"=="list" goto :list_jdks
-if "%~1"=="help" goto :show_help
-if "%~1"=="-h" goto :show_help
-if "%~1"=="--help" goto :show_help
-if "%~1"=="use" goto :cmd_use
-if "%~1"=="current" goto :cmd_current
-if "%~1"=="home" goto :cmd_home
-if "%~1"=="info" goto :cmd_info
-if "%~1"=="tools" goto :cmd_tools
-if "%~1"=="run" goto :cmd_run
-if "%~1"=="scan" goto :cmd_scan
-if "%~1"=="config" goto :cmd_config
-if "%~1"=="install" goto :cmd_install
-if "%~1"=="update" goto :cmd_update
-if "%~1"=="uninstall" goto :cmd_uninstall
-if "%~1"=="shim" goto :cmd_shim
-
-REM 运行工具
-set "tool=%~1"
-if "!JAVA_BASE_DIR!"=="" (
-    echo 错误: 未配置 JAVA_BASE_DIR
-    echo 请运行: jtool scan
-    exit /b 1
-)
-
-set "version=%~2"
-
-REM 版本号总是数字开头；若第二个参数缺失、或以 - / 开头（是参数不是版本号），
-REM 则用默认版本。shim 转发 `java -version` 就是「工具 + 参数、无版本号」的形式。
-if "!version!"=="" goto :use_default_version
-set "_vfirst=!version:~0,1!"
-if "!_vfirst!"=="-" goto :use_default_version
-if "!_vfirst!"=="/" goto :use_default_version
-
-shift /1
-shift /1
-goto :run_tool
-
-:use_default_version
-if not "!JTOOL_DEFAULT_VERSION!"=="" (
-    set "version=!JTOOL_DEFAULT_VERSION!"
-    shift /1
-    goto :run_tool
-) else (
-    echo 错误: 需要指定工具名和版本号
-    exit /b 1
-)
-
-:run_tool
-if "!version!"=="8" set "version=1.8"
-set "jdk_home=!JAVA_BASE_DIR!\jdk-!version!.jdk\Contents\Home"
-set "tool_path=!jdk_home!\bin\!tool!"
-
-if not exist "!tool_path!.exe" (
-    if not exist "!tool_path!" (
-        echo 错误: JDK !version! 没有 !tool! 工具
-        exit /b 1
-    )
-)
-
-REM %* 不随 shift 变化，会带上工具名和版本号，这里重新拼接剩余参数
-set "TOOL_ARGS="
-:collect_args
-if "%~1"=="" goto :args_ready
-set "TOOL_ARGS=!TOOL_ARGS! %1"
-shift /1
-goto :collect_args
-:args_ready
-
-!tool_path! !TOOL_ARGS!
-exit /b !errorlevel!
-
-REM ============================================
-REM 列出 JDK
-REM ============================================
-:list_jdks
-if "!JAVA_BASE_DIR!"=="" (
-    echo 错误: 未配置 JAVA_BASE_DIR
-    echo 请运行: jtool scan
-    exit /b 1
-)
-
-echo Java 路径: !JAVA_BASE_DIR!
+echo jtool - Java version manager for Windows
 echo.
-echo 已安装的 JDK:
-set "found=0"
-for /d %%d in ("!JAVA_BASE_DIR!\jdk-*") do (
-    if exist "%%d\Contents\Home\bin\java.exe" (
-        set "dirname=%%~nxd"
-        set "ver=!dirname:jdk-=!"
-        set "ver=!ver:.jdk=!"
-        for /f "tokens=*" %%v in ('"%%d\Contents\Home\bin\java.exe" -version 2^>^&1 ^| findstr /i "version"') do (
-            echo   !ver! - %%v
-            set "found=1"
-        )
-    )
-    if exist "%%d\bin\java.exe" (
-        set "dirname=%%~nxd"
-        set "ver=!dirname:jdk-=!"
-        for /f "tokens=*" %%v in ('"%%d\bin\java.exe" -version 2^>^&1 ^| findstr /i "version"') do (
-            echo   !ver! - %%v
-            set "found=1"
-        )
-    )
-)
-if "!found!"=="0" echo   (未找到)
-echo.
-if not "!JTOOL_DEFAULT_VERSION!"=="" echo 默认版本: !JTOOL_DEFAULT_VERSION!
+echo Usage:
+echo   jtool ^<tool^> ^<version^> [args...]   Run a tool
+echo   jtool list                          List JDKs
+echo   jtool use ^<version^>                Set default version
+echo   jtool current                       Show current version
+echo   jtool home ^<version^>               Show JAVA_HOME
+echo   jtool info ^<version^>               Show details
+echo   jtool tools ^<version^>              List tools
+echo   jtool run ^<version^> ^<file.java^>  Compile and run
+echo   jtool scan                          Scan Java paths
+echo   jtool config                        Show config
+echo   jtool install                       Full install
+echo   jtool update                        Check and update
+echo   jtool uninstall [-y]                Uninstall (-y silent)
+echo   jtool shim                          Rebuild shims
+echo   jtool help                          Show help
 exit /b 0
 
 REM ============================================
@@ -522,5 +431,5 @@ for %%t in (java javac jar jshell javadoc javap) do (
 echo Shim 已创建: !SHIMS_DIR!
 
 REM 确保 shims 目录在用户 PATH（否则 `java` 走系统 Java，不用默认版本）
-powershell -NoProfile -Command "$d = Join-Path $env:USERPROFILE '.devtools\jtool\shims'; $p = [Environment]::GetEnvironmentVariable('Path','User'); if (-not ((';' + $p + ';') -like ('*;' + $d + ';*'))) { [Environment]::SetEnvironmentVariable('Path', ($p.TrimEnd(';') + ';' + $d), 'User'); Write-Output '已添加 shims 到用户 PATH（重开终端生效）' } else { Write-Output 'shims 已在用户 PATH' }"
+powershell -NoProfile -Command "$d = Join-Path $env:USERPROFILE '.devtools\jtool\shims'; $p = [Environment]::GetEnvironmentVariable('Path','User'); if (-not ((';' + $p + ';') -like ('*;' + $d + ';*'))) { [Environment]::SetEnvironmentVariable('Path', ($d + ';' + $p.TrimStart(';')), 'User'); Write-Output '已添加 shims 到用户 PATH 开头（重开终端生效）' } else { Write-Output 'shims 已在用户 PATH' }"
 exit /b 0
