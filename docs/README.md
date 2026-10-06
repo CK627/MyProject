@@ -122,8 +122,10 @@ jtool help
 | `jtool shim` | 重建 shim 脚本 | `jtool shim` |
 | `jtool help` | 显示帮助 | `jtool help` |
 
-> 三个平台统一使用 `jtool`。macOS / Linux 上 `jtool` 是指向 `jtool.sh` 的软链接，
-> 两者等价，写 `jtool.sh` 也能用（脚本内部按 `$0` 定位目录，软链接方式不影响）。
+> 三个平台统一使用 `jtool`（无后缀）。macOS / Linux 上真实脚本装在 `jtool/lib/jtool.sh`，
+> `jtool/bin/jtool` 是指向它的软链接——`bin/` 在 PATH 上，若把 `jtool.sh` 也放在那里，
+> 命令名补全就会同时列出 `jtool` 和 `jtool.sh`。所以 `jtool.sh` **不在 PATH 上**，
+> 需要时用完整路径调用：`/Library/devtools/jtool/lib/jtool.sh`。
 >
 > `jtool scan` 会更新 `JAVA_BASE_DIR`，但会**保留**已设置的默认版本与版本记录。
 
@@ -145,8 +147,8 @@ jtool run 21 <TAB>   # .java 文件
 
 | 系统 | 主脚本 | 安装路径 | 配置文件 | 入口 |
 |------|--------|----------|----------|------|
-| macOS | `jtool.sh` | `/Library/devtools/jtool/` | `/Library/devtools/jtool/config/jtool.conf` | `scripts/macOS/` |
-| Linux | `jtool.sh` | `/usr/local/devtools/jtool/` | `/usr/local/devtools/jtool/config/jtool.conf` | `scripts/Linux/` |
+| macOS | `jtool` | `/Library/devtools/jtool/` | `/Library/devtools/jtool/config/jtool.conf` | `scripts/macOS/` |
+| Linux | `jtool` | `/usr/local/devtools/jtool/` | `/usr/local/devtools/jtool/config/jtool.conf` | `scripts/Linux/` |
 | Windows | `jtool.bat` | `C:\Program Files\devtools\jtool\` | `C:\Program Files\devtools\jtool\config\jtool.conf` | `scripts/Windows/` |
 
 macOS / Linux 还会在 `~/.devtools/jtool/shims` 下生成 `java` / `javac` / `jar` / `jshell` /
@@ -173,7 +175,7 @@ JAVA_BASE_DIR="/Library/Java/JavaVirtualMachines"
 # JTOOL_DEFAULT_VERSION="21"
 
 # jtool 版本（由 install / update 维护，请勿手动修改）
-JTOOL_VERSION="1.1.0"
+JTOOL_VERSION="2.0.0"
 ```
 
 > jtool 以 `JAVA_BASE_DIR` 作为唯一基准目录，按 `jdk-<版本>.jdk/Contents/Home` 拼接 JDK 路径
@@ -241,6 +243,10 @@ jtool/
     └── README.md               # 本文档
 ```
 
+> 注意仓库布局与**安装后**布局不同：安装时 `bin/jtool.sh` 会被复制到 `jtool/lib/jtool.sh`，
+> 并在 `jtool/bin/jtool` 建立指向它的软链接。`bin/` 在 PATH 上、`lib/` 不在，
+> 这样保证 PATH 里只有无后缀的 `jtool` 一个名字（见上方命名说明）。
+
 ## 常见问题
 
 ### Q: 提示 "permission denied"
@@ -249,10 +255,10 @@ jtool/
 
 ```bash
 # macOS
-sudo chmod +x /Library/devtools/jtool/bin/jtool.sh
+sudo chmod +x /Library/devtools/jtool/lib/jtool.sh
 
 # Linux
-sudo chmod +x /usr/local/devtools/jtool/bin/jtool.sh
+sudo chmod +x /usr/local/devtools/jtool/lib/jtool.sh
 ```
 
 ### Q: 提示 "command not found"
