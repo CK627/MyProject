@@ -102,7 +102,9 @@ jtool - 统一 Java 版本管理工具
   jtool run <版本号> <java文件>       编译并运行
   jtool scan                          扫描 Java 路径，更新配置
   jtool config                        显示配置
-  jtool install                       完整安装
+  jtool install                       完整安装（从源码目录）
+  jtool setup                         只做用户级配置（shims/补全/shell）
+  jtool uninstall [-y]                卸载（-y 跳过确认）
   jtool update                        检查并更新 jtool 到最新版本
   jtool shim                          重建 shim 脚本
   jtool help                          帮助
@@ -257,6 +259,8 @@ case "$1" in
         do_create_shims "$install_dir/config/jtool.conf"
         exit $?
         ;;
+    setup)    do_setup_user "$PROJECT_DIR" "$CONFIG_FILE"; exit $? ;;
+    uninstall) shift; do_uninstall "$@"; exit $? ;;
 esac
 
 # 运行工具

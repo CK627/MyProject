@@ -9,11 +9,13 @@ REM 路径
 REM ============================================
 set "SCRIPT_DIR=%~dp0"
 set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
-set "PROJECT_DIR=%SCRIPT_DIR%\.."
+for %%i in ("%SCRIPT_DIR%\..") do set "PROJECT_DIR=%%~fi"
 set "CONFIG_FILE=%PROJECT_DIR%\config\jtool.conf"
 
-REM 安装目录（与 install.bat 保持一致）
-set "INSTALL_DIR=C:\Program Files\devtools\jtool"
+REM 安装路径由脚本自身位置推导，不再写死 C:\Program Files\devtools\jtool。
+REM 安装包可能装到 Program Files 或 Program Files (x86)（取决于安装器的
+REM 位数模式），写死会导致 update 往不存在的路径写。
+set "INSTALL_DIR=%PROJECT_DIR%"
 set "BIN_DIR=%INSTALL_DIR%\bin"
 set "CONFIG_DIR=%INSTALL_DIR%\config"
 set "MODULE_DIR=%INSTALL_DIR%\module"

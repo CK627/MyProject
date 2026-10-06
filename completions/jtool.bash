@@ -22,7 +22,7 @@ _jtool_versions() {
 
 _jtool_complete() {
     local cur cmd
-    local subcmds="list use current home info tools run scan config install update shim help"
+    local subcmds="list use current home info tools run scan config install setup uninstall update shim help"
     local tools="java javac jar jshell javadoc javap"
 
     cur="${COMP_WORDS[COMP_CWORD]}"
@@ -72,7 +72,7 @@ jtool() {
     command jtool "$@"
     local _jtool_ret=$?
     case "$1" in
-        update|install|shim)
+        update|install|setup|shim)
             [ -f "@SELF@" ] && source "@SELF@"
             hash -r 2>/dev/null
             ;;

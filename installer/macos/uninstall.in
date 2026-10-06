@@ -1,0 +1,67 @@
+#!/bin/bash
+# @TOOL@ 卸载程序
+#
+# macOS 的 flat pkg 没有卸载钩子，所以安装包会把这个脚本放到安装目录里，
+# 用户手动执行即可。flat pkg 没有内置卸载机制，这是唯一的入口。
+#
+# 用法:
+#   sudo /Library/devtools/@TOOL@/uninstall        # 交互确认
+#   sudo /Library/devtools/@TOOL@/uninstall -y     # 跳过确认
+
+TOOL="@TOOL@"
+INSTALL="/Library/devtools/$TOOL"
+
+if [ "$(/usr/bin/id -u)" -ne 0 ]; then
+    /bin/echo "需要管理员权限，请用: sudo $0" >&2
+    exit 1
+fi
+
+case "${1:-}" in
+    -y|--yes) ;;
+    *)
+        /bin/echo -n "确定要卸载 $TOOL 吗？(y/n): "
+        read -r ans
+        case "$ans" in
+            y|Y) ;;
+            *) /bin/echo "已取消"; exit 0 ;;
+        esac
+        ;;
+esac
+
+# ---------------------------------------------------------------
+# 用户级产物：以控制台登录用户身份清理
+# ---------------------------------------------------------------
+TARGET="$(/usr/bin/stat -f%Su /dev/console 2>/dev/null)"
+case "$TARGET" in
+    ""|root|loginwindow) TARGET="" ;;
+esac
+
+if [ -n "$TARGET" ] && /usr/bin/id -u "$TARGET" >/dev/null 2>&1; then
+    UHOME="$(/usr/bin/dscl . -read "/Users/$TARGET" NFSHomeDirectory 2>/dev/null | /usr/bin/awk '{print $2}')"
+    [ -n "$UHOME" ] || UHOME="/Users/$TARGET"
+
+    /usr/bin/sudo -u "$TARGET" /bin/rm -rf "$UHOME/.devtools/$TOOL"
+
+    # 清掉 shell 配置里由安装程序写入的三行（标记行 + PATH 行 + 补全 source 行）
+    for rc in "$UHOME/.zshrc" "$UHOME/.bashrc" "$UHOME/.bash_profile"; do
+        [ -f "$rc" ] || continue
+        /usr/bin/sed -i '' "/^# $TOOL$/d" "$rc"
+        for d in "$INSTALL" "$UHOME/.devtools/$TOOL/shims" "$UHOME/.devtools/$TOOL/completions"; do
+            /usr/bin/sed -i '' "\|$d|d" "$rc"
+        done
+        /bin/echo "已清理: $rc"
+    done
+    /bin/echo "已删除: $UHOME/.devtools/$TOOL"
+else
+    /bin/echo "未检测到登录用户，跳过用户级清理"
+    /bin/echo "如需清理，请手动删除 ~/.devtools/$TOOL，并移除 shell 配置中 $TOOL 相关的行"
+fi
+
+# ---------------------------------------------------------------
+# 系统级
+# ---------------------------------------------------------------
+/usr/sbin/pkgutil --forget "com.ck627.$TOOL" >/dev/null 2>&1
+/bin/rm -rf "$INSTALL"
+/bin/echo "$TOOL 已卸载"
+
+exit 0

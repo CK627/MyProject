@@ -6,9 +6,29 @@ REM jtool 安装脚本 (Windows)
 
 set "SCRIPT_DIR=%~dp0"
 set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
-REM 向上两级到项目根目录
-for %%i in ("%SCRIPT_DIR%\..\..") do set "PROJECT_DIR=%%~fi"
-set "INSTALL_DIR=C:\Program Files\devtools\jtool"
+
+REM 布局感知：
+REM   仓库里本脚本在 <tool>\scripts\Windows\ ，往上两级才是项目根目录
+REM   安装后本脚本在 <tool>\module\         ，往上一级就是安装根目录
+REM 不区分的话，安装后 %PROJECT_DIR% 会算成 C:\Program Files\devtools，
+REM 既找不到 bin\ 也找不到 VERSION，:write_version 会静默退出，
+REM 于是每次 update 都误报有新版本。
+for %%i in ("%SCRIPT_DIR%\..") do set "APP_ROOT=%%~fi"
+for %%i in ("%SCRIPT_DIR%\..\..") do set "REPO_ROOT=%%~fi"
+if exist "%APP_ROOT%\bin\jtool.bat" (
+    set "PROJECT_DIR=%APP_ROOT%"
+    set "INSTALLED=1"
+) else (
+    set "PROJECT_DIR=%REPO_ROOT%"
+    set "INSTALLED=0"
+)
+
+REM 已在安装目录中时以实际位置为准；从仓库安装才用规范目标路径
+if "%INSTALLED%"=="1" (
+    set "INSTALL_DIR=%PROJECT_DIR%"
+) else (
+    set "INSTALL_DIR=C:\Program Files\devtools\jtool"
+)
 set "BIN_DIR=%INSTALL_DIR%\bin"
 set "CONFIG_DIR=%INSTALL_DIR%\config"
 set "MODULE_DIR=%INSTALL_DIR%\module"
@@ -33,10 +53,14 @@ echo [1/4] 复制文件...
 if not exist "%BIN_DIR%" mkdir "%BIN_DIR%"
 if not exist "%CONFIG_DIR%" mkdir "%CONFIG_DIR%"
 if not exist "%MODULE_DIR%" mkdir "%MODULE_DIR%"
-copy "%PROJECT_DIR%\bin\jtool.bat" "%BIN_DIR%\" >nul
-if not exist "%CONFIG_FILE%" copy "%PROJECT_DIR%\config\jtool.conf" "%CONFIG_DIR%\" >nul
-REM 把本安装脚本复制到 module\ ，供 jtool install / jtool scan 调用
-copy "%PROJECT_DIR%\scripts\Windows\install.bat" "%MODULE_DIR%\install.bat" >nul
+if "%INSTALLED%"=="1" (
+    echo 已处于安装布局，跳过文件复制
+) else (
+    copy "%PROJECT_DIR%\bin\jtool.bat" "%BIN_DIR%\" >nul
+    if not exist "%CONFIG_FILE%" copy "%PROJECT_DIR%\config\jtool.conf" "%CONFIG_DIR%\" >nul
+    REM 把本安装脚本复制到 module\ ，供 jtool install / jtool scan 调用
+    copy "%PROJECT_DIR%\scripts\Windows\install.bat" "%MODULE_DIR%\install.bat" >nul
+)
 echo 完成
 echo.
 

@@ -7,3 +7,7 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# 构建产物（安装包）
+dist/
+build/

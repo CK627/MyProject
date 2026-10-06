@@ -1,0 +1,200 @@
+; jtool Windows 安装脚本（Inno Setup 6）
+;
+; 由 build-from-mac.sh 渲染：@TOOL@ / @VERSION@ / @APPID@ 会被替换成实际值。
+; 刻意不使用 Inno 的预处理器（ISPP）语法，纯文本替换即可，少一个依赖。
+;
+; 目录约定（构建时组装，Source 路径相对于本文件所在目录）：
+;   src\bin\jtool.bat         运行时主脚本
+;   src\config\jtool.conf     配置文件（已写入版本号）
+;   src\module\install.bat    供 jtool install / jtool scan 调用
+;   src\VERSION               版本号，install.bat 的 :write_version 依赖它
+
+[Setup]
+AppId={{@APPID@}
+AppName=@TOOL@
+AppVersion=@VERSION@
+AppVerName=@TOOL@ @VERSION@
+AppPublisher=CK627
+DefaultDirName={autopf}\devtools\@TOOL@
+DisableDirPage=yes
+DisableProgramGroupPage=yes
+OutputDir=.
+OutputBaseFilename=@TOOL@-setup-@VERSION@
+Compression=lzma2/max
+SolidCompression=yes
+; 必须声明 64 位安装模式，否则 {autopf} 会解析成 C:\Program Files (x86)。
+; bin\@TOOL@.bat 是从自身位置推导安装目录的，两者不一致会让 update 写错地方。
+ArchitecturesInstallIn64BitMode=x64compatible
+; 机器级安装必须提权。不加 PrivilegesRequiredOverridesAllowed：
+; 否则非提权运行会退化成每用户安装，而写 HKLM 的 PATH 会静默失败。
+PrivilegesRequired=admin
+ChangesEnvironment=yes
+UninstallDisplayName=@TOOL@ @VERSION@
+WizardStyle=modern
+DisableWelcomePage=no
+
+[Files]
+Source: "src\bin\@TOOL@.bat";       DestDir: "{app}\bin";     Flags: ignoreversion
+Source: "src\module\install.bat";   DestDir: "{app}\module";  Flags: ignoreversion
+Source: "src\VERSION";              DestDir: "{app}";         Flags: ignoreversion
+; 配置文件只在不存在时安装，升级时保留用户已有的设置
+Source: "src\config\@TOOL@.conf";   DestDir: "{app}\config";  Flags: onlyifdoesntexist
+
+[Dirs]
+; 配置文件需要可写（jtool scan / jtool use 会修改它）
+Name: "{app}\config"; Permissions: users-modify
+
+[Registry]
+; 把 bin 目录追加到机器级 PATH。
+;   {olddata}  保留已有内容
+;   preservestringtype  维护原有的 REG_SZ / REG_EXPAND_SZ 类型
+;   NeedsAddPath  已存在时不重复追加（重复安装/升级的关键）
+Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; \
+  ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}\bin"; \
+  Flags: preservestringtype; Check: NeedsAddPath('{app}\bin')
+
+[Run]
+; 安装后自动扫描一次，把配置里的 JAVA_BASE_DIR 换成这台机器上的真实位置。
+; 随包发的配置带的是 Windows 默认值，扫描成功会被覆盖成实际检测结果。
+Filename: "{app}\module\install.bat"; Parameters: "scansilent"; \
+  Flags: runhidden waituntilterminated; \
+  StatusMsg: "正在扫描 Python 安装路径..."
+
+[UninstallDelete]
+; 清掉用户级产物（shim / update 的仓库缓存）。只覆盖执行卸载的那个用户。
+Type: filesandordirs; Name: "{%USERPROFILE}\.devtools\@TOOL@"
+; {app} 也要显式声明：卸载器删目录时它自身的 unins000.exe 还在里面（错误 145），
+; 会走 "Will retry later" 延迟路径，把清理推到重试阶段进行。
+Type: filesandordirs; Name: "{app}"
+
+[Code]
+const
+  EnvironmentKey = 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment';
+  // HWND_BROADCAST / WM_SETTINGCHANGE / SMTO_ABORTIFHUNG 由 Inno 的 Pascal
+  // Script 预定义，不要再声明一遍（会报 Duplicate identifier）
+
+// 去掉首尾空白和结尾的反斜杠，再统一大小写。
+// Windows 的 PATH 比较必须这样处理：注册表里可能存着 C:\PROGRA~1\... 这类短名，
+// 也可能带结尾反斜杠。
+function NormalizeEntry(S: string): string;
+begin
+  S := Trim(S);
+  while (Length(S) > 0) and (S[Length(S)] = '\') do
+    Delete(S, Length(S), 1);
+  Result := Uppercase(S);
+end;
+
+// 按 ';' 分段比较，而不是整串子串匹配 —— 后者会被 "C:\a" 命中 "C:\ab"，
+// 也处理不了段内带结尾反斜杠的情况
+function PathContains(Path, Entry: string): Boolean;
+var
+  Rest, Seg: string;
+  P: Integer;
+begin
+  Result := False;
+  Rest := Path;
+  while Rest <> '' do
+  begin
+    P := Pos(';', Rest);
+    if P > 0 then
+    begin
+      Seg := Copy(Rest, 1, P - 1);
+      Delete(Rest, 1, P);
+    end
+    else
+    begin
+      Seg := Rest;
+      Rest := '';
+    end;
+    if (Seg <> '') and (NormalizeEntry(Seg) = NormalizeEntry(Entry)) then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
+end;
+
+function NeedsAddPath(Param: string): Boolean;
+var
+  OrigPath, Target: string;
+begin
+  // 关键: Check 参数里的常量不一定被展开，必须自己展开一次。
+  // 少了这一步，Param 会是字面量 '{app}\bin'，永远匹配不上，
+  // 每装一次就往 PATH 里追加一条重复项。
+  // （已展开的字符串不含 {}，ExpandConstant 是幂等的）
+  Target := ExpandConstant(Param);
+  Result := True;
+
+  if not RegQueryStringValue(HKLM, EnvironmentKey, 'Path', OrigPath) then
+  begin
+    Log('NeedsAddPath: 读取 Path 失败，将直接追加 ' + Target);
+    Exit;
+  end;
+
+  if PathContains(OrigPath, Target) then
+  begin
+    Log('NeedsAddPath: 已存在，跳过 ' + Target);
+    Result := False;
+  end
+  else
+    Log('NeedsAddPath: 未找到，将追加 ' + Target);
+end;
+
+// 外科式移除，而不是 uninsdeletevalue —— 后者会清空整个 Path，把机器 PATH 毁掉
+procedure RemoveFromPath(Param: string);
+var
+  OrigPath, NewPath, Rest, Seg: string;
+  P: Integer;
+begin
+  if not RegQueryStringValue(HKLM, EnvironmentKey, 'Path', OrigPath) then
+    Exit;
+
+  NewPath := '';
+  Rest := OrigPath;
+  while Rest <> '' do
+  begin
+    P := Pos(';', Rest);
+    if P > 0 then
+    begin
+      Seg := Copy(Rest, 1, P - 1);
+      Delete(Rest, 1, P);
+    end
+    else
+    begin
+      Seg := Rest;
+      Rest := '';
+    end;
+
+    if (Seg <> '') and (NormalizeEntry(Seg) <> NormalizeEntry(Param)) then
+    begin
+      if NewPath <> '' then
+        NewPath := NewPath + ';';
+      NewPath := NewPath + Seg;
+    end;
+  end;
+
+  RegWriteExpandStringValue(HKLM, EnvironmentKey, 'Path', NewPath);
+  Log('RemoveFromPath: 已移除 ' + Param);
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  // 必须在 usPostUninstall：此时卸载器自身的注册表处理已经结束，
+  // 我们的写入才是最后生效的那个（否则会被它的回滚覆盖）。
+  //
+  // 注意：Inno 的 Pascal Script 没有 SendMessageTimeout（编译期会报
+  // Unknown identifier），所以这里无法手动广播 WM_SETTINGCHANGE。
+  // 环境变量变更的通知交给 [Setup] 的 ChangesEnvironment=yes，
+  // 它同时覆盖安装与卸载两个阶段。
+  // 用 usUninstall 而不是 usPostUninstall。
+  //
+  // 实测（Windows 10 19045 / Inno 6.7.3）: usPostUninstall 根本不会触发。
+  // 卸载器的顺序是「先删应用目录、最后才删自己的 unins000.exe」，
+  // 于是删 {app} 时目录非空（145），走 "Will retry later" 延迟路径，
+  // 而该路径会跳过 usPostUninstall —— 日志里只能看到 step=0 和 step=1。
+  //
+  // usUninstall 稳定触发，且此时改注册表不会被卸载器回滚
+  // （本脚本没有用任何 uninsdelete* 标志，Inno 不会自动还原 Path）。
+  if CurUninstallStep = usUninstall then
+    RemoveFromPath(ExpandConstant('{app}\bin'));
+end;
