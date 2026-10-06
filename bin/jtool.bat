@@ -323,6 +323,8 @@ if exist "%CONFIG_FILE%" (
         if "%%a"=="JTOOL_VERSION" set "LOCAL_VERSION=%%~b"
     )
 )
+if defined LOCAL_VERSION set "LOCAL_VERSION=!LOCAL_VERSION:"=!"
+if defined LOCAL_VERSION set "LOCAL_VERSION=!LOCAL_VERSION: =!"
 
 if "!LOCAL_VERSION!"=="!REMOTE_VERSION!" (
     echo 已是最新版本 ^(v!LOCAL_VERSION!^)
@@ -402,6 +404,8 @@ if exist "%CONFIG_FILE%" (
         if "%%a"=="JTOOL_VERSION" set "LOCAL_VERSION=%%~b"
     )
 )
+if defined LOCAL_VERSION set "LOCAL_VERSION=!LOCAL_VERSION:"=!"
+if defined LOCAL_VERSION set "LOCAL_VERSION=!LOCAL_VERSION: =!"
 
 if "!LOCAL_VERSION!"=="!REMOTE_VERSION!" (
     echo 已是最新版本 ^(v!LOCAL_VERSION!^)
