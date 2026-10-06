@@ -62,6 +62,7 @@ if "%~1"=="scan" goto :cmd_scan
 if "%~1"=="config" goto :cmd_config
 if "%~1"=="install" goto :cmd_install
 if "%~1"=="update" goto :cmd_update
+if "%~1"=="uninstall" goto :cmd_uninstall
 if "%~1"=="shim" goto :cmd_shim
 
 REM Run a tool
@@ -163,6 +164,7 @@ echo   ptool scan                          扫描路径
 echo   ptool config                        显示配置
 echo   ptool install                       完整安装
 echo   ptool update                        检查并更新 ptool
+echo   ptool uninstall [-y]                卸载（-y 静默）
 echo   ptool shim                          重建 shim 脚本
 echo   ptool help                          帮助
 exit /b 0
@@ -276,10 +278,77 @@ REM ============================================
 REM update
 REM ============================================
 :cmd_update
+REM Prefer curl+tar; fall back to git
+where curl >nul 2>&1
+if !errorlevel! neq 0 goto :update_via_git
+where tar >nul 2>&1
+if !errorlevel! neq 0 goto :update_via_git
+goto :update_via_curl
+
+REM ============================================
+REM update via curl + tar (no git needed)
+REM ============================================
+:update_via_curl
+echo 正在检查更新...
+set "REMOTE_VERSION="
+for /f "usebackq delims=" %%v in (`curl -fsSL "https://raw.githubusercontent.com/CK627/MyProject/ptool/VERSION" 2^>nul`) do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
+if "!REMOTE_VERSION!"=="" ( echo 错误: 无法获取版本号，请检查网络 & exit /b 1 )
+
+set "LOCAL_VERSION="
+if exist "%CONFIG_FILE%" (
+    for /f "usebackq tokens=1,* delims==" %%a in ("%CONFIG_FILE%") do (
+        if "%%a"=="PTOOL_VERSION" set "LOCAL_VERSION=%%~b"
+    )
+)
+
+if "!LOCAL_VERSION!"=="!REMOTE_VERSION!" (
+    echo 已是最新版本 ^(v!LOCAL_VERSION!^)
+    exit /b 0
+)
+
+echo 发现新版本: v!LOCAL_VERSION! → v!REMOTE_VERSION!
+
+set "UPD_TMP=%TEMP%\ptool-update"
+rmdir /s /q "%UPD_TMP%" 2>nul
+mkdir "%UPD_TMP%"
+
+echo 下载更新...
+curl -fsSL "https://github.com/CK627/MyProject/archive/refs/heads/ptool.tar.gz" -o "%UPD_TMP%\src.tar.gz"
+if !errorlevel! neq 0 ( echo 下载失败，请检查网络 & exit /b 1 )
+
+tar -xzf "%UPD_TMP%\src.tar.gz" -C "%UPD_TMP%"
+if !errorlevel! neq 0 ( echo 解压失败 & exit /b 1 )
+
+set "SRC=%UPD_TMP%\MyProject-ptool"
+
+copy /y "!SRC!\bin\ptool.bat" "%BIN_DIR%\" >nul
+if !errorlevel! neq 0 (
+    echo 错误: 无法写入 %BIN_DIR%
+    echo 请以管理员身份重新运行
+    exit /b 1
+)
+if exist "!SRC!\scripts\Windows\install.bat" (
+    copy /y "!SRC!\scripts\Windows\install.bat" "%MODULE_DIR%\install.bat" >nul
+)
+if not exist "%CONFIG_FILE%" copy "!SRC!\config\ptool.conf" "%CONFIG_DIR%\" >nul
+
+findstr /v /b /c:"PTOOL_VERSION=" "%CONFIG_FILE%" > "%CONFIG_FILE%.tmp"
+echo PTOOL_VERSION="!REMOTE_VERSION!" >> "%CONFIG_FILE%.tmp"
+move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
+
+rmdir /s /q "%UPD_TMP%" 2>nul
+
+echo 更新完成！
+echo   版本: v!LOCAL_VERSION! → v!REMOTE_VERSION!
+exit /b 0
+
+REM ============================================
+REM update via git (fallback)
+REM ============================================
+:update_via_git
 where git >nul 2>&1
 if !errorlevel! neq 0 (
-    echo 错误: 未找到 git 命令，请先安装 Git for Windows
-    echo 下载地址: https://git-scm.com/download/win
+    echo 错误: 未找到 git，且 curl/tar 也不可用，无法更新
     exit /b 1
 )
 
@@ -293,7 +362,6 @@ if not exist "!REPO_DIR!\.git" (
     set "FRESH_CLONE=1"
 )
 
-REM Get remote version
 set "REMOTE_VERSION="
 if "!FRESH_CLONE!"=="1" (
     for /f "usebackq tokens=*" %%v in ("!REPO_DIR!\VERSION") do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
@@ -305,7 +373,6 @@ if "!FRESH_CLONE!"=="1" (
 )
 if "!REMOTE_VERSION!"=="" ( echo 错误: 无法获取版本号 & exit /b 1 )
 
-REM Get local version from config
 set "LOCAL_VERSION="
 if exist "%CONFIG_FILE%" (
     for /f "usebackq tokens=1,* delims==" %%a in ("%CONFIG_FILE%") do (
@@ -337,13 +404,35 @@ if exist "!REPO_DIR!\scripts\Windows\install.bat" (
 )
 if not exist "%CONFIG_FILE%" copy "!REPO_DIR!\config\ptool.conf" "%CONFIG_DIR%\" >nul
 
-REM Record version for next update check
 findstr /v /b /c:"PTOOL_VERSION=" "%CONFIG_FILE%" > "%CONFIG_FILE%.tmp"
 echo PTOOL_VERSION="!REMOTE_VERSION!" >> "%CONFIG_FILE%.tmp"
 move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
 
 echo 更新完成！
 echo   版本: v!LOCAL_VERSION! → v!REMOTE_VERSION!
+exit /b 0
+
+REM ============================================
+REM uninstall
+REM ============================================
+:cmd_uninstall
+if "%~2"=="-y" goto :uninstall_silent
+if exist "%INSTALL_DIR%\unins000.exe" (
+    start "" "%INSTALL_DIR%\unins000.exe"
+    echo 已启动卸载程序，请在弹窗中确认
+) else (
+    echo 未找到卸载器 %INSTALL_DIR%\unins000.exe
+    echo 请通过「控制面板 - 添加或删除程序」卸载
+)
+exit /b 0
+
+:uninstall_silent
+if exist "%INSTALL_DIR%\unins000.exe" (
+    start /wait "" "%INSTALL_DIR%\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+    echo 卸载完成
+) else (
+    echo 未找到卸载器 %INSTALL_DIR%\unins000.exe
+)
 exit /b 0
 
 REM ============================================
