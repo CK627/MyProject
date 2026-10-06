@@ -58,7 +58,7 @@ list_pythons() {
     echo ""
     echo "已安装的 Python:"
 
-    local found=0
+    local entries=""
     local seen=""
     for bin in "$PYTHON_BASE_DIR"/python[0-9]*.[0-9]* "$PYTHON_BASE_DIR"/python[0-9]*; do
         [ -f "$bin" ] && [ -x "$bin" ] || continue
@@ -78,11 +78,16 @@ list_pythons() {
         local real_version
         real_version=$("$bin" --version 2>&1 | head -1)
 
-        echo "  $version - $real_version ($bin)"
-        found=1
+        entries="${entries}  $version - $real_version ($bin)"$'\n'
     done
 
-    [ "$found" -eq 0 ] && echo "  (未找到)"
+    if [ -z "$entries" ]; then
+        echo "  (未找到)"
+    elif sort -V </dev/null >/dev/null 2>&1; then
+        printf '%s' "$entries" | sort -V
+    else
+        printf '%s' "$entries" | sort
+    fi
 
     echo ""
     [ -n "$PTOOL_DEFAULT_VERSION" ] && echo "默认版本: $PTOOL_DEFAULT_VERSION" || echo "默认版本: 未设置"
@@ -244,8 +249,16 @@ case "$1" in
     scan)     do_scan "$CONFIG_FILE"; exit $? ;;
     config)   do_config "$CONFIG_FILE"; exit 0 ;;
     install)  do_install "$PROJECT_DIR"; exit $? ;;
-    update)   do_update "ptool" "ptool" "https://github.com/CK627/MyProject.git" "$(get_install_dir)" "$CONFIG_FILE"; exit $? ;;
-    shim)     do_create_shims "$(get_install_dir)/config/ptool.conf"; exit $? ;;
+    update)
+        install_dir=$(get_install_dir) || exit 1
+        do_update "ptool" "ptool" "https://github.com/CK627/MyProject.git" "$install_dir" "$CONFIG_FILE"
+        exit $?
+        ;;
+    shim)
+        install_dir=$(get_install_dir) || exit 1
+        do_create_shims "$install_dir/config/ptool.conf"
+        exit $?
+        ;;
 esac
 
 # 运行工具

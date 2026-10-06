@@ -34,8 +34,9 @@ if not exist "%BIN_DIR%" mkdir "%BIN_DIR%"
 if not exist "%CONFIG_DIR%" mkdir "%CONFIG_DIR%"
 if not exist "%MODULE_DIR%" mkdir "%MODULE_DIR%"
 copy "%PROJECT_DIR%\bin\ptool.bat" "%BIN_DIR%\" >nul
-copy "%PROJECT_DIR%\config\ptool.conf" "%CONFIG_DIR%\" >nul
-copy "%PROJECT_DIR%\module\install.sh" "%MODULE_DIR%\" >nul
+if not exist "%CONFIG_FILE%" copy "%PROJECT_DIR%\config\ptool.conf" "%CONFIG_DIR%\" >nul
+REM 把本安装脚本复制到 module\ ，供 ptool install / ptool scan 调用
+copy "%PROJECT_DIR%\scripts\Windows\install.bat" "%MODULE_DIR%\install.bat" >nul
 echo 完成
 echo.
 
@@ -47,6 +48,7 @@ echo.
 
 echo [3/4] 扫描 Python...
 call :do_scan_inner
+call :write_version
 echo.
 
 echo [4/4] 配置 PATH...
@@ -111,16 +113,7 @@ for /d %%d in ("!found_dir!\Python*") do (
 )
 echo.
 
-if not exist "%CONFIG_DIR%" mkdir "%CONFIG_DIR%"
-(
-    echo # ptool 配置文件
-    echo.
-    echo # Python 安装路径（父目录）
-    echo PYTHON_BASE_DIR="!found_dir!"
-    echo.
-    echo # 默认版本
-    echo # PTOOL_DEFAULT_VERSION="3.11"
-) > "%CONFIG_FILE%"
+call :write_config
 
 echo 配置文件已写入: %CONFIG_FILE%
 echo.
@@ -128,8 +121,39 @@ type "%CONFIG_FILE%"
 exit /b 0
 
 :do_scan_inner
-set "found_dir=C:\"
+set "found_dir="
+if exist "C:\Python*" (
+    for /d %%d in (C:\Python*) do (
+        if exist "%%d\python.exe" (
+            set "found_dir=C:\"
+            goto :scan_inner_found
+        )
+    )
+)
+if exist "%LOCALAPPDATA%\Programs\Python" set "found_dir=%LOCALAPPDATA%\Programs\Python"
+
+:scan_inner_found
+if not defined found_dir set "found_dir=C:\"
+call :write_config
+echo 已写入: %CONFIG_FILE%
+exit /b 0
+
+REM ============================================
+REM 写入配置文件（保留已有的默认版本与版本记录）
+REM ============================================
+:write_config
 if not exist "%CONFIG_DIR%" mkdir "%CONFIG_DIR%"
+if not defined found_dir set "found_dir=C:\"
+
+set "KEEP_DEFAULT=# PTOOL_DEFAULT_VERSION="3.11""
+set "KEEP_VERSION=# PTOOL_VERSION="""
+if exist "%CONFIG_FILE%" (
+    for /f "usebackq tokens=1,* delims==" %%a in ("%CONFIG_FILE%") do (
+        if "%%a"=="PTOOL_DEFAULT_VERSION" set "KEEP_DEFAULT=%%a=%%b"
+        if "%%a"=="PTOOL_VERSION" set "KEEP_VERSION=%%a=%%b"
+    )
+)
+
 (
     echo # ptool 配置文件
     echo.
@@ -137,9 +161,24 @@ if not exist "%CONFIG_DIR%" mkdir "%CONFIG_DIR%"
     echo PYTHON_BASE_DIR="!found_dir!"
     echo.
     echo # 默认版本
-    echo # PTOOL_DEFAULT_VERSION="3.11"
+    echo !KEEP_DEFAULT!
+    echo.
+    echo # ptool 版本（由 install / update 维护，请勿手动修改）
+    echo !KEEP_VERSION!
 ) > "%CONFIG_FILE%"
-echo 已写入: %CONFIG_FILE%
+exit /b 0
+
+REM ============================================
+REM 记录 ptool 版本号
+REM ============================================
+:write_version
+if not exist "%PROJECT_DIR%\VERSION" exit /b 0
+set "VER="
+for /f "usebackq tokens=*" %%v in ("%PROJECT_DIR%\VERSION") do if not defined VER set "VER=%%v"
+if not defined VER exit /b 0
+findstr /v /b /c:"PTOOL_VERSION=" "%CONFIG_FILE%" > "%CONFIG_FILE%.tmp"
+echo PTOOL_VERSION="!VER!" >> "%CONFIG_FILE%.tmp"
+move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
 exit /b 0
 
 REM ============================================

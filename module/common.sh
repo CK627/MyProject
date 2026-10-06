@@ -1,11 +1,16 @@
 #!/bin/bash
 # ptool 安装模块（被 ptool.sh source 调用）
 
-# 安装目录
+# 安装目录（不支持的系统返回空并报错，避免拼出 "/bin" 之类的危险路径）
 get_install_dir() {
     case "$(uname -s)" in
         Darwin) echo "/Library/devtools/ptool" ;;
         Linux)  echo "/usr/local/devtools/ptool" ;;
+        *)
+            echo "错误: 不支持的系统: $(uname -s)" >&2
+            echo "ptool 仅支持 macOS / Linux，Windows 请使用 install.bat" >&2
+            return 1
+            ;;
     esac
 }
 
@@ -55,6 +60,17 @@ do_scan() {
 
     echo ""
 
+    # 保留已有的默认版本与版本记录，避免 scan 把它们抹掉
+    local keep_default='# PTOOL_DEFAULT_VERSION="3.11"'
+    local keep_version='# PTOOL_VERSION=""'
+    local line
+    if [ -f "$config_file" ]; then
+        line=$(grep '^PTOOL_DEFAULT_VERSION=' "$config_file" 2>/dev/null | tail -1)
+        [ -n "$line" ] && keep_default="$line"
+        line=$(grep '^PTOOL_VERSION=' "$config_file" 2>/dev/null | tail -1)
+        [ -n "$line" ] && keep_version="$line"
+    fi
+
     mkdir -p "$(dirname "$config_file")"
     cat > "$config_file" << EOF
 # ptool 配置文件
@@ -63,7 +79,10 @@ do_scan() {
 PYTHON_BASE_DIR="$python_base_dir"
 
 # 默认版本
-# PTOOL_DEFAULT_VERSION="3.11"
+$keep_default
+
+# ptool 版本（由 install / update 维护，请勿手动修改）
+$keep_version
 EOF
 
     echo "配置文件已写入: $config_file"
@@ -198,7 +217,7 @@ SHIM
 do_install() {
     local script_dir="$1"
     local install_dir
-    install_dir=$(get_install_dir)
+    install_dir=$(get_install_dir) || return 1
     local bin_dir="$install_dir/bin"
     local config_dir="$install_dir/config"
     local module_dir="$install_dir/module"
@@ -209,7 +228,7 @@ do_install() {
     echo "========================================"
     echo ""
 
-    echo "[1/4] 复制文件..."
+    echo "[1/5] 复制文件..."
     sudo mkdir -p "$bin_dir" "$config_dir" "$module_dir"
     case "$(uname -s)" in
         Darwin|Linux)
@@ -219,24 +238,30 @@ do_install() {
             sudo cp "$script_dir/bin/ptool.bat" "$bin_dir/"
             ;;
     esac
-    sudo cp "$script_dir/config/ptool.conf" "$config_dir/"
+    # 配置文件仅首次创建，重装时保留用户已有配置
+    if [ ! -f "$config_file" ]; then
+        sudo cp "$script_dir/config/ptool.conf" "$config_dir/"
+    fi
+    # 安装目录属 root，配置文件必须可写，否则 do_scan / ptool use 无法写入
+    sudo chmod 666 "$config_file"
     sudo cp "$script_dir/module/common.sh" "$module_dir/"
     echo "完成"
     echo ""
 
-    echo "[2/4] 设置权限..."
+    echo "[2/5] 设置权限..."
     sudo chmod +x "$bin_dir/ptool.sh"
     echo "完成"
     echo ""
 
     echo "[3/5] 扫描 Python..."
     do_scan "$config_file"
-    sudo chmod 666 "$config_file"
-    # 写入版本号
+    # 写入版本号（幂等：先清掉旧记录，避免重复追加）
     if [ -f "$script_dir/VERSION" ]; then
         local ver
         ver=$(cat "$script_dir/VERSION" | tr -d '[:space:]')
-        echo "PTOOL_VERSION=\"$ver\"" >> "$config_file"
+        sudo sed -i.bak '/^PTOOL_VERSION/d' "$config_file" 2>/dev/null
+        sudo rm -f "${config_file}.bak"
+        echo "PTOOL_VERSION=\"$ver\"" | sudo tee -a "$config_file" > /dev/null
     fi
     echo ""
 
@@ -275,7 +300,7 @@ do_install() {
 # ============================================
 do_uninstall() {
     local install_dir
-    install_dir=$(get_install_dir)
+    install_dir=$(get_install_dir) || return 1
 
     echo "========================================"
     echo "  ptool 卸载程序"
@@ -310,7 +335,7 @@ do_uninstall() {
 
     for rc_file in "$HOME/.zshrc" "$HOME/.bashrc"; do
         if [ -f "$rc_file" ] && grep -q "$install_dir" "$rc_file" 2>/dev/null; then
-            sed -i.bak "/# ptool/d" "$rc_file"
+            sed -i.bak "/^# ptool$/d" "$rc_file"
             sed -i.bak "\|$install_dir|d" "$rc_file"
             rm -f "${rc_file}.bak"
             echo "已清理: $rc_file"

@@ -12,8 +12,15 @@ set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
 set "PROJECT_DIR=%SCRIPT_DIR%\.."
 set "CONFIG_FILE=%PROJECT_DIR%\config\ptool.conf"
 
-REM 查找 install.bat（优先 module/，回退根目录）
+REM 安装目录（与 install.bat 保持一致）
+set "INSTALL_DIR=C:\Program Files\devtools\ptool"
+set "BIN_DIR=%INSTALL_DIR%\bin"
+set "CONFIG_DIR=%INSTALL_DIR%\config"
+set "MODULE_DIR=%INSTALL_DIR%\module"
+
+REM 查找 install.bat：已安装布局 → 仓库布局 → 旧版根目录
 set "INSTALL_MODULE=%PROJECT_DIR%\module\install.bat"
+if not exist "%INSTALL_MODULE%" set "INSTALL_MODULE=%PROJECT_DIR%\scripts\Windows\install.bat"
 if not exist "%INSTALL_MODULE%" set "INSTALL_MODULE=%PROJECT_DIR%\install.bat"
 
 REM ============================================
@@ -85,19 +92,28 @@ goto :run_tool
 set "python_path=!PYTHON_BASE_DIR!\python!version!"
 set "tool_path=!PYTHON_BASE_DIR!\!tool!"
 
+REM %* 不随 shift 变化，会带上工具名和版本号，这里重新拼接剩余参数
+set "TOOL_ARGS="
+:collect_args
+if "%~1"=="" goto :args_ready
+set "TOOL_ARGS=!TOOL_ARGS! %1"
+shift /1
+goto :collect_args
+:args_ready
+
 if "!tool!"=="python" (
-    if exist "!python_path!.exe" ( "!python_path!.exe" %* & exit /b !errorlevel! )
-    if exist "!python_path!" ( "!python_path!" %* & exit /b !errorlevel! )
+    if exist "!python_path!.exe" ( "!python_path!.exe" !TOOL_ARGS! & exit /b !errorlevel! )
+    if exist "!python_path!" ( "!python_path!" !TOOL_ARGS! & exit /b !errorlevel! )
 )
 if "!tool!"=="python3" (
-    if exist "!python_path!.exe" ( "!python_path!.exe" %* & exit /b !errorlevel! )
+    if exist "!python_path!.exe" ( "!python_path!.exe" !TOOL_ARGS! & exit /b !errorlevel! )
 )
 if "!tool!"=="pip" (
-    "!python_path!" -m pip %*
+    "!python_path!" -m pip !TOOL_ARGS!
     exit /b !errorlevel!
 )
 if "!tool!"=="pip3" (
-    "!python_path!" -m pip %*
+    "!python_path!" -m pip !TOOL_ARGS!
     exit /b !errorlevel!
 )
 
@@ -181,6 +197,7 @@ REM home
 REM ============================================
 :cmd_home
 if "%~2"=="" ( echo 错误: 请指定版本号 & exit /b 1 )
+if not exist "!PYTHON_BASE_DIR!\python%~2.exe" ( echo 错误: Python %~2 不存在 & exit /b 1 )
 echo !PYTHON_BASE_DIR!
 exit /b 0
 
@@ -259,36 +276,66 @@ if !errorlevel! neq 0 (
 )
 
 set "REPO_DIR=%USERPROFILE%\.devtools\ptool\repo"
+set "FRESH_CLONE=0"
 
 if not exist "!REPO_DIR!\.git" (
     echo 首次更新，正在克隆仓库...
-    git clone --branch ptool --single-branch https://github.com/CK627/MyProject.git "!REPO_DIR!"
+    git clone --branch ptool --single-branch --depth 1 https://github.com/CK627/MyProject.git "!REPO_DIR!"
     if !errorlevel! neq 0 ( echo 克隆失败 & exit /b 1 )
+    set "FRESH_CLONE=1"
 )
 
-echo 正在检查更新...
-git -C "!REPO_DIR!" fetch origin ptool 2>nul
-if !errorlevel! neq 0 ( echo 获取更新失败，请检查网络 & exit /b 1 )
+REM 获取远程版本号
+set "REMOTE_VERSION="
+if "!FRESH_CLONE!"=="1" (
+    for /f "usebackq tokens=*" %%v in ("!REPO_DIR!\VERSION") do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
+) else (
+    echo 正在检查更新...
+    git -C "!REPO_DIR!" fetch origin ptool 2>nul
+    if !errorlevel! neq 0 ( echo 获取更新失败，请检查网络 & exit /b 1 )
+    for /f "usebackq tokens=*" %%v in (`git -C "!REPO_DIR!" show origin/ptool:VERSION 2^>nul`) do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
+)
+if "!REMOTE_VERSION!"=="" ( echo 错误: 无法获取版本号 & exit /b 1 )
 
-for /f %%a in ('git -C "!REPO_DIR!" rev-parse HEAD') do set "LOCAL_SHA=%%a"
-for /f %%a in ('git -C "!REPO_DIR!" rev-parse origin/ptool') do set "REMOTE_SHA=%%a"
+REM 获取本地版本号（记录在配置文件中）
+set "LOCAL_VERSION="
+if exist "%CONFIG_FILE%" (
+    for /f "usebackq tokens=1,* delims==" %%a in ("%CONFIG_FILE%") do (
+        if "%%a"=="PTOOL_VERSION" set "LOCAL_VERSION=%%~b"
+    )
+)
 
-if "!LOCAL_SHA!"=="!REMOTE_SHA!" (
-    echo 已是最新版本
+if "!LOCAL_VERSION!"=="!REMOTE_VERSION!" (
+    echo 已是最新版本 ^(v!LOCAL_VERSION!^)
     exit /b 0
 )
 
-git -C "!REPO_DIR!" checkout ptool 2>nul
-git -C "!REPO_DIR!" pull origin ptool
-if !errorlevel! neq 0 ( echo 拉取更新失败 & exit /b 1 )
+echo 发现新版本: v!LOCAL_VERSION! → v!REMOTE_VERSION!
+
+if "!FRESH_CLONE!"=="0" (
+    git -C "!REPO_DIR!" checkout ptool 2>nul
+    git -C "!REPO_DIR!" pull origin ptool
+    if !errorlevel! neq 0 ( echo 拉取更新失败 & exit /b 1 )
+)
 
 copy /y "!REPO_DIR!\bin\ptool.bat" "%BIN_DIR%\" >nul
-copy /y "!REPO_DIR!\module\install.sh" "%MODULE_DIR%\" >nul
+if !errorlevel! neq 0 (
+    echo 错误: 无法写入 %BIN_DIR%
+    echo 请以管理员身份重新运行
+    exit /b 1
+)
+if exist "!REPO_DIR!\scripts\Windows\install.bat" (
+    copy /y "!REPO_DIR!\scripts\Windows\install.bat" "%MODULE_DIR%\install.bat" >nul
+)
 if not exist "%CONFIG_FILE%" copy "!REPO_DIR!\config\ptool.conf" "%CONFIG_DIR%\" >nul
 
+REM 记录版本号，供下次更新比对
+findstr /v /b /c:"PTOOL_VERSION=" "%CONFIG_FILE%" > "%CONFIG_FILE%.tmp"
+echo PTOOL_VERSION="!REMOTE_VERSION!" >> "%CONFIG_FILE%.tmp"
+move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
+
 echo 更新完成！
-echo   旧版本: !LOCAL_SHA:~0,7!
-echo   新版本: !REMOTE_SHA:~0,7!
+echo   版本: v!LOCAL_VERSION! → v!REMOTE_VERSION!
 exit /b 0
 
 REM ============================================
