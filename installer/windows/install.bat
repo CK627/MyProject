@@ -72,19 +72,17 @@ icacls "%BIN_DIR%\ptool.bat" /grant Everyone:RX >nul 2>&1
 echo 完成
 echo.
 
-echo [3/4] 扫描 Python...
+echo [3/4] 扫描并生成 shim...
 call :do_scan_inner
 call :write_version
+REM 生成 shims（转发脚本，让 python/python3/pip/pip3 用默认版本）
+"%BIN_DIR%\ptool.bat" shim
 echo.
 
 echo [4/4] 配置 PATH...
-echo %PATH% | findstr /i /c:"%BIN_DIR%" >nul
-if !errorlevel! equ 0 (
-    echo 已存在
-) else (
-    setx PATH "%PATH%;%BIN_DIR%" >nul 2>&1
-    echo 已添加到 PATH
-)
+REM 用 PowerShell 追加（setx 有 1024 字符截断问题），把 bin 目录和 shims 目录都加进用户 PATH
+powershell -NoProfile -Command "$p=[Environment]::GetEnvironmentVariable('Path','User'); $add=@('%BIN_DIR%','%USERPROFILE%\.devtools\ptool\shims'); $chg=$false; foreach($d in $add){ if(-not ((';'+$p+';') -like ('*;'+$d+';*'))){ $p=($p.TrimEnd(';')+';'+$d); $chg=$true } }; if($chg){ [Environment]::SetEnvironmentVariable('Path',$p,'User') }; Write-Output '已添加到用户 PATH'"
+
 
 echo.
 echo ========================================

@@ -53,12 +53,27 @@ Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environmen
   ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}\bin"; \
   Flags: preservestringtype; Check: NeedsAddPath('{app}\bin')
 
+; 把用户级 shims 目录追加到用户 PATH（HKCU）。
+; shims 生成在 %USERPROFILE%\.devtools\@TOOL@\shims，是转发到默认版本的
+; python/python3/pip/pip3 包装脚本。不加进 PATH 的话，`ptool use` 之后
+; 直接敲 `python` 走的是系统 Python，不会用 ptool 设的默认版本。
+Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; \
+  ValueData: "{olddata};{%USERPROFILE}\.devtools\@TOOL@\shims"; \
+  Flags: preservestringtype; Check: NeedsAddUserPath('{%USERPROFILE}\.devtools\@TOOL@\shims')
+
 [Run]
 ; 安装后自动扫描一次，把配置里的 PYTHON_BASE_DIR 换成这台机器上的真实位置。
 ; 随包发的配置带的是 Windows 默认值，扫描成功会被覆盖成实际检测结果。
 Filename: "{app}\module\install.bat"; Parameters: "scansilent"; \
   Flags: runhidden waituntilterminated; \
   StatusMsg: "正在扫描 Python 安装路径..."
+
+; 扫描之后生成 shims（依赖 config 已存在），把 python/python3/pip/pip3
+; 转发脚本写入 %USERPROFILE%\.devtools\@TOOL@\shims，并已通过 [Registry]
+; 把该目录加进用户 PATH
+Filename: "{app}\bin\ptool.bat"; Parameters: "shim"; \
+  Flags: runhidden waituntilterminated; \
+  StatusMsg: "正在生成 shim..."
 
 [UninstallDelete]
 ; 清掉用户级产物（shim / update 的仓库缓存）。只覆盖执行卸载的那个用户。
@@ -70,6 +85,7 @@ Type: filesandordirs; Name: "{app}"
 [Code]
 const
   EnvironmentKey = 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment';
+  UserEnvironmentKey = 'Environment';
   // HWND_BROADCAST / WM_SETTINGCHANGE / SMTO_ABORTIFHUNG 由 Inno 的 Pascal
   // Script 预定义，不要再声明一遍（会报 Duplicate identifier）
 
@@ -177,6 +193,59 @@ begin
   Log('RemoveFromPath: 已移除 ' + Param);
 end;
 
+function NeedsAddUserPath(Param: string): Boolean;
+var
+  OrigPath, Target: string;
+begin
+  Target := ExpandConstant(Param);
+  Result := True;
+  if not RegQueryStringValue(HKCU, UserEnvironmentKey, 'Path', OrigPath) then
+  begin
+    Log('NeedsAddUserPath: 读取 HKCU Path 失败，将直接追加 ' + Target);
+    Exit;
+  end;
+  if PathContains(OrigPath, Target) then
+  begin
+    Log('NeedsAddUserPath: 已存在，跳过 ' + Target);
+    Result := False;
+  end
+  else
+    Log('NeedsAddUserPath: 未找到，将追加 ' + Target);
+end;
+
+procedure RemoveFromUserPath(Param: string);
+var
+  OrigPath, NewPath, Rest, Seg: string;
+  P: Integer;
+begin
+  if not RegQueryStringValue(HKCU, UserEnvironmentKey, 'Path', OrigPath) then
+    Exit;
+  NewPath := '';
+  Rest := OrigPath;
+  while Rest <> '' do
+  begin
+    P := Pos(';', Rest);
+    if P > 0 then
+    begin
+      Seg := Copy(Rest, 1, P - 1);
+      Delete(Rest, 1, P);
+    end
+    else
+    begin
+      Seg := Rest;
+      Rest := '';
+    end;
+    if (Seg <> '') and (NormalizeEntry(Seg) <> NormalizeEntry(Param)) then
+    begin
+      if NewPath <> '' then
+        NewPath := NewPath + ';';
+      NewPath := NewPath + Seg;
+    end;
+  end;
+  RegWriteExpandStringValue(HKCU, UserEnvironmentKey, 'Path', NewPath);
+  Log('RemoveFromUserPath: 已移除 ' + Param);
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   // 必须在 usPostUninstall：此时卸载器自身的注册表处理已经结束，
@@ -196,5 +265,8 @@ begin
   // usUninstall 稳定触发，且此时改注册表不会被卸载器回滚
   // （本脚本没有用任何 uninsdelete* 标志，Inno 不会自动还原 Path）。
   if CurUninstallStep = usUninstall then
+  begin
     RemoveFromPath(ExpandConstant('{app}\bin'));
+    RemoveFromUserPath(ExpandConstant('{%USERPROFILE}\.devtools\@TOOL@\shims'));
+  end;
 end;
