@@ -326,9 +326,9 @@ REM ============================================
 :update_via_curl
 echo 正在检查更新...
 set "REMOTE_VERSION="
-for /f "usebackq delims=" %%v in (`curl -fsSL "https://raw.githubusercontent.com/CK627/MyProject/jtool/VERSION" 2^>nul`) do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
+for /f "usebackq delims=" %%v in (`powershell -NoProfile -Command "(Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/CK627/MyProject/jtool/VERSION').Content.Trim()"`) do set "REMOTE_VERSION=%%v"
 if "!REMOTE_VERSION!"=="" (
-    echo curl 读取版本号失败，回退到 git 方式...
+    echo 读取版本号失败，回退到 git 方式...
     goto :update_via_git
 )
 
@@ -353,8 +353,8 @@ rmdir /s /q "%UPD_TMP%" 2>nul
 mkdir "%UPD_TMP%"
 
 echo 下载更新...
-curl -fsSL "https://github.com/CK627/MyProject/archive/refs/heads/jtool.tar.gz" -o "%UPD_TMP%\src.tar.gz"
-if !errorlevel! neq 0 ( echo 下载失败，请检查网络 & exit /b 1 )
+powershell -NoProfile -Command "Invoke-WebRequest -UseBasicParsing 'https://github.com/CK627/MyProject/archive/refs/heads/jtool.tar.gz' -OutFile '%UPD_TMP%\src.tar.gz'"
+if not exist "%UPD_TMP%\src.tar.gz" ( echo 下载失败，回退 git & goto :update_via_git )
 
 tar -xzf "%UPD_TMP%\src.tar.gz" -C "%UPD_TMP%"
 if !errorlevel! neq 0 ( echo 解压失败 & exit /b 1 )
