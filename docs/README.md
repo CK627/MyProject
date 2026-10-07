@@ -18,7 +18,10 @@ Windows（PowerShell）：
 irm https://raw.githubusercontent.com/CK627/MyProject/jtool/installer/install.ps1 | iex
 ```
 
-macOS 下载最新 Release 的 `.dmg`（内含 `.pkg`，双击安装）；Linux 下载 `.tar.gz` 解压后安装；
+macOS 发布的是 `.dmg`，`.pkg` 打在它里面：手动装就双击 dmg 再双击 `.pkg`，用上面的
+一键安装则是由脚本自动挂载 dmg、从挂载点里取 `.pkg` 安装，装完自动卸载。
+Release 里**没有**单独的 `.pkg` 资产，所以别去直接下载 `.pkg`（会 404）。
+Linux 下载 `.tar.gz` 解压后安装；
 Windows 下载 `.exe` 静默安装。
 
 ### macOS / Linux
@@ -233,7 +236,7 @@ JAVA_BASE_DIR="/Library/Java/JavaVirtualMachines"
 # JTOOL_DEFAULT_VERSION="21"
 
 # jtool 版本（由 install / update 维护，请勿手动修改）
-JTOOL_VERSION="2.3.2"
+JTOOL_VERSION="2.3.3"
 ```
 
 > 安装 / 升级时若 `JTOOL_DEFAULT_VERSION` 还没设置，安装程序会自动把**扫到的最高版本**填进去

@@ -7,12 +7,18 @@
 # 传统用法（安装后需重开终端或手动 source）:
 #   curl -fsSL https://raw.githubusercontent.com/CK627/MyProject/jtool/installer/install.sh | bash
 #
-# macOS : 下载最新 Release 的 .pkg 并安装（带安装器收据）
+# macOS : 下载最新 Release 的 .dmg，挂载后安装里面的 .pkg（带安装器收据）
 # Linux : 下载源码后运行 installer/install-from-source.sh
 # Windows: 请用 PowerShell 一键安装（install.ps1）
 #
 # 注意：本脚本设计为可被 source 加载，因此不能用顶层 exit（会退出用户 shell），
 # 安装逻辑全部放在子 shell 里隔离，成功后由父 shell 执行 source 刷新环境。
+#
+# 子 shell 必须作为独立命令执行，绝不能写成 `( ... ) && { 成功提示 }`：
+# POSIX 规定 AND-OR 列表中非末位命令忽略 set -e，而 bash/zsh 都照此实现，
+# 于是子 shell 里的任何失败都不会中断，脚本会一路跑到底，最后照样打印
+# 「安装完成」——下载 404、installer 失败全被吞掉，用户只看到「没有效果」。
+# 现在改成独立执行 + 显式判退出码，失败时明确报错且不刷新终端。
 
 (
     set -euo pipefail
@@ -30,6 +36,8 @@
     case "$(uname -s)" in
         Darwin)
             command -v git >/dev/null 2>&1 || err "需要 git 解析版本号（xcode-select --install）"
+            # hdiutil 是 macOS 自带命令，缺失说明系统环境异常，早报比晚报好
+            command -v hdiutil >/dev/null 2>&1 || err "需要 hdiutil（macOS 自带）"
             info "解析最新版本..."
             VERSION=$(git ls-remote --tags "$BASE.git" "refs/tags/${TOOL}-v*" \
                       | grep -vF '^{}' \
@@ -38,14 +46,37 @@
             VER="${VERSION#${TOOL}-v}"
             info "安装 ${TOOL} ${VER}"
 
-            PKG="/tmp/${TOOL}-${VER}.pkg"
-            URL="$BASE/releases/download/${VERSION}/${TOOL}-${VER}.pkg"
+            # 发布产物是 .dmg，.pkg 打在 dmg 里，所以要先挂载再从挂载点安装。
+            # 别再改回直接下载 .pkg：Release 里没有这个资产，只会拿到 404。
+            DMG="/tmp/${TOOL}-${VER}.dmg"
+            URL="$BASE/releases/download/${VERSION}/${TOOL}-${VER}.dmg"
             info "下载 $URL"
-            curl -fL --progress-bar "$URL" -o "$PKG"
+            curl -fL --progress-bar "$URL" -o "$DMG" || err "下载失败：$URL"
+            [ -s "$DMG" ] || err "下载到的文件是空的：$DMG"
+
+            info "挂载安装包..."
+            MNT=$(hdiutil attach -nobrowse -readonly "$DMG" \
+                  | grep -o '/Volumes/.*' | head -1)
+            [ -n "$MNT" ] || { rm -f "$DMG"; err "挂载失败：$DMG"; }
+
+            # 挂载后无论走哪条路径退出，都必须把卷卸掉、把 dmg 删掉，
+            # 否则失败一次就在 /Volumes 下留一个卷、在 /tmp 留一个几百 KB 的文件。
+            cleanup_dmg() {
+                hdiutil detach "$MNT" >/dev/null 2>&1 || true
+                rm -f "$DMG"
+            }
+
+            [ -f "$MNT/${TOOL}-${VER}.pkg" ] || {
+                cleanup_dmg
+                err "安装包里没有 ${TOOL}-${VER}.pkg"
+            }
 
             info "安装（需要管理员密码）..."
-            sudo installer -pkg "$PKG" -target /
-            rm -f "$PKG"
+            if ! sudo installer -pkg "$MNT/${TOOL}-${VER}.pkg" -target /; then
+                cleanup_dmg
+                err "安装失败（可能是密码错误，或安装包与当前系统不兼容）"
+            fi
+            cleanup_dmg
             ;;
         Linux)
             info "下载源码并安装..."
@@ -58,12 +89,20 @@
             err "不支持的系统。Windows 请用 PowerShell 一键安装"
             ;;
     esac
-) && {
+)
+
+# 注意变量名不能叫 status：zsh 里 status 是与 $? 绑定的特殊变量。
+_jtool_rc=$?
+if [ "$_jtool_rc" -eq 0 ]; then
     # 安装成功：刷新当前 shell（source 用法下生效；curl|bash 用法下这里是子进程，无效）
     if [ -n "${ZSH_VERSION:-}" ]; then
         source ~/.zshrc 2>/dev/null
     elif [ -n "${BASH_VERSION:-}" ]; then
         source ~/.bashrc 2>/dev/null
     fi
-    echo "==> ${TOOL} 安装完成，已刷新当前终端"
-}
+    echo "==> jtool 安装完成，已刷新当前终端"
+else
+    echo "错误: jtool 安装失败（退出码 ${_jtool_rc}），未改动当前终端" >&2
+fi
+# 最后一条命令决定脚本退出码，让 `curl ... | bash` 或 set -e 的调用方也能拿到真实结果
+[ "$_jtool_rc" -eq 0 ]
