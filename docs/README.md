@@ -236,7 +236,7 @@ JAVA_BASE_DIR="/Library/Java/JavaVirtualMachines"
 # JTOOL_DEFAULT_VERSION="21"
 
 # jtool 版本（由 install / update 维护，请勿手动修改）
-JTOOL_VERSION="2.3.3"
+JTOOL_VERSION="2.3.4"
 ```
 
 > 安装 / 升级时若 `JTOOL_DEFAULT_VERSION` 还没设置，安装程序会自动把**扫到的最高版本**填进去
