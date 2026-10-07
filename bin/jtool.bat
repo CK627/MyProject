@@ -37,6 +37,7 @@ if exist "%CONFIG_FILE%" (
         set "val=%%b"
         if not "!key:~0,1!"=="#" if not "!key!"=="" (
             set "val=!val:"=!"
+            call :trim_sp val
             if "!key!"=="JAVA_BASE_DIR" set "JAVA_BASE_DIR=!val!"
             if "!key!"=="JTOOL_DEFAULT_VERSION" set "JTOOL_DEFAULT_VERSION=!val!"
         )
@@ -189,7 +190,8 @@ if not defined use_home ( echo Error: JDK %~2 not found & exit /b 1 )
 
 REM Update the config file
 findstr /v "JTOOL_DEFAULT_VERSION" "%CONFIG_FILE%" > "%CONFIG_FILE%.tmp"
-echo JTOOL_DEFAULT_VERSION="%~2" >> "%CONFIG_FILE%.tmp"
+REM Redirect before echo: the other order appends a trailing space.
+>>"%CONFIG_FILE%.tmp" echo JTOOL_DEFAULT_VERSION="%~2"
 move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
 set "JTOOL_DEFAULT_VERSION=%~2"
 echo Default version set: %~2
@@ -365,7 +367,8 @@ if exist "!SRC!\installer\windows\install.bat" (
 if not exist "%CONFIG_FILE%" copy "!SRC!\config\jtool.conf" "%CONFIG_DIR%\" >nul
 
 findstr /v /b /c:"JTOOL_VERSION=" "%CONFIG_FILE%" > "%CONFIG_FILE%.tmp"
-echo JTOOL_VERSION="!REMOTE_VERSION!" >> "%CONFIG_FILE%.tmp"
+REM Redirect before echo: the other order appends a trailing space.
+>>"%CONFIG_FILE%.tmp" echo JTOOL_VERSION="!REMOTE_VERSION!"
 move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
 
 rmdir /s /q "%UPD_TMP%" 2>nul
@@ -439,7 +442,8 @@ if exist "!REPO_DIR!\installer\windows\install.bat" (
 if not exist "%CONFIG_FILE%" copy "!REPO_DIR!\config\jtool.conf" "%CONFIG_DIR%\" >nul
 
 findstr /v /b /c:"JTOOL_VERSION=" "%CONFIG_FILE%" > "%CONFIG_FILE%.tmp"
-echo JTOOL_VERSION="!REMOTE_VERSION!" >> "%CONFIG_FILE%.tmp"
+REM Redirect before echo: the other order appends a trailing space.
+>>"%CONFIG_FILE%.tmp" echo JTOOL_VERSION="!REMOTE_VERSION!"
 move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
 
 echo Update complete!
@@ -667,4 +671,26 @@ REM ============================================
 set "%~3=0"
 call :jdk_real_version "%~2" _REAL
 call :ver_match "%~1" "!_REAL!" %~3
+exit /b 0
+
+REM ============================================
+REM Trim leading and trailing spaces from the variable named by the first
+REM argument, in place.
+REM
+REM Writing a config line as "echo VALUE" followed by the redirect appends a
+REM trailing space to the value, so a version read back can be "21 " -- which
+REM then matches no JDK at all. Configs already on disk were written that way,
+REM so trimming on read, not only on write, is what repairs them.
+REM
+REM Takes a variable NAME rather than a value on purpose: CALL re-parses its
+REM argument, which would expand any environment variable inside a path.
+REM ============================================
+:trim_sp
+set "_ts=!%~1!"
+if not defined _ts exit /b 0
+:trim_sp_lead
+if "!_ts:~0,1!"==" " ( set "_ts=!_ts:~1!" & goto :trim_sp_lead )
+:trim_sp_tail
+if "!_ts:~-1!"==" " ( set "_ts=!_ts:~0,-1!" & goto :trim_sp_tail )
+set "%~1=!_ts!"
 exit /b 0

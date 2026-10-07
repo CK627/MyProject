@@ -214,7 +214,7 @@ JAVA_BASE_DIR="/Library/Java/JavaVirtualMachines"
 # JTOOL_DEFAULT_VERSION="21"
 
 # jtool 版本（由 install / update 维护，请勿手动修改）
-JTOOL_VERSION="2.3.0"
+JTOOL_VERSION="2.3.1"
 ```
 
 > jtool 以 `JAVA_BASE_DIR` 作为唯一基准目录，并**按目录的真实布局**解析 JDK 路径，分三段，

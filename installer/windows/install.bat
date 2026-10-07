@@ -243,7 +243,8 @@ set "VER="
 for /f "usebackq tokens=*" %%v in ("%PROJECT_DIR%\VERSION") do if not defined VER set "VER=%%v"
 if not defined VER exit /b 0
 findstr /v /b /c:"JTOOL_VERSION=" "%CONFIG_FILE%" > "%CONFIG_FILE%.tmp"
-echo JTOOL_VERSION="!VER!" >> "%CONFIG_FILE%.tmp"
+REM Redirect before echo: the other order appends a trailing space.
+>>"%CONFIG_FILE%.tmp" echo JTOOL_VERSION="!VER!"
 move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
 exit /b 0
 
