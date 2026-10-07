@@ -53,8 +53,10 @@ cd /path/to/jtool
 
 在 `installer\windows\` 下右键 `uninstall.bat`，选择 **以管理员身份运行**。
 
-> 卸载会删除安装目录（含配置文件）、`~/.devtools/jtool/` 下的 shim / 补全脚本 / repo 缓存，
-> 并清理 shell 配置里由 jtool 写入的 PATH 行与补全 source 行（不触碰其他配置）。
+> 卸载会删除安装目录（含配置文件与 Windows 的 `shims\`）、`~/.devtools/jtool/` 下的
+> shim / 补全脚本 / repo 缓存，并清理 PATH 中由 jtool 写入的项：
+> Windows 上是机器级的 `{app}\bin` 与 `{app}\shims` 两条，macOS / Linux 上是 shell 配置里
+> 的 PATH 行与补全 source 行（不触碰其他配置）。
 > 确认后会立即执行，请提前备份自定义配置。
 
 ---
@@ -170,15 +172,32 @@ jtool run 21 <TAB>   # .java 文件
 
 ## 跨平台支持
 
-| 系统 | 主脚本 | 安装路径 | 配置文件 | 入口 |
-|------|--------|----------|----------|------|
-| macOS | `jtool` | `/Library/devtools/jtool/` | `/Library/devtools/jtool/config/jtool.conf` | `installer/` |
-| Linux | `jtool` | `/usr/local/devtools/jtool/` | `/usr/local/devtools/jtool/config/jtool.conf` | `installer/` |
-| Windows | `jtool.bat` | `C:\Program Files\devtools\jtool\` | `C:\Program Files\devtools\jtool\config\jtool.conf` | `installer/windows/` |
+| 系统 | 主脚本 | 安装路径 | 配置文件 | shim 目录 | 入口 |
+|------|--------|----------|----------|-----------|------|
+| macOS | `jtool` | `/Library/devtools/jtool/` | `/Library/devtools/jtool/config/jtool.conf` | `~/.devtools/jtool/shims` | `installer/` |
+| Linux | `jtool` | `/usr/local/devtools/jtool/` | `/usr/local/devtools/jtool/config/jtool.conf` | `~/.devtools/jtool/shims` | `installer/` |
+| Windows | `jtool.bat` | `C:\Program Files\devtools\jtool\` | `C:\Program Files\devtools\jtool\config\jtool.conf` | `C:\Program Files\devtools\jtool\shims` | `installer/windows/` |
 
-macOS / Linux 还会在 `~/.devtools/jtool/shims` 下生成 `java` / `javac` / `jar` / `jshell` /
-`javadoc` / `javap` 包装脚本，它们按当前默认版本转发调用。`jtool update` 使用的仓库缓存
-在 `~/.devtools/jtool/repo`。
+macOS / Linux 会在 `~/.devtools/jtool/shims` 下生成 `java` / `javac` / `jar` / `jshell` /
+`javadoc` / `javap` 包装脚本，它们按当前默认版本转发调用。Windows 的 shim 生成在安装目录下的
+`shims\`，由安装程序**前置**到**机器级** PATH 上（不是用户级）。
+
+> **为什么必须是机器级、且必须排在最前**：Windows 的生效 PATH 是「机器级 `Path` + `;` +
+> 用户级 `Path`」，机器级整体在前——用户级目录排得再靠前也压不过任何一个机器级目录。
+> Oracle 的 JDK 安装程序会往机器级 PATH 写 `javapath`，所以旧版把 shim 放在
+> `%USERPROFILE%\.devtools\jtool\shims` 里从来没赢过：裸敲 `java` 走的一直是 Oracle 那个，
+> shim 形同虚设。2.3.2 起 shim 目录迁到安装目录并前置到机器级 PATH。
+>
+> **升级注意**：正因为 shim 现在才真正生效，升级后裸敲 `java` 报出的版本**可能与升级前不同**
+> ——它解析到的是配置里的默认版本（没有默认版本时是扫到的最高版本），而不再是 `javapath` 指向的
+> 那个。想改回某个版本用 `jtool use <版本>`。
+>
+> **权限**：`config\` 与 `shims\` 只对管理员可写。`config` 里的默认版本决定机器级 shim 去执行哪个
+> `java.exe`，`shims` 又在全机器都会执行的 PATH 上，放开写权限等于让普通用户借管理员之手执行任意
+> 程序。代价是 `jtool use` 与 `jtool scan` 需要在管理员权限的 CMD 里运行，否则会提示
+> `cannot write ...\config\jtool.conf`。
+
+`jtool update` 使用的仓库缓存在 `~/.devtools/jtool/repo`。
 
 ### 扫描的 Java 安装路径
 
@@ -214,8 +233,19 @@ JAVA_BASE_DIR="/Library/Java/JavaVirtualMachines"
 # JTOOL_DEFAULT_VERSION="21"
 
 # jtool 版本（由 install / update 维护，请勿手动修改）
-JTOOL_VERSION="2.3.1"
+JTOOL_VERSION="2.3.2"
 ```
+
+> 安装 / 升级时若 `JTOOL_DEFAULT_VERSION` 还没设置，安装程序会自动把**扫到的最高版本**填进去
+> （并打印选中的版本与来源目录），这样前置到机器级 PATH 的 shim 立刻就能解析出版本。
+> 已有默认版本时不会被覆盖。
+>
+> 「最高」指**同一个 `JAVA_BASE_DIR` 内**的最高版本。若 21 装在 `C:\Program Files\Java`
+> 而 24 装在别处，自动选中的是 21；需要别的版本就 `jtool use <版本>`。
+>
+> 该行为有运行时兜底：默认版本为空时，`jtool.bat` 自己按目录名推出版本、取最高的一个用
+> （不启动任何 java 进程），只有连一个 JDK 都找不到才报错并提示 `jtool use <version>`。
+> 所以手动把这行注释掉也不会让整台机器的 `java` 挂掉。
 
 > jtool 以 `JAVA_BASE_DIR` 作为唯一基准目录，并**按目录的真实布局**解析 JDK 路径，分三段，
 > 先廉价后昂贵：

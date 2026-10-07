@@ -41,8 +41,20 @@ Source: "src\VERSION";              DestDir: "{app}";         Flags: ignoreversi
 Source: "src\config\@TOOL@.conf";   DestDir: "{app}\config";  Flags: onlyifdoesntexist
 
 [Dirs]
-; 配置文件需要可写（jtool scan / jtool use 会修改它）
-Name: "{app}\config"; Permissions: users-modify
+; 这两个目录都不给普通用户写权限，刻意如此：
+;   config  里的默认版本决定机器级 shim 去执行哪个 java.exe。放开写权限
+;           等于「普通用户能让管理员执行任意 java.exe」，是本地提权口子。
+;   shims   被前置到机器级 PATH 上，可写同样等于让普通用户替换全机器都会
+;           执行的命令。只读 + 执行（从 {app} 继承，install.bat 也显式授了 RX）。
+; 代价：jtool use / jtool scan 需要提权。
+Name: "{app}\config"
+Name: "{app}\shims"
+
+[InstallDelete]
+; 旧版把 shim 写在用户级目录、并把那个目录加到用户 PATH。升级时清掉脚本本身，
+; 同级的 repo（update 的克隆缓存）保留。PATH 里那条遗留项由
+; CurStepChanged(ssPostInstall) 摘掉。
+Type: filesandordirs; Name: "{%USERPROFILE}\.devtools\@TOOL@\shims"
 
 [Registry]
 ; 把 bin 目录追加到机器级 PATH。
@@ -53,24 +65,29 @@ Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environmen
   ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}\bin"; \
   Flags: preservestringtype; Check: NeedsAddPath('{app}\bin')
 
-; 把用户级 shims 目录追加到用户 PATH（HKCU）。
-; shims 生成在 %USERPROFILE%\.devtools\@TOOL@\shims，是转发到默认版本的
-; python/python3/pip/pip3 包装脚本。不加进 PATH 的话，`jtool use` 之后
-; 直接敲 `python` 走的是系统 Python，不会用 jtool 设的默认版本。
-Root: HKCU; Subkey: "Environment"; ValueType: expandsz; ValueName: "Path"; \
-  ValueData: "{%USERPROFILE}\.devtools\@TOOL@\shims;{olddata}"; \
-  Flags: preservestringtype; Check: NeedsAddUserPath('{%USERPROFILE}\.devtools\@TOOL@\shims')
+; 把 shims 目录前插到机器级 PATH。
+; 必须是机器级、且必须在最前：Windows 的生效 PATH = 机器级 Path + ';' + 用户级
+; Path，机器级永远在前。旧版把 shim 放在用户级目录里，无论排用户级第几位，
+; 都排在 Oracle 写进机器级 PATH 的 javapath 之后，于是裸敲 java 走的是 Oracle
+; 那个而不是 jtool 设的默认版本 —— shim 成了死代码。
+; 上面两条写的是同一个值，最终顺序不靠「{olddata} 会不会读到上一条刚写过的值」
+; —— 那个语义官方文档没说清，赌错就会把 {app}\bin 冲掉。顺序由下面 [Code] 里的
+; SetMachinePathOrder 在 ssPostInstall 定死：{app}\shims 最前，{app}\bin 最后。
+Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; \
+  ValueType: expandsz; ValueName: "Path"; ValueData: "{app}\shims;{olddata}"; \
+  Flags: preservestringtype; Check: NeedsAddPath('{app}\shims')
 
 [Run]
 ; 安装后自动扫描一次，把配置里的 JAVA_BASE_DIR 换成这台机器上的真实位置。
 ; 随包发的配置带的是 Windows 默认值，扫描成功会被覆盖成实际检测结果。
+; 这一步同时会把「扫到的最高版本」写成默认版本（install.bat 的
+; :pick_best_version），因为前插的 shim 必须马上能解析出版本。
 Filename: "{app}\module\install.bat"; Parameters: "scansilent"; \
   Flags: runhidden waituntilterminated; \
-  StatusMsg: "正在扫描 Python 安装路径..."
+  StatusMsg: "正在扫描 Java 安装路径..."
 
-; 扫描之后生成 shims（依赖 config 已存在），把 python/python3/pip/pip3
-; 转发脚本写入 %USERPROFILE%\.devtools\@TOOL@\shims，并已通过 [Registry]
-; 把该目录加进用户 PATH
+; 扫描之后生成 shims（依赖 config 已存在），把 java/javac/jar/jshell/javadoc/javap
+; 转发脚本写入 {app}\shims，该目录已由上面的 [Registry] 前插到机器级 PATH
 Filename: "{app}\bin\jtool.bat"; Parameters: "shim"; \
   Flags: runhidden waituntilterminated; \
   StatusMsg: "正在生成 shim..."
@@ -193,26 +210,9 @@ begin
   Log('RemoveFromPath: 已移除 ' + Param);
 end;
 
-function NeedsAddUserPath(Param: string): Boolean;
-var
-  OrigPath, Target: string;
-begin
-  Target := ExpandConstant(Param);
-  Result := True;
-  if not RegQueryStringValue(HKCU, UserEnvironmentKey, 'Path', OrigPath) then
-  begin
-    Log('NeedsAddUserPath: 读取 HKCU Path 失败，将直接追加 ' + Target);
-    Exit;
-  end;
-  if PathContains(OrigPath, Target) then
-  begin
-    Log('NeedsAddUserPath: 已存在，跳过 ' + Target);
-    Result := False;
-  end
-  else
-    Log('NeedsAddUserPath: 未找到，将追加 ' + Target);
-end;
-
+// NeedsAddPath 只管 HKLM。旧版往 HKCU 写 shims 那条记录已经删掉了：
+// 用户级 PATH 整体排在机器级之后，写得再靠前也压不过机器级的 javapath。
+// 现在只有 RemoveFromUserPath 还会碰 HKCU，用途是清理旧版遗留项。
 procedure RemoveFromUserPath(Param: string);
 var
   OrigPath, NewPath, Rest, Seg: string;
@@ -246,6 +246,80 @@ begin
   Log('RemoveFromUserPath: 已移除 ' + Param);
 end;
 
+// 机器级 PATH 的最终顺序由这里定死，不靠 [Registry] 那两条记录的顺序。
+//
+// 上面两条记录写的是同一个值（HKLM 的 Path），第二条的 {olddata} 到底取到
+// 「第一条刚写过的值」还是「Setup 动手之前的值」，官方文档只写了
+// "{olddata} is replaced with the previous data of the registry value"，
+// 没有说清。若是后者，第二条就会把第一条追加的 {app}\bin 冲掉——裸敲
+// jtool 直接找不到命令。这个风险不能留：
+//   · exe 安装包走的是 [Registry] + [Run]，install.bat 的 [4/4] 根本不会跑
+//     （[Run] 只调 scansilent），所以没有第二道保险。
+//   · 只有仓库布局直接跑 install.bat 时才由 [4/4] 归一化。
+// 这里在 ssPostInstall 兜一刀，把结果做成确定的、与上面那种语义无关的：
+//   {app}\shims 在最前（才压得过 Oracle 的 javapath），{app}\bin 在最后。
+// 幂等：装几遍、装的是全新还是升级，结果都一样。
+procedure SetMachinePathOrder;
+var
+  OrigPath, NewPath, Rest, Seg, Shims, Bin: string;
+  P: Integer;
+begin
+  Shims := ExpandConstant('{app}\shims');
+  Bin := ExpandConstant('{app}\bin');
+  if not RegQueryStringValue(HKLM, EnvironmentKey, 'Path', OrigPath) then
+  begin
+    Log('SetMachinePathOrder: 读取 Path 失败，跳过');
+    Exit;
+  end;
+
+  NewPath := '';
+  Rest := OrigPath;
+  while Rest <> '' do
+  begin
+    P := Pos(';', Rest);
+    if P > 0 then
+    begin
+      Seg := Copy(Rest, 1, P - 1);
+      Delete(Rest, 1, P);
+    end
+    else
+    begin
+      Seg := Rest;
+      Rest := '';
+    end;
+    // 先把两条目标项摘掉，剩下的原样保留（含其他程序的项）
+    if (Seg <> '') and (NormalizeEntry(Seg) <> NormalizeEntry(Shims)) and
+       (NormalizeEntry(Seg) <> NormalizeEntry(Bin)) then
+    begin
+      if NewPath <> '' then
+        NewPath := NewPath + ';';
+      NewPath := NewPath + Seg;
+    end;
+  end;
+
+  if NewPath <> '' then
+    NewPath := Shims + ';' + NewPath + ';' + Bin
+  else
+    NewPath := Shims + ';' + Bin;
+
+  RegWriteExpandStringValue(HKLM, EnvironmentKey, 'Path', NewPath);
+  Log('SetMachinePathOrder: 已重排机器级 Path');
+end;
+
+// 安装收尾时兜住旧版遗留的用户级 PATH 项。
+// [Registry] 里对应的记录已经删掉，但老版本装过的机器上那条还在，而且
+// 用户 PATH 里指向一个已被 [InstallDelete] 删掉的目录。什么时候兜不住：
+// 旧卸载器没跑成（被手工删过 {app}），或跨多个版本直接跳升。这里补一刀。
+// 位置在 ssPostInstall：[Registry] 已经处理完，改的是另一个 hive，不冲突。
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+  begin
+    SetMachinePathOrder;
+    RemoveFromUserPath(ExpandConstant('{%USERPROFILE}\.devtools\@TOOL@\shims'));
+  end;
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   // 必须在 usPostUninstall：此时卸载器自身的注册表处理已经结束，
@@ -267,6 +341,7 @@ begin
   if CurUninstallStep = usUninstall then
   begin
     RemoveFromPath(ExpandConstant('{app}\bin'));
+    RemoveFromPath(ExpandConstant('{app}\shims'));
     RemoveFromUserPath(ExpandConstant('{%USERPROFILE}\.devtools\@TOOL@\shims'));
   end;
 end;

@@ -94,10 +94,23 @@ if not "!JTOOL_DEFAULT_VERSION!"=="" (
     set "version=!JTOOL_DEFAULT_VERSION!"
     shift /1
     goto :run_tool
-) else (
-    echo Error: need tool name and version
-    exit /b 1
 )
+
+REM No default configured. Bailing out here would break bare `java` for every
+REM user on the machine: the installed layout PREPENDS this tool's shims to the
+REM machine PATH, so this is exactly the path a plain `java` takes. Fall back to
+REM the highest version a directory NAME spells out. Directory names only, never
+REM a subprocess, so this cannot travel back out through a shim.
+call :best_dir_version version
+if not "!version!"=="" (
+    shift /1
+    goto :run_tool
+)
+
+echo Error: need tool name and version
+echo No default version is set and no JDK was found under !JAVA_BASE_DIR!
+echo Run: jtool use ^<version^>
+exit /b 1
 
 :run_tool
 call :resolve_jdk "!version!" jdk_home
@@ -187,6 +200,20 @@ exit /b 0
 if "%~2"=="" ( echo Error: specify a version & exit /b 1 )
 call :resolve_jdk "%~2" use_home
 if not defined use_home ( echo Error: JDK %~2 not found & exit /b 1 )
+
+REM The config directory is administrator-only (it decides which java.exe the
+REM machine-level shims run). Probe before writing so a non-elevated call gets a
+REM usable message instead of a raw "Access is denied" from cmd. Redirect first:
+REM the other order adds a trailing space to the probe file, which does not
+REM matter here but keeps the pattern consistent across the file.
+>"%CONFIG_DIR%\.write-probe" echo ok 2>nul
+if not exist "%CONFIG_DIR%\.write-probe" (
+    echo Error: cannot write %CONFIG_FILE%
+    echo Administrator privileges are required. Open an elevated CMD and run:
+    echo   jtool use %~2
+    exit /b 1
+)
+del "%CONFIG_DIR%\.write-probe" >nul 2>&1
 
 REM Update the config file
 findstr /v "JTOOL_DEFAULT_VERSION" "%CONFIG_FILE%" > "%CONFIG_FILE%.tmp"
@@ -477,8 +504,34 @@ REM ============================================
 REM shim
 REM ============================================
 :cmd_shim
+REM Installed layout puts the shims in %INSTALL_DIR%\shims, which the installer
+REM PREPENDS to the machine PATH. That is the whole point: the effective PATH is
+REM machine entries first and user entries after, so a shim living in the user
+REM PATH can never outrank Oracle's machine-level javapath. module\install.bat
+REM only exists after install.bat copied it there, so its presence is what tells
+REM the two layouts apart -- INSTALL_MODULE cannot, it falls back to the repo
+REM path and is therefore always defined.
+REM Repo layout keeps the per-user dir so a checkout stays usable without admin.
 set "SHIMS_DIR=%USERPROFILE%\.devtools\jtool\shims"
-if not exist "!SHIMS_DIR!" mkdir "!SHIMS_DIR!"
+set "SHIMS_SCOPE=user"
+if exist "%PROJECT_DIR%\module\install.bat" (
+    set "SHIMS_DIR=%PROJECT_DIR%\shims"
+    set "SHIMS_SCOPE=machine"
+)
+
+if not exist "!SHIMS_DIR!" mkdir "!SHIMS_DIR!" 2>nul
+
+REM Real write probe. mkdir can succeed and the write still fail (read-only
+REM dir, no admin), so the probe is what actually decides. Redirect first: the
+REM other order appends a trailing space to the file.
+>"!SHIMS_DIR!\.shim-probe" echo ok 2>nul
+if not exist "!SHIMS_DIR!\.shim-probe" (
+    echo Error: cannot write !SHIMS_DIR!
+    echo Administrator privileges are required. Open an elevated CMD and run:
+    echo   jtool shim
+    exit /b 1
+)
+del "!SHIMS_DIR!\.shim-probe" >nul 2>&1
 
 REM Shims are thin forwards; jtool resolves the JDK path itself, so the path
 REM logic lives only in :resolve_jdk and is never duplicated into each shim
@@ -498,8 +551,20 @@ for %%t in (java javac jar jshell javadoc javap) do (
 
 echo Shims created: !SHIMS_DIR!
 
-REM Make sure the shims dir is on the user PATH, otherwise a bare `java`
-REM resolves to the system JDK rather than the default version
+if "!SHIMS_SCOPE!"=="machine" (
+    REM Put on the machine PATH by the installer -- the Registry section in the
+    REM .iss and the 4th step in install.bat. Doing it here too would need admin
+    REM and would race the installer, so it is deliberately left out.
+    REM No brackets or parens in these comment lines on purpose: this is a
+    REM parenthesised block, and cmd counts a closing paren in a REM as ending
+    REM it.
+    echo Scope: machine ^(prepended to the machine PATH by the installer^)
+    exit /b 0
+)
+
+REM Repo layout: no installer involved, so place the dir on the user PATH here.
+REM This cannot outrank a machine-level java.exe, which is why the installed
+REM layout uses %INSTALL_DIR%\shims instead of this directory.
 powershell -NoProfile -Command "$d = Join-Path $env:USERPROFILE '.devtools\jtool\shims'; $p = [Environment]::GetEnvironmentVariable('Path','User'); $parts = @($p -split ';' | Where-Object { $_ -and ($_ -ne $d) }); [Environment]::SetEnvironmentVariable('Path', ($d + ';' + ($parts -join ';')).TrimEnd(';'), 'User'); Write-Output 'shims moved to front of user PATH'"
 exit /b 0
 
@@ -596,6 +661,61 @@ if not defined _NV exit /b 1
 if "!_NV:~-1!"=="." set "_NV=!_NV:~0,-1!"
 if not defined _NV exit /b 1
 set "%~2=!_NV!"
+exit /b 0
+
+REM ============================================
+REM Sortable score for a version string: major*10000 + minor*100 + patch
+REM   21 -> 210000    24 -> 240000    17.0.9 -> 170009    1.8.0 -> 10800
+REM so 24 outranks 1.8.0 and 21 outranks 17.0.9 -- what a human expects and
+REM what a plain string compare gets exactly backwards.
+REM The three components are initialised to 0 first and the loop only overwrites
+REM the ones that exist: an empty component would otherwise make `set /a` read a
+REM bare `*` and fail. Passing the NAMES to `set /a` (not the values) means an
+REM undefined name reads as 0 rather than raising an error.
+REM arg1 = version, arg2 = variable to receive the score
+REM ============================================
+:ver_score
+set "%~2=0"
+set "_SCORE=0"
+set "_SM=0"
+set "_SN=0"
+set "_SP=0"
+for /f "tokens=1,2,3 delims=." %%a in ("%~1") do (
+    if not "%%a"=="" set "_SM=%%a"
+    if not "%%b"=="" set "_SN=%%b"
+    if not "%%c"=="" set "_SP=%%c"
+)
+set /a "_SCORE=_SM*10000+_SN*100+_SP" >nul 2>&1
+set "%~2=!_SCORE!"
+exit /b 0
+
+REM ============================================
+REM Highest version spelled out by a directory name under JAVA_BASE_DIR
+REM Used as the runtime fallback when no default version is configured, so a
+REM machine whose config lost its default still resolves `java` instead of
+REM failing for every user. Directory names only -- no java run -- which keeps
+REM this off the shim -> jtool -> shim recursion path.
+REM arg1 = variable to receive the version; empty when none is usable
+REM ============================================
+:best_dir_version
+set "%~1="
+set "_BV="
+set "_BSCORE=-1"
+if "!JAVA_BASE_DIR!"=="" exit /b 1
+for /d %%d in ("!JAVA_BASE_DIR!\*") do (
+    call :jdk_home_of "%%d" _BH
+    if defined _BH (
+        call :jdk_name_version "%%~nxd" _BNV
+        if defined _BNV (
+            call :ver_score "!_BNV!" _BSC
+            if !_BSC! gtr !_BSCORE! (
+                set "_BSCORE=!_BSC!"
+                set "_BV=!_BNV!"
+            )
+        )
+    )
+)
+if defined _BV set "%~1=!_BV!"
 exit /b 0
 
 REM ============================================

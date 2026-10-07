@@ -32,6 +32,11 @@ if "%INSTALLED%"=="1" (
 set "BIN_DIR=%INSTALL_DIR%\bin"
 set "CONFIG_DIR=%INSTALL_DIR%\config"
 set "MODULE_DIR=%INSTALL_DIR%\module"
+REM Shim scripts live here, not under %USERPROFILE%. The installer prepends this
+REM directory to the machine PATH: the effective PATH is machine entries first
+REM and user entries after, so a user-level shims dir can never outrank the
+REM javapath Oracle writes into the machine PATH.
+set "SHIMS_DIR=%INSTALL_DIR%\shims"
 set "CONFIG_FILE=%CONFIG_DIR%\jtool.conf"
 
 REM ============================================
@@ -54,6 +59,7 @@ echo [1/4] Copying files...
 if not exist "%BIN_DIR%" mkdir "%BIN_DIR%"
 if not exist "%CONFIG_DIR%" mkdir "%CONFIG_DIR%"
 if not exist "%MODULE_DIR%" mkdir "%MODULE_DIR%"
+if not exist "%SHIMS_DIR%" mkdir "%SHIMS_DIR%"
 if "%INSTALLED%"=="1" (
     echo Installed layout, skip copying
 ) else (
@@ -66,8 +72,21 @@ echo Done
 echo.
 
 echo [2/4] Setting permissions...
+REM Deliberately NO write grant for anyone but administrators:
+REM   config  decides which java.exe the machine-level shims run, so a writable
+REM           config would let any user make an admin run an arbitrary binary.
+REM   shims   sits on the machine PATH, so a writable shims dir would let any
+REM           user replace a command the whole machine executes.
 icacls "%INSTALL_DIR%" /grant Everyone:(OI)(CI)RX >nul 2>&1
 icacls "%BIN_DIR%\jtool.bat" /grant Everyone:RX >nul 2>&1
+
+REM /reset, not a fresh /grant. The .iss used to ask for users-modify on config
+REM and dropping that line does NOT retract an ACE that is already on disk, so
+REM an upgraded machine would keep the old writable config. /reset throws the
+REM explicit ACEs away and lays down the inherited ones, which after the
+REM Everyone:RX grant above means: administrators write, users only read.
+icacls "%CONFIG_DIR%" /reset /T /C /Q >nul 2>&1
+icacls "%SHIMS_DIR%" /reset /T /C /Q >nul 2>&1
 echo Done
 echo.
 
@@ -78,9 +97,33 @@ call :write_version
 echo.
 
 echo [4/4] Configuring PATH...
-powershell -NoProfile -Command "$p=[Environment]::GetEnvironmentVariable('Path','User'); $add=@('%BIN_DIR%','%USERPROFILE%\.devtools\jtool\shims'); $chg=$false; foreach($d in $add){ if(-not ((';'+$p+';') -like ('*;'+$d+';*'))){ $p=($d+';'+$p.TrimStart(';')); $chg=$true } }; if($chg){ [Environment]::SetEnvironmentVariable('Path',$p,'User') }; Write-Output 'added to user PATH'"
+REM Machine scope, and shims FIRST. Order is the whole point: the effective PATH
+REM is machine entries + ';' + user entries, so anything user-level lands after
+REM every machine entry. Oracle drops javapath into the machine PATH, so old
+REM releases that prepended the shims to the USER PATH never won and bare `java`
+REM kept resolving to Oracle's. This rewrites the machine Path with %SHIMS_DIR%
+REM at the front, %BIN_DIR% at the back, and strips the legacy user-level entry.
+REM
+REM Written through the .NET registry API with an explicit ExpandString kind:
+REM SetEnvironmentVariable would leave the value kind up to the framework, and a
+REM machine Path that silently loses REG_EXPAND_SZ stops expanding %SystemRoot%.
+REM No '!' anywhere in this one-liner: delayed expansion would swallow it.
+powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $shim='%SHIMS_DIR%'; $bin='%BIN_DIR%'; $legacy='%USERPROFILE%\.devtools\jtool\shims'; function N($s){ $s.Trim().TrimEnd('\').ToUpperInvariant() }; $k=[Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('SYSTEM\CurrentControlSet\Control\Session Manager\Environment',$true); if($null -eq $k){ Write-Output 'NEED_ADMIN'; exit 3 }; $p=[string]$k.GetValue('Path',''); $keep=@($p -split ';' | Where-Object { $_ -and (N $_) -ne (N $shim) -and (N $_) -ne (N $bin) }); $k.SetValue('Path', ((@($shim)+$keep+@($bin)) -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString); $k.Close(); $u=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment',$true); if($u -and $null -ne $u.GetValue('Path')){ $up=[string]$u.GetValue('Path'); $ukeep=@($up -split ';' | Where-Object { $_ -and (N $_) -ne (N $legacy) }); $u.SetValue('Path', ($ukeep -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString); $u.Close() }; Write-Output 'OK'"
 
+REM Check the exit code: without this a failed write (no admin) would still fall
+REM through to the "Install complete" banner below, which is a lie.
+if !errorlevel! equ 3 (
+    echo Error: administrator privileges are required to update the machine PATH.
+    echo Right-click install.bat and choose "Run as administrator".
+    exit /b 1
+)
+if !errorlevel! neq 0 (
+    echo Error: failed to update the machine PATH, see the message above.
+    exit /b 1
+)
+echo Done
 echo.
+
 echo ========================================
 echo   Install complete!
 echo ========================================
@@ -211,12 +254,48 @@ REM ============================================
 if not exist "%CONFIG_DIR%" mkdir "%CONFIG_DIR%"
 if not defined found_dir set "found_dir=C:\Program Files\Java"
 
+REM Probe before writing. The config directory is administrator-only now, so a
+REM non-elevated run would otherwise die halfway through with whatever raw error
+REM cmd happens to print. Redirect first: the other order adds a trailing space.
+>"%CONFIG_DIR%\.write-probe" echo ok 2>nul
+if not exist "%CONFIG_DIR%\.write-probe" (
+    echo Error: cannot write %CONFIG_FILE%
+    echo Administrator privileges are required. Open an elevated CMD and run:
+    echo   install.bat scan
+    exit /b 1
+)
+del "%CONFIG_DIR%\.write-probe" >nul 2>&1
+
 set "KEEP_DEFAULT=# JTOOL_DEFAULT_VERSION="21""
 set "KEEP_VERSION=# JTOOL_VERSION="""
+set "HAS_DEFAULT="
 if exist "%CONFIG_FILE%" (
     for /f "usebackq tokens=1,* delims==" %%a in ("%CONFIG_FILE%") do (
-        if "%%a"=="JTOOL_DEFAULT_VERSION" set "KEEP_DEFAULT=%%a=%%b"
+        REM HAS_DEFAULT is an explicit flag on purpose: the shipped template line
+        REM is '# JTOOL_DEFAULT_VERSION="21"', so %%a is '# JTOOL_DEFAULT_VERSION'
+        REM and never matches here. Testing the string instead of a flag would
+        REM read that comment as a configured default.
+        if "%%a"=="JTOOL_DEFAULT_VERSION" ( set "KEEP_DEFAULT=%%a=%%b" & set "HAS_DEFAULT=1" )
         if "%%a"=="JTOOL_VERSION" set "KEEP_VERSION=%%a=%%b"
+    )
+)
+
+REM No default configured yet: choose one. The shims in %SHIMS_DIR% are
+REM prepended to the machine PATH, so without a default every bare `java` on this
+REM machine would have to fall through the runtime fallback in bin\jtool.bat.
+REM The highest version found is the least surprising choice. Never overwrites a
+REM default the user set -- HAS_DEFAULT guards that, so upgrades keep it.
+if not defined HAS_DEFAULT (
+    call :pick_best_version
+    if defined BEST_VERSION (
+        set "KEEP_DEFAULT=JTOOL_DEFAULT_VERSION="!BEST_VERSION!""
+        echo Auto-selected default version: !BEST_VERSION!
+        echo   from !found_dir!
+        echo   change it with: jtool use ^<version^>
+    ) else (
+        echo Warning: no JDK found under !found_dir!
+        echo   default version left unset; shims fall back to the highest
+        echo   version they find at run time
     )
 )
 
@@ -233,6 +312,58 @@ if exist "%CONFIG_FILE%" (
     echo !KEEP_VERSION!
 ) > "%CONFIG_FILE%"
 exit /b 0
+
+REM ============================================
+REM Sortable score for a version string: major*10000 + minor*100 + patch
+REM   21 -> 210000    24 -> 240000    17.0.9 -> 170009    1.8.0 -> 10800
+REM so 24 outranks 1.8.0 and 21 outranks 17.0.9 -- what a human expects and what
+REM a plain string compare gets exactly backwards.
+REM The three components are initialised to 0 first and the loop only overwrites
+REM the ones that exist: an empty component would otherwise make `set /a` read a
+REM bare `*` and fail. Passing the NAMES to `set /a` (not the values) means an
+REM undefined name reads as 0 rather than raising an error.
+REM arg1 = version, arg2 = variable to receive the score
+REM ============================================
+:ver_score
+set "%~2=0"
+set "_SCORE=0"
+set "_SM=0"
+set "_SN=0"
+set "_SP=0"
+for /f "tokens=1,2,3 delims=." %%a in ("%~1") do (
+    if not "%%a"=="" set "_SM=%%a"
+    if not "%%b"=="" set "_SN=%%b"
+    if not "%%c"=="" set "_SP=%%c"
+)
+set /a "_SCORE=_SM*10000+_SN*100+_SP" >nul 2>&1
+set "%~2=!_SCORE!"
+exit /b 0
+
+REM ============================================
+REM Highest version a JDK directory name under found_dir spells out.
+REM Directory names only, no java run: this feeds the default version, and a
+REM default is also what bin\jtool.bat falls back to at run time, so it must
+REM know only what :jdk_name_version knows -- otherwise the two would disagree.
+REM Sets BEST_VERSION; leaves it empty when nothing usable is found.
+REM ============================================
+:pick_best_version
+set "BEST_VERSION="
+set "_BSCORE=-1"
+if not exist "!found_dir!" exit /b 1
+for /d %%d in ("!found_dir!\*") do (
+    if exist "%%d\bin\java.exe" (
+        call :jdk_name_version "%%~nxd" _PV
+        if defined _PV (
+            call :ver_score "!_PV!" _PSC
+            if !_PSC! gtr !_BSCORE! (
+                set "_BSCORE=!_PSC!"
+                set "BEST_VERSION=!_PV!"
+            )
+        )
+    )
+)
+if defined BEST_VERSION exit /b 0
+exit /b 1
 
 REM ============================================
 REM Record jtool version
