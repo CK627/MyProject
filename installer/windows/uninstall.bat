@@ -2,19 +2,19 @@
 chcp 65001 >nul 2>&1
 setlocal enabledelayedexpansion
 
-REM jtool 卸载脚本 (Windows)
+REM jtool uninstaller (Windows)
 
 echo ========================================
-echo   jtool 卸载程序 (Windows)
+echo   jtool uninstaller (Windows)
 echo ========================================
 echo.
 
 REM ============================================
-REM 确认卸载
+REM Confirm uninstall
 REM ============================================
-set /p "confirm=确定要卸载 jtool 吗？(y/n): "
+set /p "confirm=Uninstall jtool? (y/n): "
 if /i not "!confirm!"=="y" (
-    echo 已取消
+    echo Cancelled
     pause
     exit /b 0
 )
@@ -22,44 +22,44 @@ if /i not "!confirm!"=="y" (
 echo.
 
 REM ============================================
-REM 删除安装目录
+REM Remove install dir
 REM ============================================
 set "INSTALL_DIR=C:\Program Files\devtools\jtool"
 
 if exist "%INSTALL_DIR%" (
     rmdir /s /q "%INSTALL_DIR%"
-    echo [完成] 已删除 %INSTALL_DIR%
+    echo [Done] Removed %INSTALL_DIR%
 ) else (
-    echo [跳过] 安装目录不存在
+    echo [Skip] Install dir not found
 )
 
 echo.
 
 REM ============================================
-REM 删除配置文件
+REM Remove config file
 REM ============================================
 set "CONFIG_FILE=%USERPROFILE%\.jtool.conf"
 
 if exist "%CONFIG_FILE%" (
-    set /p "keep_config=是否保留配置文件？(y/n): "
+    set /p "keep_config=Keep config file? (y/n): "
     if /i "!keep_config!"=="y" (
-        echo [跳过] 保留配置文件 %CONFIG_FILE%
+        echo [Skip] Kept config file %CONFIG_FILE%
     ) else (
         del "%CONFIG_FILE%"
-        echo [完成] 已删除 %CONFIG_FILE%
+        echo [Done] Removed %CONFIG_FILE%
     )
 ) else (
-    echo [跳过] 配置文件不存在
+    echo [Skip] Config file not found
 )
 
 echo.
 
 REM ============================================
-REM 清理环境变量
+REM Clean up environment
 REM ============================================
-echo [环境] 清理 PATH...
+echo [Env] Cleaning PATH...
 
-REM 从用户 PATH 中移除
+REM Strip from the user PATH
 for /f "tokens=2*" %%a in ('reg query "HKCU\Environment" /v Path 2^>nul') do (
     set "user_path=%%b"
     if defined user_path (
@@ -67,19 +67,19 @@ for /f "tokens=2*" %%a in ('reg query "HKCU\Environment" /v Path 2^>nul') do (
         set "user_path=!user_path:%INSTALL_DIR%\bin;=!"
         set "user_path=!user_path:%INSTALL_DIR%\bin=!"
         reg add "HKCU\Environment" /v Path /t REG_EXPAND_SZ /d "!user_path!" /f >nul 2>&1
-        echo [完成] 已从用户 PATH 中移除
+        echo [Done] Removed from user PATH
     )
 )
 
 echo.
 
 REM ============================================
-REM 卸载完成
+REM Uninstall complete
 REM ============================================
 echo ========================================
-echo   卸载完成！
+echo   Uninstall complete!
 echo ========================================
 echo.
-echo 请重新打开 CMD 窗口使环境变量生效。
+echo Please reopen a CMD window for the PATH change to take effect.
 echo.
 pause

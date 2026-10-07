@@ -2,31 +2,31 @@
 chcp 65001 >nul 2>&1
 setlocal enabledelayedexpansion
 
-REM jtool - 统一 Java 版本管理工具 (Windows)
+REM jtool - Java version manager for Windows
 
 REM ============================================
-REM 路径
+REM Paths
 REM ============================================
 set "SCRIPT_DIR=%~dp0"
 set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
 for %%i in ("%SCRIPT_DIR%\..") do set "PROJECT_DIR=%%~fi"
 set "CONFIG_FILE=%PROJECT_DIR%\config\jtool.conf"
 
-REM 安装路径由脚本自身位置推导，不再写死 C:\Program Files\devtools\jtool。
-REM 安装包可能装到 Program Files 或 Program Files (x86)（取决于安装器的
-REM 位数模式），写死会导致 update 往不存在的路径写。
+REM Install path is derived from the script location, not hardcoded.
+REM The installer may target Program Files or Program Files x86,
+REM depending on installer bitness; a hardcoded path breaks update.
 set "INSTALL_DIR=%PROJECT_DIR%"
 set "BIN_DIR=%INSTALL_DIR%\bin"
 set "CONFIG_DIR=%INSTALL_DIR%\config"
 set "MODULE_DIR=%INSTALL_DIR%\module"
 
-REM 查找 install.bat：已安装布局 → 仓库布局 → 旧版根目录
+REM Locate install.bat: installed layout, repo layout, legacy root
 set "INSTALL_MODULE=%PROJECT_DIR%\module\install.bat"
 if not exist "%INSTALL_MODULE%" set "INSTALL_MODULE=%PROJECT_DIR%\installer\windows\install.bat"
 if not exist "%INSTALL_MODULE%" set "INSTALL_MODULE=%PROJECT_DIR%\install.bat"
 
 REM ============================================
-REM 加载配置
+REM Load config
 REM ============================================
 set "JAVA_BASE_DIR="
 set "JTOOL_DEFAULT_VERSION="
@@ -44,7 +44,7 @@ if exist "%CONFIG_FILE%" (
 )
 
 REM ============================================
-REM 主逻辑
+REM Main dispatch
 REM ============================================
 if "%~1"=="" goto :show_help
 
@@ -65,7 +65,7 @@ if "%~1"=="update" goto :cmd_update
 if "%~1"=="uninstall" goto :cmd_uninstall
 if "%~1"=="shim" goto :cmd_shim
 
-REM 运行工具
+REM Run a tool
 set "tool=%~1"
 if "!JAVA_BASE_DIR!"=="" (
     echo Error: JAVA_BASE_DIR not set
@@ -75,8 +75,10 @@ if "!JAVA_BASE_DIR!"=="" (
 
 set "version=%~2"
 
-REM 版本号总是数字开头；若第二个参数缺失、或以 - / 开头（是参数不是版本号），
-REM 则用默认版本。shim 转发 `java -version` 就是「工具 + 参数、无版本号」的形式。
+REM A version always starts with a digit; a missing second argument, or one
+REM starting with - or /, is an argument rather than a version, so fall back
+REM to the default version. A shim forwarding `java -version` is exactly this
+REM shape: tool plus argument, no version.
 if "!version!"=="" goto :use_default_version
 set "_vfirst=!version:~0,1!"
 if "!_vfirst!"=="-" goto :use_default_version
@@ -97,8 +99,13 @@ if not "!JTOOL_DEFAULT_VERSION!"=="" (
 )
 
 :run_tool
-if "!version!"=="8" set "version=1.8"
-set "jdk_home=!JAVA_BASE_DIR!\jdk-!version!.jdk\Contents\Home"
+call :resolve_jdk "!version!" jdk_home
+if not defined jdk_home (
+    echo Error: JDK !version! not found
+    echo Base dir: !JAVA_BASE_DIR!
+    echo Run "jtool scan" or fix JAVA_BASE_DIR
+    exit /b 1
+)
 set "tool_path=!jdk_home!\bin\!tool!"
 
 if not exist "!tool_path!.exe" (
@@ -108,7 +115,8 @@ if not exist "!tool_path!.exe" (
     )
 )
 
-REM %* 不随 shift 变化，会带上工具名和版本号，这里重新拼接剩余参数
+REM %* does not change with shift; it still carries the tool name and version,
+REM so the remaining arguments are rebuilt here
 set "TOOL_ARGS="
 :collect_args
 if "%~1"=="" goto :args_ready
@@ -117,11 +125,11 @@ shift /1
 goto :collect_args
 :args_ready
 
-!tool_path! !TOOL_ARGS!
+"!tool_path!" !TOOL_ARGS!
 exit /b !errorlevel!
 
 REM ============================================
-REM 列出 JDK
+REM List JDKs
 REM ============================================
 :list_jdks
 if "!JAVA_BASE_DIR!"=="" (
@@ -134,20 +142,13 @@ echo Java path: !JAVA_BASE_DIR!
 echo.
 echo Installed JDKs:
 set "found=0"
-for /d %%d in ("!JAVA_BASE_DIR!\jdk-*") do (
-    if exist "%%d\Contents\Home\bin\java.exe" (
+for /d %%d in ("!JAVA_BASE_DIR!\jdk*") do (
+    call :jdk_home_of "%%d" _LH
+    if defined _LH (
         set "dirname=%%~nxd"
         set "ver=!dirname:jdk-=!"
         set "ver=!ver:.jdk=!"
-        for /f "tokens=*" %%v in ('"%%d\Contents\Home\bin\java.exe" -version 2^>^&1 ^| findstr /i "version"') do (
-            echo   !ver! - %%v
-            set "found=1"
-        )
-    )
-    if exist "%%d\bin\java.exe" (
-        set "dirname=%%~nxd"
-        set "ver=!dirname:jdk-=!"
-        for /f "tokens=*" %%v in ('"%%d\bin\java.exe" -version 2^>^&1 ^| findstr /i "version"') do (
+        for /f "tokens=*" %%v in ('"!_LH!\bin\java.exe" -version 2^>^&1 ^| findstr /i version') do (
             echo   !ver! - %%v
             set "found=1"
         )
@@ -159,7 +160,7 @@ if not "!JTOOL_DEFAULT_VERSION!"=="" echo Default: !JTOOL_DEFAULT_VERSION!
 exit /b 0
 
 REM ============================================
-REM 帮助
+REM Help
 REM ============================================
 :show_help
 echo jtool - Java version manager for Windows
@@ -180,15 +181,14 @@ echo   jtool update                        Check and update
 echo   jtool uninstall [-y]                Uninstall (-y silent)
 echo   jtool shim                          Rebuild shims
 echo   jtool help                          Show help
+exit /b 0
 
 :cmd_use
 if "%~2"=="" ( echo Error: specify a version & exit /b 1 )
-set "use_ver=%~2"
-if "!use_ver!"=="8" set "use_ver=1.8"
-set "use_home=!JAVA_BASE_DIR!\jdk-!use_ver!.jdk\Contents\Home"
-if not exist "!use_home!" ( echo Error: JDK %~2 not found & exit /b 1 )
+call :resolve_jdk "%~2" use_home
+if not defined use_home ( echo Error: JDK %~2 not found & exit /b 1 )
 
-REM 更新配置文件
+REM Update the config file
 findstr /v "JTOOL_DEFAULT_VERSION" "%CONFIG_FILE%" > "%CONFIG_FILE%.tmp"
 echo JTOOL_DEFAULT_VERSION="%~2" >> "%CONFIG_FILE%.tmp"
 move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
@@ -202,10 +202,13 @@ REM current
 REM ============================================
 :cmd_current
 if "!JTOOL_DEFAULT_VERSION!"=="" ( echo No default version & exit /b 1 )
-set "cur_ver=!JTOOL_DEFAULT_VERSION!"
-if "!cur_ver!"=="8" set "cur_ver=1.8"
+call :resolve_jdk "!JTOOL_DEFAULT_VERSION!" cur_home
 echo Default: !JTOOL_DEFAULT_VERSION!
-echo JAVA_HOME: !JAVA_BASE_DIR!\jdk-!cur_ver!.jdk\Contents\Home
+if defined cur_home (
+    echo JAVA_HOME: !cur_home!
+) else (
+    echo JAVA_HOME: not found, run jtool scan
+)
 exit /b 0
 
 REM ============================================
@@ -213,10 +216,8 @@ REM home
 REM ============================================
 :cmd_home
 if "%~2"=="" ( echo Error: specify a version & exit /b 1 )
-set "home_ver=%~2"
-if "!home_ver!"=="8" set "home_ver=1.8"
-set "home_path=!JAVA_BASE_DIR!\jdk-!home_ver!.jdk\Contents\Home"
-if not exist "!home_path!" ( echo Error: JDK %~2 not found & exit /b 1 )
+call :resolve_jdk "%~2" home_path
+if not defined home_path ( echo Error: JDK %~2 not found & exit /b 1 )
 echo !home_path!
 exit /b 0
 
@@ -225,10 +226,8 @@ REM info
 REM ============================================
 :cmd_info
 if "%~2"=="" ( echo Error: specify a version & exit /b 1 )
-set "info_ver=%~2"
-if "!info_ver!"=="8" set "info_ver=1.8"
-set "info_home=!JAVA_BASE_DIR!\jdk-!info_ver!.jdk\Contents\Home"
-if not exist "!info_home!" ( echo Error: JDK %~2 not found & exit /b 1 )
+call :resolve_jdk "%~2" info_home
+if not defined info_home ( echo Error: JDK %~2 not found & exit /b 1 )
 echo === JDK %~2 ===
 echo JAVA_HOME: !info_home!
 echo.
@@ -243,10 +242,8 @@ REM tools
 REM ============================================
 :cmd_tools
 if "%~2"=="" ( echo Error: specify a version & exit /b 1 )
-set "tools_ver=%~2"
-if "!tools_ver!"=="8" set "tools_ver=1.8"
-set "tools_home=!JAVA_BASE_DIR!\jdk-!tools_ver!.jdk\Contents\Home"
-if not exist "!tools_home!" ( echo Error: JDK %~2 not found & exit /b 1 )
+call :resolve_jdk "%~2" tools_home
+if not defined tools_home ( echo Error: JDK %~2 not found & exit /b 1 )
 echo JDK %~2 tools:
 for %%f in ("!tools_home!\bin\*") do echo   %%~nxf
 exit /b 0
@@ -257,12 +254,10 @@ REM ============================================
 :cmd_run
 if "%~2"=="" ( echo Error: specify a version & exit /b 1 )
 if "%~3"=="" ( echo Error: specify a file & exit /b 1 )
-set "run_ver=%~2"
 set "java_file=%~3"
 if not exist "!java_file!" ( echo Error: file not found & exit /b 1 )
-if "!run_ver!"=="8" set "run_ver=1.8"
-set "run_home=!JAVA_BASE_DIR!\jdk-!run_ver!.jdk\Contents\Home"
-if not exist "!run_home!" ( echo Error: JDK %~2 not found & exit /b 1 )
+call :resolve_jdk "%~2" run_home
+if not defined run_home ( echo Error: JDK %~2 not found & exit /b 1 )
 
 for %%f in ("!java_file!") do set "class_name=%%~nf"
 echo === Compile (JDK %~2) ===
@@ -302,7 +297,7 @@ REM ============================================
 REM update
 REM ============================================
 :cmd_update
-REM 写安装目录需要管理员权限，非管理员时自动请求提权（弹 UAC）
+REM Writing to the install dir needs admin; request elevation when not admin
 net session >nul 2>&1
 if !errorlevel! neq 0 (
     echo update needs admin, requesting elevation...
@@ -482,41 +477,141 @@ REM ============================================
 set "SHIMS_DIR=%USERPROFILE%\.devtools\jtool\shims"
 if not exist "!SHIMS_DIR!" mkdir "!SHIMS_DIR!"
 
+REM Shims are thin forwards; jtool resolves the JDK path itself, so the path
+REM logic lives only in :resolve_jdk and is never duplicated into each shim
 for %%t in (java javac jar jshell javadoc javap) do (
     (
         echo @echo off
         echo REM jtool shim - auto generated
-        echo set "CONFIG_FILE=%CONFIG_FILE%"
-        echo set "JAVA_BASE_DIR="
-        echo set "JTOOL_DEFAULT_VERSION="
-        echo if exist "%%CONFIG_FILE%%" ^(
-        echo     for /f "usebackq tokens=1,* delims==" %%%%a in ^("%%CONFIG_FILE%%"^) do ^(
-        echo         set "key=%%%%a"
-        echo         set "val=%%%%b"
-        echo         if not "!key:~0,1!"=="#" if not "!key!"=="" ^(
-        echo             set "val=!val:"=!"
-        echo             if "!key!"=="JAVA_BASE_DIR" set "JAVA_BASE_DIR=!val!"
-        echo             if "!key!"=="JTOOL_DEFAULT_VERSION" set "JTOOL_DEFAULT_VERSION=!val!"
-        echo         ^)
-        echo     ^)
-        echo ^)
-        echo if "!JTOOL_DEFAULT_VERSION!"=="" ^(
-        echo     echo jtool: no default version, run jtool use ^<version^>
+        echo set "CONFIG_FILE=!CONFIG_FILE!"
+        echo for %%%%i in ^("%%CONFIG_FILE%%\..\.."^) do set "JTOOL_ROOT=%%%%~fi"
+        echo if not exist "%%JTOOL_ROOT%%\bin\jtool.bat" ^(
+        echo     echo jtool: %%JTOOL_ROOT%%\bin\jtool.bat not found ^>^&2
         echo     exit /b 1
         echo ^)
-        echo set "VER=!JTOOL_DEFAULT_VERSION!"
-        echo if "!VER!"=="8" set "VER=1.8"
-        echo set "JDK_HOME=!JAVA_BASE_DIR!\jdk-!VER!.jdk\Contents\Home"
-        echo if not exist "!JDK_HOME!\bin\%%t.exe" ^(
-        echo     echo jtool: JDK !JTOOL_DEFAULT_VERSION! has no %%t
-        echo     exit /b 1
-        echo ^)
-        echo "!JDK_HOME!\bin\%%t.exe" %%*
+        echo "%%JTOOL_ROOT%%\bin\jtool.bat" %%t %%*
     ) > "!SHIMS_DIR!\%%t.bat"
 )
 
 echo Shims created: !SHIMS_DIR!
 
-REM 确保 shims 目录在用户 PATH（否则 `java` 走系统 Java，不用默认版本）
+REM Make sure the shims dir is on the user PATH, otherwise a bare `java`
+REM resolves to the system JDK rather than the default version
 powershell -NoProfile -Command "$d = Join-Path $env:USERPROFILE '.devtools\jtool\shims'; $p = [Environment]::GetEnvironmentVariable('Path','User'); $parts = @($p -split ';' | Where-Object { $_ -and ($_ -ne $d) }); [Environment]::SetEnvironmentVariable('Path', ($d + ';' + ($parts -join ';')).TrimEnd(';'), 'User'); Write-Output 'shims moved to front of user PATH'"
+exit /b 0
+
+REM ============================================
+REM Resolve a version to its JDK home
+REM
+REM Fast path: deterministic candidates, tried in order, no subprocess.
+REM Fallback: scan JAVA_BASE_DIR for jdk* dirs, read the real version from
+REM java -version, and match on it. This is what makes jdk-21.0.1 or
+REM jdk1.8.0_392 findable; the fast path keeps the common names cheap.
+REM
+REM arg1 = version, arg2 = variable to receive the home; empty if not found
+REM ============================================
+:resolve_jdk
+set "%~2="
+set "_JVER=%~1"
+if "!_JVER!"=="" exit /b 1
+if "!JAVA_BASE_DIR!"=="" exit /b 1
+if "!_JVER!"=="8" set "_JVER=1.8"
+
+REM Fast path: known layouts first, no java run
+call :jdk_home_of "!JAVA_BASE_DIR!\jdk-!_JVER!.jdk" _JH
+if defined _JH ( set "%~2=!_JH!" & exit /b 0 )
+call :jdk_home_of "!JAVA_BASE_DIR!\jdk-!_JVER!" _JH
+if defined _JH ( set "%~2=!_JH!" & exit /b 0 )
+call :jdk_home_of "!JAVA_BASE_DIR!\!_JVER!.jdk" _JH
+if defined _JH ( set "%~2=!_JH!" & exit /b 0 )
+call :jdk_home_of "!JAVA_BASE_DIR!\!_JVER!" _JH
+if defined _JH ( set "%~2=!_JH!" & exit /b 0 )
+
+REM Fallback: scan and match on the real version reported by java
+for /d %%d in ("!JAVA_BASE_DIR!\jdk*") do (
+    call :jdk_home_of "%%d" _JH
+    if defined _JH (
+        call :jdk_version_matches "!_JVER!" "%%d" _OK
+        if "!_OK!"=="1" (
+            set "%~2=!_JH!"
+            exit /b 0
+        )
+    )
+)
+exit /b 1
+
+REM ============================================
+REM Candidate dir to JDK home: bundle layout first, then flat
+REM arg1 = candidate dir, arg2 = variable to receive the home
+REM ============================================
+:jdk_home_of
+set "%~2="
+if exist "%~1\Contents\Home\bin\java.exe" ( set "%~2=%~1\Contents\Home" & exit /b 0 )
+if exist "%~1\bin\java.exe" ( set "%~2=%~1" & exit /b 0 )
+exit /b 1
+
+REM ============================================
+REM Real version reported by the JDK in a dir; 1.8.0_491 becomes 1.8
+REM arg1 = candidate dir, arg2 = variable to receive the version
+REM ============================================
+:jdk_real_version
+set "%~2="
+call :jdk_home_of "%~1" _RJH
+if not defined _RJH exit /b 1
+set "_RV="
+for /f "tokens=3" %%v in ('"!_RJH!\bin\java.exe" -version 2^>^&1 ^| findstr /i version') do (
+    if not defined _RV set "_RV=%%~v"
+)
+if not defined _RV (
+    set "_RJH="
+    exit /b 1
+)
+if "!_RV:~0,2!"=="1." (
+    for /f "tokens=1,2 delims=." %%a in ("!_RV!") do set "_RV=%%a.%%b"
+)
+set "%~2=!_RV!"
+set "_RJH="
+exit /b 0
+
+REM ============================================
+REM Do two version strings refer to the same JDK?
+REM Exact match, or the requested one is a dotted component prefix of the
+REM real one: 21 matches 21.0.1, and 1.8 matches 1.8.0_491
+REM arg1 = requested, arg2 = candidate dir, arg3 = variable set to 1 on match
+REM ============================================
+:jdk_version_matches
+set "%~3=0"
+call :jdk_real_version "%~2" _REAL
+if not defined _REAL exit /b 0
+
+set "_req=%~1"
+if "!_req!"=="8" set "_req=1.8"
+if "!_req!"=="" ( set "_REAL=" & exit /b 0 )
+if "!_req!"=="_REAL" ( set "%~3=1" & set "_REAL=" & exit /b 0 )
+
+REM Compare only the dotted components the request actually pins, so 21
+REM matches 21.0.7 and 1.8 matches 1.8.0_392, while 21.0.1 does not match
+REM 21.0.7. Empty request components are skipped rather than compared.
+set "_qa="
+set "_qb="
+set "_qc="
+for /f "tokens=1,2,3 delims=._" %%a in ("!_req!") do (
+    set "_qa=%%a"
+    set "_qb=%%b"
+    set "_qc=%%c"
+)
+set "_ra="
+set "_rb="
+set "_rc="
+for /f "tokens=1,2,3 delims=._" %%a in ("!_REAL!") do (
+    set "_ra=%%a"
+    set "_rb=%%b"
+    set "_rc=%%c"
+)
+set "_REAL="
+
+if not "!_qa!"=="!_ra!" exit /b 0
+if defined _qb if not "!_qb!"=="!_rb!" exit /b 0
+if defined _qc if not "!_qc!"=="!_rc!" exit /b 0
+set "%~3=1"
 exit /b 0

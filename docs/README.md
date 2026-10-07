@@ -18,7 +18,8 @@ Windows（PowerShell）：
 irm https://raw.githubusercontent.com/CK627/MyProject/jtool/installer/install.ps1 | iex
 ```
 
-macOS 下载最新 Release 的 `.pkg` 安装；Linux 下载源码安装；Windows 下载 `.exe` 静默安装。
+macOS 下载最新 Release 的 `.dmg`（内含 `.pkg`，双击安装）；Linux 下载 `.tar.gz` 解压后安装；
+Windows 下载 `.exe` 静默安装。
 
 ### macOS / Linux
 
@@ -63,6 +64,7 @@ cd /path/to/jtool
 - 🚀 一行命令运行任意版本的 Java 工具
 - 🔄 快速切换默认 Java 版本
 - 📂 配置驱动，支持自定义 Java 安装路径
+- 🔍 自动识别 JDK 目录布局（macOS bundle / Linux 平铺 / 非标准命名）
 - 🖥️ 跨平台：macOS / Linux / Windows
 - 📦 零依赖，无需安装额外软件
 
@@ -196,24 +198,42 @@ JAVA_BASE_DIR="/Library/Java/JavaVirtualMachines"
 # JTOOL_DEFAULT_VERSION="21"
 
 # jtool 版本（由 install / update 维护，请勿手动修改）
-JTOOL_VERSION="2.1.0"
+JTOOL_VERSION="2.2.11"
 ```
 
-> jtool 以 `JAVA_BASE_DIR` 作为唯一基准目录，按 `jdk-<版本>.jdk/Contents/Home` 拼接 JDK 路径
-> （Linux 下为 `jdk-<版本>`）。若 JDK 装在别处（如 Eclipse Adoptium、SDKMAN），
-> 执行 `jtool scan` 后手动修改 `JAVA_BASE_DIR` 即可。
+> jtool 以 `JAVA_BASE_DIR` 作为唯一基准目录，并**按目录的真实布局**解析 JDK 路径，分两段：
+>
+> 1. **快路径**（不启动 java）：按序试 `<base>/jdk-<版本>.jdk`（macOS）、`<base>/jdk-<版本>`
+>    （Linux / Windows）、`<base>/<版本>`，取其中有 `bin/java` 的那个作为 JDK home。
+>    macOS 的 bundle 布局会自动落到其 `Contents/Home`。
+> 2. **回落**（自动探测）：快路径都没命中时，扫描 `<base>/jdk*`，对每个候选执行
+>    `java -version` 读出**真实版本号**再匹配——这样 `jdk-21.0.1`、`jdk1.8.0_392`
+>    这类不规范的名字也能被 `jtool use 21` / `jtool use 8` 命中。
+>
+> 常规命名（`jdk-21`、`jdk-21.jdk`）在第一段就结束，**不会额外启动进程**，所以 `java` shim
+> 这类热路径没有探测开销。
+>
+> 若 JDK 装在别处（如 Eclipse Adoptium、SDKMAN），执行 `jtool scan` 后手动修改
+> `JAVA_BASE_DIR` 即可。
 
 ## 版本号说明
 
-| 输入版本 | 实际 JDK 目录 |
-|----------|---------------|
-| `8` | `jdk-1.8.jdk` |
-| `11` | `jdk-11.jdk` |
-| `17` | `jdk-17.jdk` |
-| `21` | `jdk-21.jdk` |
-| `26` | `jdk-26.jdk` |
+输入版本会先归一化，再按上面的两段解析去找目录：
 
-> 版本号 `8` 会自动映射为 `1.8`，其他版本直接使用。
+| 输入版本 | 可能命中的目录 | 说明 |
+|----------|----------------|------|
+| `8` | `jdk-1.8.jdk`、`jdk1.8.0_392` | `8` 自动映射为 `1.8` |
+| `11` | `jdk-11.jdk`、`jdk-11.0.20` | 直接匹配 |
+| `17` | `jdk-17.jdk`、`jdk-17.0.9` | 直接匹配 |
+| `21` | `jdk-21.jdk`、`jdk-21.0.1` | 前缀匹配：`21` 命中 `21.x.y` |
+| `26` | `jdk-26.jdk` | 直接匹配 |
+
+> **前缀匹配**：版本号可以只写到主版本，`21` 能命中真实版本 `21.0.7`；
+> 但写全了就按全的比，`21.0.1` **不会**命中 `21.0.7`。
+>
+> `jtool list` 显示的版本号取自**目录名**，`jtool use` 接受的版本号则按上表匹配。
+> 目录名不规范时两者字面可能不同——例如目录叫 `jdk-21.0.1` 时 `list` 显示 `21.0.1`，
+> 而 `jtool use 21` 一样能命中，属预期行为。
 
 ## 在脚本中使用
 
@@ -254,8 +274,9 @@ jtool/
 │   ├── install.sh              # 一键安装（macOS / Linux）
 │   ├── install.ps1             # 一键安装（Windows）
 │   ├── install-from-source.sh  # 从源码安装 / 卸载（macOS / Linux）
+│   ├── linux-build.sh          # 打 Linux .tar.gz 安装包
 │   ├── macos/
-│   │   ├── build.sh            # 打包 .pkg / .dmg
+│   │   ├── build.sh            # 打包 .pkg / .dmg（.pkg 打进 dmg，不单独发布）
 │   │   ├── distribution.xml.in
 │   │   ├── postinstall.in
 │   │   └── uninstall.in

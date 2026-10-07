@@ -44,15 +44,19 @@ load_config() {
 
 # ============================================
 # 拼接 JDK 路径
+#
+# 实现收敛在 module/common.sh 的 do_resolve_jdk_home（快路径 + 自动探测回落），
+# 这里只是转发，避免路径逻辑在多处重复。
 # ============================================
 get_jdk_home() {
-    local version="$1"
-    [ "$version" = "8" ] && version="1.8"
-    echo "$JAVA_BASE_DIR/jdk-$version.jdk/Contents/Home"
+    do_resolve_jdk_home "$1"
 }
 
 # ============================================
 # 列出所有已安装的 JDK
+#
+# 枚举走 module/common.sh 的 do_list_jdk_dirs（与 scan 共用），
+# 认 macOS 的 jdk-<v>.jdk 与 Linux 的平铺 jdk-<v> 两种布局。
 # ============================================
 list_jdks() {
     echo "Java 路径: $JAVA_BASE_DIR"
@@ -60,17 +64,11 @@ list_jdks() {
     echo "已安装的 JDK:"
 
     local entries=""
-    for dir in "$JAVA_BASE_DIR"/jdk-*.jdk; do
-        [ -d "$dir" ] || continue
-        [ -f "$dir/Contents/Home/bin/java" ] || continue
-
-        local version
-        version=$(basename "$dir" | sed 's/jdk-//;s/\.jdk//')
-        local real_version
-        real_version=$("$dir/Contents/Home/bin/java" -version 2>&1 | head -1)
-
-        entries="${entries}  $version - $real_version"$'\n'
-    done
+    local version home first_line
+    while IFS=$'\t' read -r version home first_line; do
+        [ -n "$version" ] || continue
+        entries="${entries}  $version - $first_line"$'\n'
+    done < <(do_list_jdk_dirs)
 
     if [ -z "$entries" ]; then
         echo "  (未找到)"
@@ -265,7 +263,11 @@ esac
 
 # 运行工具
 tool="$1"
-if [ $# -lt 2 ]; then
+
+# 版本号总是数字开头；若第二个参数缺失、或以 - / 开头（是参数不是版本号），
+# 则用默认版本。shim 转发 `java -version` 就是「工具 + 参数、无版本号」的形式。
+# 与 bin/jtool.bat 的同类判断保持一致。
+if [ $# -lt 2 ] || [ "${2#[-/]}" != "$2" ]; then
     if [ -n "$JTOOL_DEFAULT_VERSION" ]; then
         version="$JTOOL_DEFAULT_VERSION"
         shift 1

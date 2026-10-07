@@ -23,6 +23,116 @@ get_install_dir() {
 }
 
 # ============================================
+# JDK 路径解析（全平台唯一实现）
+#
+# 版本号 -> JDK home，分两段：
+#   1. 快路径：按序试确定性候选，命中即返回（不执行 java）
+#   2. 回落：扫 JAVA_BASE_DIR 下的 jdk* 目录，跑 java -version 取真实版本再匹配
+#
+# 快路径覆盖常规命名（jdk-21、jdk-21.jdk），所以 java shim 这类热路径不会起子进程；
+# 只有 jdk-21.0.1 / jdk1.8.0_392 这种异常命名才付出一次探测成本。
+# ============================================
+
+# 候选目录 -> JDK home：优先 macOS bundle 布局，其次平铺布局
+_jdk_home_of_dir() {
+    local dir="$1"
+    if [ -x "$dir/Contents/Home/bin/java" ]; then
+        echo "$dir/Contents/Home"
+        return 0
+    fi
+    if [ -x "$dir/bin/java" ]; then
+        echo "$dir"
+        return 0
+    fi
+    return 1
+}
+
+# JDK home -> 真实版本号（21.0.1 -> 21.0.1，1.8.0_392 -> 1.8）
+_jdk_real_version() {
+    local home="$1"
+    local raw
+    raw=$("$home/bin/java" -version 2>&1 | head -1 | sed -n 's/.*version "\([^"]*\)".*/\1/p')
+    [ -n "$raw" ] || return 1
+    case "$raw" in
+        1.*) echo "${raw%.*}" | cut -d. -f1,2 ;;
+        *)   echo "$raw" ;;
+    esac
+}
+
+# 请求版本 req 是否命中真实版本 real
+_jdk_version_matches() {
+    local req="$1" real="$2"
+    [ "$req" = "8" ] && req="1.8"
+    [ "$req" = "$real" ] && return 0
+    case "$real" in
+        "$req".*) return 0 ;;   # 21 命中 21.0.1
+        "$req"_*) return 0 ;;   # 1.8 命中 1.8_392
+    esac
+    return 1
+}
+
+# 解析版本号 -> JDK home；成功打印 home，失败返回 1
+do_resolve_jdk_home() {
+    local version="$1"
+    local base="${JAVA_BASE_DIR:-}"
+    [ -n "$version" ] || return 1
+    [ -n "$base" ] || return 1
+    [ "$version" = "8" ] && version="1.8"
+
+    # ---- 1. 快路径：确定性候选，不执行 java ----
+    local cand home
+    for cand in \
+        "$base/jdk-$version.jdk" \
+        "$base/jdk-$version" \
+        "$base/$version.jdk" \
+        "$base/$version"
+    do
+        [ -d "$cand" ] || continue
+        if home=$(_jdk_home_of_dir "$cand"); then
+            echo "$home"
+            return 0
+        fi
+    done
+
+    # ---- 2. 回落：扫候选目录，用真实版本匹配 ----
+    local dir real
+    for dir in "$base"/jdk*; do
+        [ -d "$dir" ] || continue
+        home=$(_jdk_home_of_dir "$dir") || continue
+        real=$(_jdk_real_version "$home" 2>/dev/null) || continue
+        if _jdk_version_matches "$version" "$real"; then
+            echo "$home"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+# 枚举已安装的 JDK，每行三个制表符分隔字段：
+#   <显示版本>\t<JDK home>\t<java -version 首行>
+# list 与 scan 共用，保证「列得出来」和「用得起来」一致
+# 参数: [基准目录]，缺省用 JAVA_BASE_DIR
+do_list_jdk_dirs() {
+    local base="${1:-${JAVA_BASE_DIR:-}}"
+    [ -n "$base" ] || return 1
+
+    local dir home name version first_line
+    for dir in "$base"/jdk*; do
+        [ -d "$dir" ] || continue
+        home=$(_jdk_home_of_dir "$dir") || continue
+
+        name=$(basename "$dir")
+        version=${name#jdk-}
+        version=${version#jdk}
+        version=${version%.jdk}
+
+        first_line=$("$home/bin/java" -version 2>&1 | head -1)
+        printf '%s\t%s\t%s\n' "$version" "$home" "$first_line"
+    done
+}
+
+# ============================================
 # 扫描 Java 路径
 # ============================================
 do_scan() {
@@ -38,10 +148,15 @@ do_scan() {
     )
 
     for dir in "${candidates[@]}"; do
-        if [ -d "$dir" ] && ls "$dir"/jdk-*.jdk &>/dev/null 2>&1; then
-            java_base_dir="$dir"
-            break
-        fi
+        [ -d "$dir" ] || continue
+        # 认两种布局：macOS 的 jdk-<v>.jdk 与 Linux 的平铺 jdk-<v>
+        for sub in "$dir"/jdk*; do
+            [ -d "$sub" ] || continue
+            if _jdk_home_of_dir "$sub" >/dev/null 2>&1; then
+                java_base_dir="$dir"
+                break 2
+            fi
+        done
     done
 
     if [ -z "$java_base_dir" ]; then
@@ -62,16 +177,13 @@ do_scan() {
     echo ""
 
     echo "已安装的 JDK:"
-    for dir in "$java_base_dir"/jdk-*.jdk; do
-        [ -d "$dir" ] || continue
-        local version
-        version=$(basename "$dir" | sed 's/jdk-//;s/\.jdk//')
-        if [ -f "$dir/Contents/Home/bin/java" ]; then
-            local ver
-            ver=$("$dir/Contents/Home/bin/java" -version 2>&1 | head -1)
-            echo "  $version - $ver"
-        fi
-    done
+    local entry shown=0
+    while IFS=$'\t' read -r version home first_line; do
+        [ -n "$version" ] || continue
+        echo "  $version - $first_line"
+        shown=1
+    done < <(do_list_jdk_dirs "$java_base_dir")
+    [ "$shown" = "0" ] && echo "  (未找到)"
 
     echo ""
 
@@ -312,40 +424,25 @@ do_create_shims() {
     mkdir -p "$shims_dir"
 
     local tools=("java" "javac" "jar" "jshell" "javadoc" "javap")
+    local tool
     for tool in "${tools[@]}"; do
         cat > "$shims_dir/$tool" << SHIM
 #!/bin/bash
 # jtool shim - auto generated
+# 瘦转发：路径解析只由 jtool 自己做（do_resolve_jdk_home），这里不重复实现
 CONFIG_FILE="$config_file"
-JAVA_BASE_DIR=""
-JTOOL_DEFAULT_VERSION=""
-if [ -f "\$CONFIG_FILE" ]; then
-    while IFS='=' read -r key value; do
-        [[ "\$key" =~ ^#.*$ || -z "\$key" ]] && continue
-        key=\$(echo "\$key" | tr -d ' ')
-        value=\$(echo "\$value" | tr -d " '\"")
-        case "\$key" in
-            JAVA_BASE_DIR) JAVA_BASE_DIR="\$value" ;;
-            JTOOL_DEFAULT_VERSION) JTOOL_DEFAULT_VERSION="\$value" ;;
-        esac
-    done < "\$CONFIG_FILE"
-fi
-if [ -z "\$JTOOL_DEFAULT_VERSION" ]; then
-    echo "jtool: 未设置默认版本，请运行 jtool use <版本号>" >&2
-    exit 1
-fi
-VER="\$JTOOL_DEFAULT_VERSION"
-[ "\$VER" = "8" ] && VER="1.8"
-if [ "\$(uname -s)" = "Darwin" ]; then
-    JDK_HOME="\$JAVA_BASE_DIR/jdk-\$VER.jdk/Contents/Home"
+ROOT="\$(cd "\$(dirname "\$CONFIG_FILE")/.." && pwd)"
+
+if [ -x "\$ROOT/bin/jtool" ]; then
+    JTOOL="\$ROOT/bin/jtool"
+elif [ -x "\$ROOT/bin/jtool.sh" ]; then
+    JTOOL="\$ROOT/bin/jtool.sh"
 else
-    JDK_HOME="\$JAVA_BASE_DIR/jdk-\$VER"
-fi
-if [ ! -d "\$JDK_HOME" ]; then
-    echo "jtool: JDK \$JTOOL_DEFAULT_VERSION 不存在" >&2
+    echo "jtool: \$ROOT/bin/jtool 不存在" >&2
     exit 1
 fi
-exec "\$JDK_HOME/bin/$tool" "\$@"
+
+exec "\$JTOOL" $tool "\$@"
 SHIM
         chmod +x "$shims_dir/$tool"
     done

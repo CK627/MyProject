@@ -2,7 +2,7 @@
 chcp 65001 >nul 2>&1
 setlocal enabledelayedexpansion
 
-REM jtool 安装脚本 (Windows)
+REM jtool installer (Windows)
 
 set "SCRIPT_DIR=%~dp0"
 set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
@@ -38,6 +38,7 @@ REM ============================================
 REM Subcommands
 REM ============================================
 if "%~1"=="scan" goto :do_scan
+if "%~1"=="scansilent" goto :do_scan_silent
 if "%~1"=="config" goto :do_config
 if "%~1"=="help" goto :do_help
 
@@ -45,7 +46,7 @@ REM ============================================
 REM Full install
 REM ============================================
 echo ========================================
-echo   jtool 安装程序 (Windows)
+echo   jtool installer (Windows)
 echo ========================================
 echo.
 
@@ -58,7 +59,7 @@ if "%INSTALLED%"=="1" (
 ) else (
     copy "%PROJECT_DIR%\bin\jtool.bat" "%BIN_DIR%\" >nul
     if not exist "%CONFIG_FILE%" copy "%PROJECT_DIR%\config\jtool.conf" "%CONFIG_DIR%\" >nul
-    REM 把本安装脚本复制到 module\ ，供 jtool install / jtool scan 调用
+    REM Copy this installer into module\ so jtool install / jtool scan can call it
     copy "%PROJECT_DIR%\installer\windows\install.bat" "%MODULE_DIR%\install.bat" >nul
 )
 echo Done
@@ -77,7 +78,7 @@ call :write_version
 echo.
 
 echo [4/4] Configuring PATH...
-powershell -NoProfile -Command "$p=[Environment]::GetEnvironmentVariable('Path','User'); $add=@('%BIN_DIR%','%USERPROFILE%\.devtools\jtool\shims'); $chg=$false; foreach($d in $add){ if(-not ((';'+$p+';') -like ('*;'+$d+';*'))){ $p=($d+';'+$p.TrimStart(';')); $chg=$true } }; if($chg){ [Environment]::SetEnvironmentVariable('Path',$p,'User') }; Write-Output '已添加到用户 PATH'"
+powershell -NoProfile -Command "$p=[Environment]::GetEnvironmentVariable('Path','User'); $add=@('%BIN_DIR%','%USERPROFILE%\.devtools\jtool\shims'); $chg=$false; foreach($d in $add){ if(-not ((';'+$p+';') -like ('*;'+$d+';*'))){ $p=($d+';'+$p.TrimStart(';')); $chg=$true } }; if($chg){ [Environment]::SetEnvironmentVariable('Path',$p,'User') }; Write-Output 'added to user PATH'"
 
 echo.
 echo ========================================
@@ -95,12 +96,12 @@ REM ============================================
 REM Scan
 REM ============================================
 :do_scan
-echo [扫描] 检测 Java 安装路径...
+echo [Scan] Detecting Java path...
 echo.
 
 set "found_dir="
 if exist "C:\Program Files\Java" (
-    for /d %%d in ("C:\Program Files\Java\jdk-*") do (
+    for /d %%d in ("C:\Program Files\Java\jdk*") do (
         if exist "%%d\bin\java.exe" (
             set "found_dir=C:\Program Files\Java"
             goto :scan_found
@@ -112,8 +113,8 @@ if exist "C:\Program Files\Eclipse Adoptium" (
     goto :scan_found
 )
 
-echo 未找到 Java 安装目录
-set /p "found_dir=请输入 Java 安装路径: "
+echo Java dir not found
+set /p "found_dir=Enter Java install path: "
 if not exist "!found_dir!" (
     echo Error: path does not exist
     exit /b 1
@@ -122,10 +123,10 @@ if not exist "!found_dir!" (
 :scan_found
 echo Found: !found_dir!
 echo.
-echo 已安装的 JDK:
-for /d %%d in ("!found_dir!\jdk-*") do (
+echo Installed JDKs:
+for /d %%d in ("!found_dir!\jdk*") do (
     if exist "%%d\bin\java.exe" (
-        for /f "tokens=*" %%v in ('"%%d\bin\java.exe" -version 2^>^&1 ^| findstr /i "version"') do (
+        for /f "tokens=*" %%v in ('"%%d\bin\java.exe" -version 2^>^&1 ^| findstr /i version') do (
             echo   %%~nxd - %%v
         )
     )
@@ -142,7 +143,7 @@ exit /b 0
 :do_scan_inner
 set "found_dir="
 if exist "C:\Program Files\Java" (
-    for /d %%d in ("C:\Program Files\Java\jdk-*") do (
+    for /d %%d in ("C:\Program Files\Java\jdk*") do (
         if exist "%%d\bin\java.exe" (
             set "found_dir=C:\Program Files\Java"
             goto :scan_inner_found
@@ -188,7 +189,7 @@ if exist "%CONFIG_FILE%" (
 exit /b 0
 
 REM ============================================
-REM 记录 jtool 版本号
+REM Record jtool version
 REM ============================================
 :write_version
 if not exist "%PROJECT_DIR%\VERSION" exit /b 0
@@ -201,7 +202,17 @@ move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
 exit /b 0
 
 REM ============================================
-REM 查看配置
+REM Non-interactive scan, for the installer package in silent mode
+REM Reuses :do_scan_inner, which falls back to a default instead of
+REM prompting the way :do_scan does
+REM ============================================
+:do_scan_silent
+call :do_scan_inner
+call :write_version
+exit /b 0
+
+REM ============================================
+REM Show config
 REM ============================================
 :do_config
 echo Config file: %CONFIG_FILE%
@@ -209,19 +220,19 @@ echo.
 if exist "%CONFIG_FILE%" (
     type "%CONFIG_FILE%"
 ) else (
-    echo (不存在，请运行: install.bat scan)
+    echo (not found, run: install.bat scan)
 )
 exit /b 0
 
 REM ============================================
-REM 帮助
+REM Help
 REM ============================================
 :do_help
-echo jtool 安装脚本 (Windows)
+echo jtool installer (Windows)
 echo.
-echo 用法:
-echo   install.bat          完整安装
-echo   install.bat scan     扫描 Java 路径，更新配置
-echo   install.bat config   查看配置
-echo   install.bat help     帮助
+echo Usage:
+echo   install.bat          Full install
+echo   install.bat scan     Scan Java path, update config
+echo   install.bat config   Show config
+echo   install.bat help     Show help
 exit /b 0
