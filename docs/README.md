@@ -176,7 +176,7 @@ PYTHON_BASE_DIR="/usr/local/bin"
 # PTOOL_DEFAULT_VERSION="3.11"
 
 # ptool 版本（由 install / update 维护，请勿手动修改）
-PTOOL_VERSION="2.2.11"
+PTOOL_VERSION="2.2.12"
 ```
 
 `ptool scan` 会自动扫描以下路径查找 Python 安装目录：

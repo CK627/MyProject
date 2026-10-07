@@ -37,6 +37,7 @@ if exist "%CONFIG_FILE%" (
         set "val=%%b"
         if not "!key:~0,1!"=="#" if not "!key!"=="" (
             set "val=!val:"=!"
+            call :trim_sp val
             if "!key!"=="PYTHON_BASE_DIR" set "PYTHON_BASE_DIR=!val!"
             if "!key!"=="PTOOL_DEFAULT_VERSION" set "PTOOL_DEFAULT_VERSION=!val!"
         )
@@ -178,7 +179,8 @@ call :resolve_py "%~2" use_exe
 if not defined use_exe ( echo Error: Python %~2 not found & exit /b 1 )
 
 findstr /v "PTOOL_DEFAULT_VERSION" "%CONFIG_FILE%" > "%CONFIG_FILE%.tmp"
-echo PTOOL_DEFAULT_VERSION="%~2" >> "%CONFIG_FILE%.tmp"
+REM Redirect before echo: the other order appends a trailing space.
+>>"%CONFIG_FILE%.tmp" echo PTOOL_DEFAULT_VERSION="%~2"
 move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
 set "PTOOL_DEFAULT_VERSION=%~2"
 echo Default version set: %~2
@@ -347,7 +349,8 @@ if exist "!SRC!\installer\windows\install.bat" (
 if not exist "%CONFIG_FILE%" copy "!SRC!\config\ptool.conf" "%CONFIG_DIR%\" >nul
 
 findstr /v /b /c:"PTOOL_VERSION=" "%CONFIG_FILE%" > "%CONFIG_FILE%.tmp"
-echo PTOOL_VERSION="!REMOTE_VERSION!" >> "%CONFIG_FILE%.tmp"
+REM Redirect before echo: the other order appends a trailing space.
+>>"%CONFIG_FILE%.tmp" echo PTOOL_VERSION="!REMOTE_VERSION!"
 move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
 
 rmdir /s /q "%UPD_TMP%" 2>nul
@@ -421,7 +424,8 @@ if exist "!REPO_DIR!\installer\windows\install.bat" (
 if not exist "%CONFIG_FILE%" copy "!REPO_DIR!\config\ptool.conf" "%CONFIG_DIR%\" >nul
 
 findstr /v /b /c:"PTOOL_VERSION=" "%CONFIG_FILE%" > "%CONFIG_FILE%.tmp"
-echo PTOOL_VERSION="!REMOTE_VERSION!" >> "%CONFIG_FILE%.tmp"
+REM Redirect before echo: the other order appends a trailing space.
+>>"%CONFIG_FILE%.tmp" echo PTOOL_VERSION="!REMOTE_VERSION!"
 move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
 
 echo Update complete!
@@ -525,4 +529,26 @@ REM Dir name is Python plus 1-digit major and 1-2 digit minor, split by position
 REM   Python311 to 3.11, Python27 to 2.7, Python36 to 3.6, Python312 to 3.12
 if "!_VD:~6,1!"=="" exit /b 0
 set "%~2=!_VD:~6,1!.!_VD:~7,2!"
+exit /b 0
+
+REM ============================================
+REM Trim leading and trailing spaces from the variable named by the first
+REM argument, in place.
+REM
+REM Writing a config line as "echo VALUE" followed by the redirect appends a
+REM trailing space to the value, so a version read back can be "21 " -- which
+REM then matches no JDK at all. Configs already on disk were written that way,
+REM so trimming on read, not only on write, is what repairs them.
+REM
+REM Takes a variable NAME rather than a value on purpose: CALL re-parses its
+REM argument, which would expand any environment variable inside a path.
+REM ============================================
+:trim_sp
+set "_ts=!%~1!"
+if not defined _ts exit /b 0
+:trim_sp_lead
+if "!_ts:~0,1!"==" " ( set "_ts=!_ts:~1!" & goto :trim_sp_lead )
+:trim_sp_tail
+if "!_ts:~-1!"==" " ( set "_ts=!_ts:~0,-1!" & goto :trim_sp_tail )
+set "%~1=!_ts!"
 exit /b 0
