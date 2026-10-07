@@ -9,14 +9,26 @@ _jtool_versions() {
     [ -f "$config_file" ] && base_dir=$(grep '^JAVA_BASE_DIR=' "$config_file" 2>/dev/null | tail -1 | cut -d'"' -f2)
     [ -n "$base_dir" ] || return 0
 
-    local dir name ver
-    # macOS 是 jdk-21.jdk，Linux 是 jdk-21（后者由第二个通配兜底）
-    for dir in "$base_dir"/jdk-*.jdk "$base_dir"/jdk-*; do
-        [ -d "$dir" ] || continue
+    local dir name ver target base_real
+    base_real=$(cd "$base_dir" 2>/dev/null && pwd -P)
+    # 不挑目录名，只认里面确实是 JDK 的（macOS bundle 或平铺布局）
+    for dir in "$base_dir"/*; do
+        [ -x "$dir/Contents/Home/bin/java" ] || [ -x "$dir/bin/java" ] || continue
+        if [ -L "$dir" ]; then
+            # 指向同一基准目录下真目录的软链接（Ubuntu 的 java-1.17.0-openjdk-amd64）
+            # 跳过：真目录自己会列出来。不跳就会多出一个 1.17.0——TAB 里看得见，
+            # jtool use 1.17.0 却匹配不到，因为解析那边两个名字是同一个 JDK。
+            target=$(cd "$dir" 2>/dev/null && pwd -P)
+            [ -n "$target" ] && [ "${target%/*}" = "$base_real" ] && continue
+        fi
         name=$(basename "$dir")
-        ver=${name#jdk-}
-        ver=${ver%.jdk}
-        [ -n "$ver" ] && echo "$ver"
+        name=${name%.jdk}
+        # 版本号取目录名里第一段以数字开头的连续串，厂商前缀 / 发行版后缀自动跳过。
+        # 与 module/common.sh 的 _jdk_name_version 同一套规则。
+        if [[ "$name" =~ ([0-9][0-9._]*) ]]; then
+            ver="${BASH_REMATCH[1]%.}"
+            [ -n "$ver" ] && echo "$ver"
+        fi
     done
 }
 

@@ -142,14 +142,13 @@ echo Java path: !JAVA_BASE_DIR!
 echo.
 echo Installed JDKs:
 set "found=0"
-for /d %%d in ("!JAVA_BASE_DIR!\jdk*") do (
+for /d %%d in ("!JAVA_BASE_DIR!\*") do (
     call :jdk_home_of "%%d" _LH
     if defined _LH (
-        set "dirname=%%~nxd"
-        set "ver=!dirname:jdk-=!"
-        set "ver=!ver:.jdk=!"
+        call :jdk_name_version "%%~nxd" _LV
+        if not defined _LV set "_LV=%%~nxd"
         for /f "tokens=*" %%v in ('"!_LH!\bin\java.exe" -version 2^>^&1 ^| findstr /i version') do (
-            echo   !ver! - %%v
+            echo   !_LV! - %%v
             set "found=1"
         )
     )
@@ -503,10 +502,13 @@ exit /b 0
 REM ============================================
 REM Resolve a version to its JDK home
 REM
-REM Fast path: deterministic candidates, tried in order, no subprocess.
-REM Fallback: scan JAVA_BASE_DIR for jdk* dirs, read the real version from
-REM java -version, and match on it. This is what makes jdk-21.0.1 or
-REM jdk1.8.0_392 findable; the fast path keeps the common names cheap.
+REM Three stages, cheap to expensive:
+REM   1. deterministic candidate paths, tried in order, no subprocess
+REM   2. match the version the directory NAME spells out, still no subprocess
+REM   3. ask each JDK what version it really reports (java -version)
+REM
+REM Stages 1 and 2 keep the java shim's hot path free of subprocesses; stage 3
+REM is the backstop for names that disagree with what is installed inside.
 REM
 REM arg1 = version, arg2 = variable to receive the home; empty if not found
 REM ============================================
@@ -527,8 +529,28 @@ if defined _JH ( set "%~2=!_JH!" & exit /b 0 )
 call :jdk_home_of "!JAVA_BASE_DIR!\!_JVER!" _JH
 if defined _JH ( set "%~2=!_JH!" & exit /b 0 )
 
-REM Fallback: scan and match on the real version reported by java
-for /d %%d in ("!JAVA_BASE_DIR!\jdk*") do (
+REM Stage 2: match on the version the directory name spells out, no java run.
+REM JDK dir names differ per vendor and per distro:
+REM   jdk-21.jdk / jdk-21            Oracle, Adoptium, SDKMAN
+REM   temurin-21.jdk / zulu-17.0.9   vendor builds
+REM   java-17-openjdk-amd64          Debian / Ubuntu
+REM   java-1.8.0-openjdk             RHEL / Fedora
+for /d %%d in ("!JAVA_BASE_DIR!\*") do (
+    call :jdk_home_of "%%d" _JH
+    if defined _JH (
+        call :jdk_name_version "%%~nxd" _NV
+        if defined _NV (
+            call :ver_match "!_JVER!" "!_NV!" _OK
+            if "!_OK!"=="1" (
+                set "%~2=!_JH!"
+                exit /b 0
+            )
+        )
+    )
+)
+
+REM Stage 3: ask each JDK for the version it really reports
+for /d %%d in ("!JAVA_BASE_DIR!\*") do (
     call :jdk_home_of "%%d" _JH
     if defined _JH (
         call :jdk_version_matches "!_JVER!" "%%d" _OK
@@ -549,6 +571,28 @@ set "%~2="
 if exist "%~1\Contents\Home\bin\java.exe" ( set "%~2=%~1\Contents\Home" & exit /b 0 )
 if exist "%~1\bin\java.exe" ( set "%~2=%~1" & exit /b 0 )
 exit /b 1
+
+REM ============================================
+REM Version a JDK directory name spells out (no java run)
+REM Splitting on letters, hyphen and underscore leaves the version as the first
+REM token, so vendor prefixes and distro suffixes fall away:
+REM   jdk-21.jdk -> 21             temurin-21.jdk -> 21
+REM   zulu-17.0.9 -> 17.0.9        java-17-openjdk-amd64 -> 17
+REM   jdk1.8.0_392 -> 1.8.0        amazon-corretto-21.jdk -> 21
+REM arg1 = directory name, arg2 = variable to receive the version; empty when
+REM the name spells no version at all (e.g. Homebrew's openjdk.jdk)
+REM ============================================
+:jdk_name_version
+set "%~2="
+set "_NN=%~1"
+if "!_NN:~-4!"==".jdk" set "_NN=!_NN:~0,-4!"
+set "_NV="
+for /f "tokens=1 delims=abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_" %%a in ("!_NN!") do set "_NV=%%a"
+if not defined _NV exit /b 1
+if "!_NV:~-1!"=="." set "_NV=!_NV:~0,-1!"
+if not defined _NV exit /b 1
+set "%~2=!_NV!"
+exit /b 0
 
 REM ============================================
 REM Real version reported by the JDK in a dir; 1.8.0_491 becomes 1.8
@@ -576,18 +620,17 @@ exit /b 0
 REM ============================================
 REM Do two version strings refer to the same JDK?
 REM Exact match, or the requested one is a dotted component prefix of the
-REM real one: 21 matches 21.0.1, and 1.8 matches 1.8.0_491
-REM arg1 = requested, arg2 = candidate dir, arg3 = variable set to 1 on match
+REM candidate: 21 matches 21.0.7, and 1.8 matches 1.8.0_392
+REM arg1 = requested, arg2 = candidate version, arg3 = variable set to 1 on match
 REM ============================================
-:jdk_version_matches
+:ver_match
 set "%~3=0"
-call :jdk_real_version "%~2" _REAL
-if not defined _REAL exit /b 0
-
 set "_req=%~1"
+set "_REAL=%~2"
 if "!_req!"=="8" set "_req=1.8"
-if "!_req!"=="" ( set "_REAL=" & exit /b 0 )
-if "!_req!"=="_REAL" ( set "%~3=1" & set "_REAL=" & exit /b 0 )
+if "!_req!"=="" exit /b 0
+if "!_REAL!"=="" exit /b 0
+if "!_req!"=="_REAL!" ( set "%~3=1" & exit /b 0 )
 
 REM Compare only the dotted components the request actually pins, so 21
 REM matches 21.0.7 and 1.8 matches 1.8.0_392, while 21.0.1 does not match
@@ -614,4 +657,14 @@ if not "!_qa!"=="!_ra!" exit /b 0
 if defined _qb if not "!_qb!"=="!_rb!" exit /b 0
 if defined _qc if not "!_qc!"=="!_rc!" exit /b 0
 set "%~3=1"
+exit /b 0
+
+REM ============================================
+REM Same comparison, but read the candidate version out of the dir (runs java)
+REM arg1 = requested, arg2 = candidate dir, arg3 = variable set to 1 on match
+REM ============================================
+:jdk_version_matches
+set "%~3=0"
+call :jdk_real_version "%~2" _REAL
+call :ver_match "%~1" "!_REAL!" %~3
 exit /b 0

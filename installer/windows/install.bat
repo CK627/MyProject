@@ -99,38 +99,22 @@ REM ============================================
 echo [Scan] Detecting Java path...
 echo.
 
-set "found_dir="
-if exist "C:\Program Files\Java" (
-    for /d %%d in ("C:\Program Files\Java\jdk*") do (
-        if exist "%%d\bin\java.exe" (
-            set "found_dir=C:\Program Files\Java"
-            goto :scan_found
-        )
-    )
-)
-if exist "C:\Program Files\Eclipse Adoptium" (
-    set "found_dir=C:\Program Files\Eclipse Adoptium"
-    goto :scan_found
-)
+call :find_java_base found_dir
 
-echo Java dir not found
-set /p "found_dir=Enter Java install path: "
-if not exist "!found_dir!" (
-    echo Error: path does not exist
-    exit /b 1
+if not defined found_dir (
+    echo Java dir not found
+    set /p "found_dir=Enter Java install path: "
+    if not exist "!found_dir!" (
+        echo Error: path does not exist
+        exit /b 1
+    )
 )
 
 :scan_found
 echo Found: !found_dir!
 echo.
 echo Installed JDKs:
-for /d %%d in ("!found_dir!\jdk*") do (
-    if exist "%%d\bin\java.exe" (
-        for /f "tokens=*" %%v in ('"%%d\bin\java.exe" -version 2^>^&1 ^| findstr /i version') do (
-            echo   %%~nxd - %%v
-        )
-    )
-)
+call :list_jdks_of "!found_dir!"
 echo.
 
 call :write_config
@@ -141,21 +125,83 @@ type "%CONFIG_FILE%"
 exit /b 0
 
 :do_scan_inner
-set "found_dir="
-if exist "C:\Program Files\Java" (
-    for /d %%d in ("C:\Program Files\Java\jdk*") do (
-        if exist "%%d\bin\java.exe" (
-            set "found_dir=C:\Program Files\Java"
-            goto :scan_inner_found
-        )
-    )
-)
-if exist "C:\Program Files\Eclipse Adoptium" set "found_dir=C:\Program Files\Eclipse Adoptium"
-
-:scan_inner_found
+call :find_java_base found_dir
 if not defined found_dir set "found_dir=C:\Program Files\Java"
 call :write_config
 echo Written: %CONFIG_FILE%
+exit /b 0
+
+REM ============================================
+REM Vendor roots the official installers use. Oracle's docs put each JDK in
+REM %ProgramFiles%\Java\jdk-<feature>; Adoptium, Microsoft, Azul and AWS each
+REM ship their own root. The first root that actually holds a JDK wins, so the
+REM order below is the priority order.
+REM arg1 = variable to receive the root; left empty when none holds a JDK
+REM ============================================
+:find_java_base
+set "%~1="
+call :probe_base "C:\Program Files\Java" %~1
+if defined %~1 exit /b 0
+call :probe_base "C:\Program Files\Eclipse Adoptium" %~1
+if defined %~1 exit /b 0
+call :probe_base "C:\Program Files\Microsoft" %~1
+if defined %~1 exit /b 0
+call :probe_base "C:\Program Files\Zulu" %~1
+if defined %~1 exit /b 0
+call :probe_base "C:\Program Files\Amazon Corretto" %~1
+if defined %~1 exit /b 0
+call :probe_base "%LOCALAPPDATA%\Programs\Eclipse Adoptium" %~1
+if defined %~1 exit /b 0
+exit /b 1
+
+REM ============================================
+REM Does arg1 hold any JDK? Native installers put one directory per JDK
+REM directly under the vendor root, so the marker is a child with bin\java.exe
+REM arg2 = variable to receive arg1 when it does hold one; empty otherwise
+REM ============================================
+:probe_base
+set "%~2="
+if not exist "%~1" exit /b 1
+for /d %%d in ("%~1\*") do (
+    if exist "%%d\bin\java.exe" (
+        set "%~2=%~1"
+        exit /b 0
+    )
+)
+exit /b 1
+
+REM ============================================
+REM Installed JDKs under a base dir, with the version each one reports
+REM arg1 = base dir
+REM ============================================
+:list_jdks_of
+for /d %%d in ("%~1\*") do (
+    if exist "%%d\bin\java.exe" (
+        call :jdk_name_version "%%~nxd" _SNV
+        if not defined _SNV set "_SNV=%%~nxd"
+        for /f "tokens=*" %%v in ('"%%d\bin\java.exe" -version 2^>^&1 ^| findstr /i version') do (
+            echo   !_SNV! - %%v
+        )
+    )
+)
+exit /b 0
+
+REM ============================================
+REM Version a JDK directory name spells out (no java run)
+REM Splitting on letters, hyphen and underscore leaves the version as the first
+REM token: jdk-21.jdk -> 21, temurin-21.jdk -> 21, openjdk-17 -> 17
+REM arg1 = directory name, arg2 = variable to receive the version
+REM ============================================
+:jdk_name_version
+set "%~2="
+set "_NN=%~1"
+if "!_NN:~-4!"==".jdk" set "_NN=!_NN:~0,-4!"
+set "_NV="
+for /f "tokens=1 delims=abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_" %%a in ("!_NN!") do set "_NV=%%a"
+if not defined _NV exit /b 1
+if "!_NV:~-1!"=="." set "_NV=!_NV:~0,-1!"
+if not defined _NV exit /b 1
+set "%~2=!_NV!"
 exit /b 0
 
 REM ============================================

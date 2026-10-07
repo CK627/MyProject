@@ -38,8 +38,8 @@ cd /path/to/jtool
 
 ---
 
-> 安装过程中会引导输入 Java 安装路径，回车使用默认值即可。
-> 安装后的路径见下方「跨平台支持」表格。
+> 安装时会自动扫描 JDK，扫描位置见下方「扫描的 Java 安装路径」；
+> 一处都没扫到时才会提示你手动输入路径。安装后的路径见下方「跨平台支持」表格。
 
 ## 卸载
 
@@ -64,7 +64,7 @@ cd /path/to/jtool
 - 🚀 一行命令运行任意版本的 Java 工具
 - 🔄 快速切换默认 Java 版本
 - 📂 配置驱动，支持自定义 Java 安装路径
-- 🔍 自动识别 JDK 目录布局（macOS bundle / Linux 平铺 / 非标准命名）
+- 🔍 扫描官方安装位置，自动识别各家 JDK 命名（Oracle / Adoptium / Zulu / Corretto / Ubuntu / RHEL）
 - 🖥️ 跨平台：macOS / Linux / Windows
 - 📦 零依赖，无需安装额外软件
 
@@ -164,7 +164,9 @@ jtool run 21 <TAB>   # .java 文件
 > 重开终端或 `source ~/.zshrc`。之后的每次 update 都是自动的。
 
 补全脚本位于 `~/.devtools/jtool/completions/`，由 `jtool install` / `jtool update` 自动刷新。
-版本列表是直接扫描 `JAVA_BASE_DIR` 下的 `jdk-*` 目录得到的，**不会执行 java**，所以按 `<TAB>` 没有延迟。
+版本列表是扫描 `JAVA_BASE_DIR` 下的 JDK 目录、再按目录名推出得到的，**不会执行 java**，
+所以按 `<TAB>` 没有延迟。目录名推不出版本号的（如 Homebrew 的 `openjdk.jdk`）不会出现在补全里，
+但 `jtool use <真实版本>` 照旧可用——解析那边会退回去读 `java -version`。
 
 ## 跨平台支持
 
@@ -178,13 +180,27 @@ macOS / Linux 还会在 `~/.devtools/jtool/shims` 下生成 `java` / `javac` / `
 `javadoc` / `javap` 包装脚本，它们按当前默认版本转发调用。`jtool update` 使用的仓库缓存
 在 `~/.devtools/jtool/repo`。
 
-### 各系统默认 Java 路径
+### 扫描的 Java 安装路径
 
-| 系统 | 默认路径 |
-|------|----------|
+`jtool scan` 按序探测下表这些「父目录」，**第一个真能扫出 JDK 的胜出**——顺序即优先级。
+这些就是 JDK 官方安装文档登记的默认落点：
+
+| 系统 | 扫描路径（按优先级） |
+|------|----------------------|
 | macOS | `/Library/Java/JavaVirtualMachines` |
-| Linux | `/usr/lib/jvm` |
-| Windows | `C:\Program Files\Java` |
+| Linux | `/usr/lib/jvm`、`/usr/java`、`/opt/java`、`/usr/local/java`、`/opt` |
+| Windows | `C:\Program Files\Java`、`C:\Program Files\Eclipse Adoptium`、`C:\Program Files\Microsoft`、`C:\Program Files\Zulu`、`C:\Program Files\Amazon Corretto`、`%LOCALAPPDATA%\Programs\Eclipse Adoptium` |
+
+- macOS 只有一处：Oracle、Adoptium、Azul、Corretto 的 `.pkg` 都装进 `/Library/Java/JavaVirtualMachines`
+- Linux 的 `/usr/lib/jvm` 是 Debian / Ubuntu / RHEL / Fedora 包管理器的统一落点，
+  `/usr/java` 是 Oracle 官方 RPM 的默认位置，其余是手动解压安装的常见去处
+- Windows 那几项依次对应 Oracle、Adoptium、Microsoft Build of OpenJDK、Azul Zulu、
+  Amazon Corretto 各自的厂商根目录
+
+> 判据是「父目录下某个子目录里存在 `bin/java`」，**不挑目录名**，所以各家命名都认得出：
+> `jdk-21.jdk`、`jdk-21`、`temurin-21.jdk`、`zulu-17.0.9.jdk`、`amazon-corretto-21.jdk`、
+> `java-17-openjdk-amd64`（Ubuntu）、`java-1.8.0-openjdk`（RHEL）。
+> 指向同一 JDK 的软链接（Ubuntu 的 `java-1.17.0-openjdk-amd64`）会按真实目录去重，只列一条。
 
 ## 配置文件说明
 
@@ -198,42 +214,52 @@ JAVA_BASE_DIR="/Library/Java/JavaVirtualMachines"
 # JTOOL_DEFAULT_VERSION="21"
 
 # jtool 版本（由 install / update 维护，请勿手动修改）
-JTOOL_VERSION="2.2.11"
+JTOOL_VERSION="2.3.0"
 ```
 
-> jtool 以 `JAVA_BASE_DIR` 作为唯一基准目录，并**按目录的真实布局**解析 JDK 路径，分两段：
+> jtool 以 `JAVA_BASE_DIR` 作为唯一基准目录，并**按目录的真实布局**解析 JDK 路径，分三段，
+> 先廉价后昂贵：
 >
-> 1. **快路径**（不启动 java）：按序试 `<base>/jdk-<版本>.jdk`（macOS）、`<base>/jdk-<版本>`
->    （Linux / Windows）、`<base>/<版本>`，取其中有 `bin/java` 的那个作为 JDK home。
->    macOS 的 bundle 布局会自动落到其 `Contents/Home`。
-> 2. **回落**（自动探测）：快路径都没命中时，扫描 `<base>/jdk*`，对每个候选执行
->    `java -version` 读出**真实版本号**再匹配——这样 `jdk-21.0.1`、`jdk1.8.0_392`
->    这类不规范的名字也能被 `jtool use 21` / `jtool use 8` 命中。
+> 1. **快路径**（不 glob、不启动 java）：按序试 `<base>/jdk-<版本>.jdk`（macOS）、
+>    `<base>/jdk-<版本>`（Linux / Windows）、`<base>/<版本>.jdk`、`<base>/<版本>`，
+>    取其中有 `bin/java` 的那个作为 JDK home。macOS 的 bundle 布局会自动落到其 `Contents/Home`。
+> 2. **命名匹配**（仍不启动 java）：遍历 `<base>` 下的子目录，用**目录名推出来的版本**匹配——
+>    `jdk-21.0.1` → `21.0.1`、`java-17-openjdk-amd64` → `17`、`temurin-21.jdk` → `21`。
+>    到这一步，各厂商与各发行版的命名就都能命中了。
+> 3. **真实版本**（兜底）：名字和目录里的实际版本对不上时，才逐个跑 `java -version`
+>    读出真实版本再匹配。
 >
-> 常规命名（`jdk-21`、`jdk-21.jdk`）在第一段就结束，**不会额外启动进程**，所以 `java` shim
-> 这类热路径没有探测开销。
+> 前两段都不产生子进程，所以 `java` shim 这类热路径没有探测开销；只有名字骗人时
+> 才付出一次探测成本。
 >
-> 若 JDK 装在别处（如 Eclipse Adoptium、SDKMAN），执行 `jtool scan` 后手动修改
-> `JAVA_BASE_DIR` 即可。
+> 若 JDK 装在别处（如 SDKMAN、Homebrew、手动解压），执行 `jtool scan` 后手动修改
+> `JAVA_BASE_DIR` 即可。例如 Homebrew 的 openjdk：
+> `JAVA_BASE_DIR="/opt/homebrew/opt/openjdk/libexec"`（Intel Mac 换成 `/usr/local/opt/...`）
+> ——目录名 `openjdk.jdk` 里没有版本号，会由第 3 段读真实版本兜住。
 
 ## 版本号说明
 
-输入版本会先归一化，再按上面的两段解析去找目录：
+输入版本会先归一化，再按上面的三段解析去找目录：
 
 | 输入版本 | 可能命中的目录 | 说明 |
 |----------|----------------|------|
-| `8` | `jdk-1.8.jdk`、`jdk1.8.0_392` | `8` 自动映射为 `1.8` |
+| `8` | `jdk-1.8.jdk`、`jdk1.8.0_392`、`java-1.8.0-openjdk` | `8` 自动映射为 `1.8` |
 | `11` | `jdk-11.jdk`、`jdk-11.0.20` | 直接匹配 |
-| `17` | `jdk-17.jdk`、`jdk-17.0.9` | 直接匹配 |
-| `21` | `jdk-21.jdk`、`jdk-21.0.1` | 前缀匹配：`21` 命中 `21.x.y` |
+| `17` | `jdk-17.jdk`、`jdk-17.0.9`、`java-17-openjdk-amd64` | 直接匹配 |
+| `21` | `jdk-21.jdk`、`temurin-21.jdk`、`zulu-21.0.1` | 前缀匹配：`21` 命中 `21.x.y` |
 | `26` | `jdk-26.jdk` | 直接匹配 |
 
 > **前缀匹配**：版本号可以只写到主版本，`21` 能命中真实版本 `21.0.7`；
 > 但写全了就按全的比，`21.0.1` **不会**命中 `21.0.7`。
 >
-> `jtool list` 显示的版本号取自**目录名**，`jtool use` 接受的版本号则按上表匹配。
-> 目录名不规范时两者字面可能不同——例如目录叫 `jdk-21.0.1` 时 `list` 显示 `21.0.1`，
-> 而 `jtool use 21` 一样能命中，属预期行为。
+> `jtool list` 显示的版本号取自**目录名**（目录名推不出版本号时退回真实版本），
+> `jtool use` 接受的版本号则按上表匹配。两者字面可能不同，属预期行为——
+> 例如目录叫 `jdk-21.0.1` 时 `list` 显示 `21.0.1`，而 `jtool use 21` 同样能命中。
+>
+> 装了同一版本的多个厂商构建时（`jdk-21.jdk` 和 `amazon-corretto-21.jdk` 都是 21），
+> `list` 会各列一条、显示同一个版本号。想指定其中某一个就把版本写全
+> （`jtool use 21.0.7`）；只写 `21` 时取第一个命中的，结果是确定的，
+> 用 `jtool home 21` 可以看清究竟指向哪个。
 
 ## 在脚本中使用
 
@@ -321,6 +347,19 @@ echo $PATH | grep jtool
 ```bash
 jtool list
 ```
+
+### Q: `jtool list` 没列出我的 JDK
+
+说明它不在「扫描的 Java 安装路径」覆盖的目录里（典型：SDKMAN 的 `~/.sdkman/candidates/java`、
+Homebrew 的 `/opt/homebrew/opt/openjdk/libexec`、自己解压到 `~/jdk`）。
+
+执行 `jtool config` 找到配置文件，把 `JAVA_BASE_DIR` 改成这些 JDK 的**父目录**即可——
+
+```bash
+JAVA_BASE_DIR="/Users/yourname/.sdkman/candidates/java"
+```
+
+jtool 不挑目录名，父目录下任何含 `bin/java` 的子目录都会被认出来。
 
 ### Q: 如何临时使用某个版本而不修改默认设置？
 

@@ -25,12 +25,17 @@ get_install_dir() {
 # ============================================
 # JDK 路径解析（全平台唯一实现）
 #
-# 版本号 -> JDK home，分两段：
-#   1. 快路径：按序试确定性候选，命中即返回（不执行 java）
-#   2. 回落：扫 JAVA_BASE_DIR 下的 jdk* 目录，跑 java -version 取真实版本再匹配
+# 版本号 -> JDK home，分三段，先廉价后昂贵：
+#   1. 快路径：按序试确定性候选路径，命中即返回（不 glob、不执行 java）
+#   2. 命名匹配：遍历 JAVA_BASE_DIR 下的目录，用**目录名**推出的版本匹配（不执行 java）
+#   3. 真实版本：名字对不上时跑 java -version 读真实版本再匹配（兜底）
 #
-# 快路径覆盖常规命名（jdk-21、jdk-21.jdk），所以 java shim 这类热路径不会起子进程；
-# 只有 jdk-21.0.1 / jdk1.8.0_392 这种异常命名才付出一次探测成本。
+# 前两段都不起子进程，所以 java shim 这类热路径没有探测开销；第三段兜住命名与
+# 实际版本不符的情况。之所以要认名字，是因为 JDK 装在哪、叫什么，各家各写各的：
+#   jdk-21.jdk / jdk-21             Oracle、Adoptium、SDKMAN
+#   java-17-openjdk-amd64           Debian / Ubuntu
+#   java-1.8.0-openjdk              RHEL / Fedora
+#   temurin-21.jdk / zulu-17.0.9.jdk / amazon-corretto-21.jdk    厂商包
 # ============================================
 
 # 候选目录 -> JDK home：优先 macOS bundle 布局，其次平铺布局
@@ -42,6 +47,23 @@ _jdk_home_of_dir() {
     fi
     if [ -x "$dir/bin/java" ]; then
         echo "$dir"
+        return 0
+    fi
+    return 1
+}
+
+# 目录名 -> 版本号（只看名字，不启动 java）
+# 取名字里第一段以数字开头的 [0-9._] 连续串，厂商前缀与发行版后缀自然被跳过：
+#   jdk-21.jdk -> 21              java-17-openjdk-amd64 -> 17
+#   temurin-21.jdk -> 21          java-1.8.0-openjdk -> 1.8.0
+#   jdk1.8.0_392 -> 1.8.0_392     amazon-corretto-21.jdk -> 21
+_jdk_name_version() {
+    local name="$1"
+    name=${name%.jdk}
+    if [[ "$name" =~ ([0-9][0-9._]*) ]]; then
+        local v="${BASH_REMATCH[1]}"
+        v=${v%.}
+        printf '%s\n' "$v"
         return 0
     fi
     return 1
@@ -59,16 +81,43 @@ _jdk_real_version() {
     esac
 }
 
-# 请求版本 req 是否命中真实版本 real
+# 请求版本 req 是否命中候选版本 cand（cand 来自目录名或 java -version）
 _jdk_version_matches() {
-    local req="$1" real="$2"
+    local req="$1" cand="$2"
     [ "$req" = "8" ] && req="1.8"
-    [ "$req" = "$real" ] && return 0
-    case "$real" in
+    [ "$req" = "$cand" ] && return 0
+    case "$cand" in
         "$req".*) return 0 ;;   # 21 命中 21.0.1
         "$req"_*) return 0 ;;   # 1.8 命中 1.8_392
     esac
     return 1
+}
+
+# 枚举基准目录下的 JDK：每行 `<目录名>\t<JDK home>`。
+# 判据是「目录里有 bin/java 或 bundle 的 Contents/Home/bin/java」，所以不挑名字，
+# 厂商怎么起名都认得出。
+#
+# 先解析到真实目录再取名：Ubuntu 的 java-1.17.0-openjdk-amd64 只是指向
+# java-17-openjdk-amd64 的软链接，两者是同一个 JDK。不解析就会按软链接的名字
+# 显示成「1.17.0」，且按字母序还会顶掉真名。解析后二者同一 key，只出一条、且是真名。
+#
+# list / scan / 上面三段解析共用，保证「列得出来」的就是「用得起来」的。
+_jdk_dirs() {
+    local base="$1"
+    [ -n "$base" ] || return 1
+
+    local dir top home seen=""
+    for dir in "$base"/*; do
+        [ -d "$dir" ] || continue
+        top=$(cd "$dir" 2>/dev/null && pwd -P) || continue
+        home=$(_jdk_home_of_dir "$top") || continue
+        case "$seen" in
+            *"|$top|"*) continue ;;
+        esac
+        seen="$seen|$top|"
+        # 用 ${top##*/} 而不是 basename：这里是 java shim 的热路径，少一个外部命令
+        printf '%s\t%s\n' "${top##*/}" "$home"
+    done
 }
 
 # 解析版本号 -> JDK home；成功打印 home，失败返回 1
@@ -79,7 +128,7 @@ do_resolve_jdk_home() {
     [ -n "$base" ] || return 1
     [ "$version" = "8" ] && version="1.8"
 
-    # ---- 1. 快路径：确定性候选，不执行 java ----
+    # ---- 1. 快路径：确定性候选路径，不 glob、不执行 java ----
     local cand home
     for cand in \
         "$base/jdk-$version.jdk" \
@@ -94,17 +143,27 @@ do_resolve_jdk_home() {
         fi
     done
 
-    # ---- 2. 回落：扫候选目录，用真实版本匹配 ----
-    local dir real
-    for dir in "$base"/jdk*; do
-        [ -d "$dir" ] || continue
-        home=$(_jdk_home_of_dir "$dir") || continue
+    # ---- 2. 命名匹配：目录名说了算，仍不执行 java ----
+    local name nver
+    while IFS=$'\t' read -r name home; do
+        [ -n "$home" ] || continue
+        nver=$(_jdk_name_version "$name") || continue
+        if _jdk_version_matches "$version" "$nver"; then
+            echo "$home"
+            return 0
+        fi
+    done < <(_jdk_dirs "$base")
+
+    # ---- 3. 真实版本：名字与目录对不上时才付出一次 java -version ----
+    local real
+    while IFS=$'\t' read -r name home; do
+        [ -n "$home" ] || continue
         real=$(_jdk_real_version "$home" 2>/dev/null) || continue
         if _jdk_version_matches "$version" "$real"; then
             echo "$home"
             return 0
         fi
-    done
+    done < <(_jdk_dirs "$base")
 
     return 1
 }
@@ -117,19 +176,18 @@ do_list_jdk_dirs() {
     local base="${1:-${JAVA_BASE_DIR:-}}"
     [ -n "$base" ] || return 1
 
-    local dir home name version first_line
-    for dir in "$base"/jdk*; do
-        [ -d "$dir" ] || continue
-        home=$(_jdk_home_of_dir "$dir") || continue
-
-        name=$(basename "$dir")
-        version=${name#jdk-}
-        version=${version#jdk}
-        version=${version%.jdk}
-
+    local name home version first_line
+    while IFS=$'\t' read -r name home; do
+        [ -n "$home" ] || continue
+        # 目录名推不出版本时（如 Homebrew 的 openjdk.jdk 软链接）退回真实版本。
+        # 这里本来就要跑一次 java -version 取首行，所以是白捡的。
+        version=$(_jdk_name_version "$name") || version=""
+        if [ -z "$version" ]; then
+            version=$(_jdk_real_version "$home" 2>/dev/null) || version="$name"
+        fi
         first_line=$("$home/bin/java" -version 2>&1 | head -1)
         printf '%s\t%s\t%s\n' "$version" "$home" "$first_line"
-    done
+    done < <(_jdk_dirs "$base")
 }
 
 # ============================================
@@ -141,22 +199,28 @@ do_scan() {
 
     echo "扫描 Java 安装路径..."
 
+    # 官方文档登记的 JDK 安装位置（都是「父目录」）。按序探测，第一个真能扫出
+    # JDK 的胜出——顺序即优先级，所以把各平台最标准的那个放在最前。
     local candidates=(
+        # macOS：Oracle / Adoptium / Azul / Corretto 的 pkg 都装到这里
         "/Library/Java/JavaVirtualMachines"
+        # Linux：Debian / Ubuntu / RHEL / Fedora 包管理器的统一落点
         "/usr/lib/jvm"
+        # Linux：Oracle 官方 RPM 的默认位置
+        "/usr/java"
+        # 手动解压安装的常见位置
         "/opt/java"
+        "/usr/local/java"
+        "/opt"
     )
 
     for dir in "${candidates[@]}"; do
         [ -d "$dir" ] || continue
-        # 认两种布局：macOS 的 jdk-<v>.jdk 与 Linux 的平铺 jdk-<v>
-        for sub in "$dir"/jdk*; do
-            [ -d "$sub" ] || continue
-            if _jdk_home_of_dir "$sub" >/dev/null 2>&1; then
-                java_base_dir="$dir"
-                break 2
-            fi
-        done
+        # 不挑目录名：只要它下面有像 JDK 的子目录就算命中（见 _jdk_dirs）
+        if [ -n "$(_jdk_dirs "$dir")" ]; then
+            java_base_dir="$dir"
+            break
+        fi
     done
 
     if [ -z "$java_base_dir" ]; then
