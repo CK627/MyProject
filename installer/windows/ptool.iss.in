@@ -95,9 +95,26 @@ Filename: "{app}\bin\ptool.bat"; Parameters: "shim"; \
 [UninstallDelete]
 ; 清掉用户级产物（shim / update 的仓库缓存）。只覆盖执行卸载的那个用户。
 Type: filesandordirs; Name: "{%USERPROFILE}\.devtools\@TOOL@"
-; {app} 也要显式声明：卸载器删目录时它自身的 unins000.exe 还在里面（错误 145），
-; 会走 "Will retry later" 延迟路径，把清理推到重试阶段进行。
-Type: filesandordirs; Name: "{app}"
+
+; shims 目录必须显式声明，否则卸载完会剩下一整个目录加一个删不掉的卸载器。
+;
+; 里面的转发脚本是安装时由 @TOOL@.bat shim 生成的，不在 [Files] 里，卸载日志中
+; 没有这些文件，于是 Inno 把 {app}\shims 当成「非空目录」——RemoveDir 失败（145），
+; 紧接着 {app} 也删不掉，最后留在盘上的是 shims\ 和 unins000.exe。实测日志：
+;     Deleting directory: ...\shims → Failed to delete directory (145). Will retry later.
+;     Deleting directory: ...\      → Failed to delete directory (145). Will retry later.
+; （2.3.2 把 shim 从用户级目录搬进 {app}\shims 之前没有这个问题。）
+;
+; 时机正好：卸载顺序是 [UninstallRun] → 注册表 → 图标 → 文件 → {app} →
+; [UninstallDelete] → 再来一次删目录（就是 "Will retry later" 的那次重试）。
+; 在这里把 shims 清掉，重试时 {app} 已经空了，重试就能成功。
+Type: filesandordirs; Name: "{app}\shims"
+;
+; 但不要顺手把它换成 "{app}"。{app} 里还有第一阶段正在运行的 unins000.exe 和
+; 它占用的 unins000.dat，扫进去必然失败（错误 5 / 32），反而把 unins000.dat 的
+; 正常删除也一起搞坏，结果是每卸载一次留一个 unins000.exe，下次安装发现名字被占，
+; 卸载器顺延成 unins001.exe 逐次累积。Inno 官方对 Name 参数的说明里也明确写了
+; 不要把 {app} 通配进来（"DON'T DO THIS"）。shims 是我们自己生成的固定目录，不在此列。
 
 [Code]
 const
@@ -322,21 +339,14 @@ end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
-  // 必须在 usPostUninstall：此时卸载器自身的注册表处理已经结束，
-  // 我们的写入才是最后生效的那个（否则会被它的回滚覆盖）。
-  //
   // 注意：Inno 的 Pascal Script 没有 SendMessageTimeout（编译期会报
   // Unknown identifier），所以这里无法手动广播 WM_SETTINGCHANGE。
   // 环境变量变更的通知交给 [Setup] 的 ChangesEnvironment=yes，
   // 它同时覆盖安装与卸载两个阶段。
-  // 用 usUninstall 而不是 usPostUninstall。
   //
-  // 实测（Windows 10 19045 / Inno 6.7.3）: usPostUninstall 根本不会触发。
-  // 卸载器的顺序是「先删应用目录、最后才删自己的 unins000.exe」，
-  // 于是删 {app} 时目录非空（145），走 "Will retry later" 延迟路径，
-  // 而该路径会跳过 usPostUninstall —— 日志里只能看到 step=0 和 step=1。
-  //
-  // usUninstall 稳定触发，且此时改注册表不会被卸载器回滚
+  // 用 usUninstall 而不是 usPostUninstall。实测（Windows 10 19045 /
+  // Inno 6.7.3）: usPostUninstall 不触发 —— 日志里只见到 step=0 和 step=1，
+  // 原因没定位。usUninstall 稳定触发，且此时改注册表不会被卸载器回滚
   // （本脚本没有用任何 uninsdelete* 标志，Inno 不会自动还原 Path）。
   if CurUninstallStep = usUninstall then
   begin

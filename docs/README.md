@@ -181,7 +181,7 @@ PYTHON_BASE_DIR="/usr/local/bin"
 # PTOOL_DEFAULT_VERSION="3.11"
 
 # ptool 版本（由 install / update 维护，请勿手动修改）
-PTOOL_VERSION="2.2.14"
+PTOOL_VERSION="2.2.15"
 ```
 
 > 安装 / 升级时若 `PTOOL_DEFAULT_VERSION` 还没设置，安装程序会自动把**扫到的最高版本**填进去
