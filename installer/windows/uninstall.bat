@@ -2,67 +2,98 @@
 chcp 65001 >nul 2>&1
 setlocal enabledelayedexpansion
 
-REM ptool 卸载脚本 (Windows)
+REM ptool uninstaller (Windows)
+REM
+REM The Inno Setup uninstaller is authoritative, and this script delegates to it.
+REM unins000.exe removes BOTH machine PATH entries ({app}\bin and {app}\shims),
+REM strips the legacy user-level entry, and deletes the directory tree.
+REM
+REM Doing that by hand is exactly how the previous version of this file went
+REM wrong: it only knew how to strip {app}\bin from the USER PATH, so it would
+REM have left both machine PATH entries behind, and its rmdir on {app} took
+REM unins000.exe with it, orphaning the Add/Remove Programs registration.
+REM
+REM The manual path at the bottom is the fallback for repo-layout installs,
+REM which have no unins000.exe.
+
+REM Derive the install dir from this script's own location instead of hardcoding
+REM it, so a non-default install target still uninstalls cleanly.
+set "SCRIPT_DIR=%~dp0"
+set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
+set "INSTALL_DIR="
+for %%i in ("%SCRIPT_DIR%\..\..") do if exist "%%~fi\bin\ptool.bat" set "INSTALL_DIR=%%~fi"
+if not defined INSTALL_DIR if exist "%ProgramFiles%\devtools\ptool\bin\ptool.bat" set "INSTALL_DIR=%ProgramFiles%\devtools\ptool"
+if not defined INSTALL_DIR if exist "%ProgramFiles(x86)%\devtools\ptool\bin\ptool.bat" set "INSTALL_DIR=%ProgramFiles(x86)%\devtools\ptool"
+if not defined INSTALL_DIR set "INSTALL_DIR=%ProgramFiles%\devtools\ptool"
 
 echo ========================================
-echo   ptool 卸载程序 (Windows)
+echo   ptool uninstaller (Windows)
 echo ========================================
 echo.
+echo Install dir: %INSTALL_DIR%
+echo.
 
-set /p "confirm=确定要卸载 ptool 吗？(y/n): "
-if /i not "!confirm!"=="y" (
-    echo 已取消
+if exist "%INSTALL_DIR%\unins000.exe" (
+    echo Delegating to the Inno Setup uninstaller...
+    start /wait "" "%INSTALL_DIR%\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+    echo.
+    echo Uninstall complete.
+    echo Please reopen a CMD window for the PATH change to take effect.
+    echo.
     pause
     exit /b 0
 )
 
+REM No Inno uninstaller: a repo-layout install. Confirm before removing anything.
+set /p "confirm=Remove %INSTALL_DIR% and its PATH entries? (y/n): "
+if /i not "!confirm!"=="y" (
+    echo Cancelled
+    pause
+    exit /b 0
+)
 echo.
 
-REM 删除安装目录
-set "INSTALL_DIR=C:\Program Files\devtools\ptool"
-if exist "%INSTALL_DIR%" (
-    rmdir /s /q "%INSTALL_DIR%"
-    echo [完成] 已删除 %INSTALL_DIR%
-) else (
-    echo [跳过] 安装目录不存在
+echo [Env] Removing machine PATH entries...
+REM Explicit ExpandString kind rather than Environment::SetEnvironmentVariable:
+REM a machine Path that silently loses REG_EXPAND_SZ stops expanding
+REM %SystemRoot%, which breaks half the entries on it.
+powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $bin='%INSTALL_DIR%\bin'; $shim='%INSTALL_DIR%\shims'; $legacy='%USERPROFILE%\.devtools\ptool\shims'; function N($s){ $s.Trim().TrimEnd('\').ToUpperInvariant() }; $k=[Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('SYSTEM\CurrentControlSet\Control\Session Manager\Environment',$true); if($null -eq $k){ Write-Output 'NEED_ADMIN'; exit 3 }; $p=[string]$k.GetValue('Path',''); $keep=@($p -split ';' | Where-Object { $_ -and (N $_) -ne (N $bin) -and (N $_) -ne (N $shim) }); $k.SetValue('Path', ($keep -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString); $k.Close(); $u=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment',$true); if($u -and $null -ne $u.GetValue('Path')){ $up=[string]$u.GetValue('Path'); $ukeep=@($up -split ';' | Where-Object { $_ -and (N $_) -ne (N $legacy) }); $u.SetValue('Path', ($ukeep -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString); $u.Close() }; Write-Output 'OK'"
+if !errorlevel! equ 3 (
+    echo Error: administrator privileges are required to update the machine PATH.
+    echo Right-click uninstall.bat and choose "Run as administrator".
+    pause
+    exit /b 1
+)
+if !errorlevel! neq 0 (
+    echo Error: failed to update the machine PATH, see the message above.
+    pause
+    exit /b 1
+)
+echo [Done] Machine PATH cleaned
+
+if not exist "%INSTALL_DIR%" (
+    echo [Skip] Install dir not found
+    goto :uninstall_done
 )
 
-echo.
-
-REM 删除配置文件
-set "CONFIG_FILE=%USERPROFILE%\.ptool.conf"
-if exist "%CONFIG_FILE%" (
-    set /p "keep_config=是否保留配置文件？(y/n): "
-    if /i "!keep_config!"=="y" (
-        echo [跳过] 保留配置文件 %CONFIG_FILE%
-    ) else (
-        del "%CONFIG_FILE%"
-        echo [完成] 已删除 %CONFIG_FILE%
-    )
-) else (
-    echo [跳过] 配置文件不存在
+REM In the repo layout INSTALL_DIR resolves to the checkout root, so a plain
+REM rmdir here would delete a developer's clone along with any uncommitted work.
+REM PATH is already cleaned above, so stopping here is the whole job.
+if exist "%INSTALL_DIR%\.git" (
+    echo [Skip] %INSTALL_DIR% is a git checkout, not deleting it
+    echo        Delete it by hand if you really want it gone
+    goto :uninstall_done
 )
 
-echo.
+rmdir /s /q "%INSTALL_DIR%"
+echo [Done] Removed %INSTALL_DIR%
 
-REM 清理环境变量
-echo [环境] 清理 PATH...
-for /f "tokens=2*" %%a in ('reg query "HKCU\Environment" /v Path 2^>nul') do (
-    set "user_path=%%b"
-    if defined user_path (
-        set "user_path=!user_path:;%INSTALL_DIR%\bin=!"
-        set "user_path=!user_path:%INSTALL_DIR%\bin;=!"
-        set "user_path=!user_path:%INSTALL_DIR%\bin=!"
-        reg add "HKCU\Environment" /v Path /t REG_EXPAND_SZ /d "!user_path!" /f >nul 2>&1
-        echo [完成] 已从用户 PATH 中移除
-    )
-)
-
+:uninstall_done
 echo.
 echo ========================================
-echo   卸载完成！
+echo   Uninstall complete!
 echo ========================================
 echo.
-echo 请重新打开 CMD 窗口使环境变量生效。
+echo Please reopen a CMD window for the PATH change to take effect.
 echo.
 pause

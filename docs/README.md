@@ -54,8 +54,10 @@ cd /path/to/ptool
 
 ---
 
-> 卸载会删除安装目录（含配置文件）、`~/.devtools/ptool/` 下的 shim / 补全脚本 / repo 缓存，
-> 并清理 shell 配置里由 ptool 写入的 PATH 行与补全 source 行（不触碰其他配置）。
+> 卸载会删除安装目录（含配置文件与 Windows 的 `shims\`）、`~/.devtools/ptool/` 下的
+> shim / 补全脚本 / repo 缓存，并清理 PATH 中由 ptool 写入的项：
+> Windows 上是机器级的 `{app}\bin` 与 `{app}\shims` 两条，macOS / Linux 上是 shell 配置里
+> 的 PATH 行与补全 source 行（不触碰其他配置）。
 > 确认后会立即执行，请提前备份自定义配置。
 
 ## 功能特性
@@ -176,8 +178,18 @@ PYTHON_BASE_DIR="/usr/local/bin"
 # PTOOL_DEFAULT_VERSION="3.11"
 
 # ptool 版本（由 install / update 维护，请勿手动修改）
-PTOOL_VERSION="2.2.12"
+PTOOL_VERSION="2.2.13"
 ```
+
+> 安装 / 升级时若 `PTOOL_DEFAULT_VERSION` 还没设置，安装程序会自动把**扫到的最高版本**填进去
+> （并打印选中的版本与来源目录），这样前置到机器级 PATH 的 shim 立刻就能解析出版本。
+> 已有默认版本时不会被覆盖。
+>
+> 「最高」指**同一个 `PYTHON_BASE_DIR` 内**的最高版本。需要别的版本就 `ptool use <版本>`。
+>
+> 该行为有运行时兜底：默认版本为空时，`ptool.bat` 自己按目录名推出版本、取最高的一个用
+> （不启动任何解释器进程），只有连一个 Python 都找不到才报错并提示 `ptool use <version>`。
+> 所以手动把这行注释掉也不会让整台机器的 `python` 挂掉。
 
 `ptool scan` 会自动扫描以下路径查找 Python 安装目录：
 
@@ -192,14 +204,36 @@ PTOOL_VERSION="2.2.12"
 
 ## 跨平台支持
 
-| 系统 | 主脚本 | 安装路径 | 配置文件 | 入口 |
-|------|--------|----------|----------|------|
-| macOS | `ptool` | `/Library/devtools/ptool/` | `/Library/devtools/ptool/config/ptool.conf` | `installer/` |
-| Linux | `ptool` | `/usr/local/devtools/ptool/` | `/usr/local/devtools/ptool/config/ptool.conf` | `installer/` |
-| Windows | `ptool.bat` | `C:\Program Files\devtools\ptool\` | `C:\Program Files\devtools\ptool\config\ptool.conf` | `installer/windows/` |
+| 系统 | 主脚本 | 安装路径 | 配置文件 | shim 目录 | 入口 |
+|------|--------|----------|----------|-----------|------|
+| macOS | `ptool` | `/Library/devtools/ptool/` | `/Library/devtools/ptool/config/ptool.conf` | `~/.devtools/ptool/shims` | `installer/` |
+| Linux | `ptool` | `/usr/local/devtools/ptool/` | `/usr/local/devtools/ptool/config/ptool.conf` | `~/.devtools/ptool/shims` | `installer/` |
+| Windows | `ptool.bat` | `C:\Program Files\devtools\ptool\` | `C:\Program Files\devtools\ptool\config\ptool.conf` | `C:\Program Files\devtools\ptool\shims` | `installer/windows/` |
 
-macOS / Linux 还会在 `~/.devtools/ptool/shims` 下生成 `python` / `python3` / `pip` / `pip3` 包装脚本，
-它们优先于系统 Python，并按当前默认版本转发调用。`ptool update` 使用的仓库缓存在 `~/.devtools/ptool/repo`。
+macOS / Linux 会在 `~/.devtools/ptool/shims` 下生成 `python` / `python3` / `pip` / `pip3` 包装脚本，
+它们优先于系统 Python，并按当前默认版本转发调用。Windows 的 shim 生成在安装目录下的 `shims\`，
+由安装程序**前置**到**机器级** PATH 上（不是用户级）。
+
+> **为什么必须是机器级、且必须排在最前**：Windows 的生效 PATH 是「机器级 `Path` + `;` +
+> 用户级 `Path`」，机器级整体在前——用户级目录排得再靠前也压不过任何一个机器级目录。
+> 旧版把 shim 放在 `%USERPROFILE%\.devtools\ptool\shims` 里，只要机器级 PATH 上有别的
+> `python.exe`（例如 `%ProgramFiles%\Python*`），裸敲 `python` 走的就不是 ptool 设的默认版本。
+> 2.2.13 起 shim 目录迁到安装目录并前置到机器级 PATH。
+>
+> **升级注意**：正因为 shim 现在才真正生效，升级后裸敲 `python` 报出的版本**可能与升级前不同**
+> ——它解析到的是配置里的默认版本（没有默认版本时是扫到的最高版本）。想改回某个版本用
+> `ptool use <版本>`。
+>
+> **权限**：`config\` 与 `shims\` 只对管理员可写。`config` 里的默认版本决定机器级 shim 去执行哪个
+> `python.exe`，`shims` 又在全机器都会执行的 PATH 上，放开写权限等于让普通用户借管理员之手执行任意
+> 程序。代价是 `ptool use` 与 `ptool scan` 需要在管理员权限的 CMD 里运行，否则会提示
+> `cannot write ...\config\ptool.conf`。
+>
+> **`py` 不在 shim 名单里**（只有 `python` / `python3` / `pip` / `pip3`），所以 `py -3.11` 走的仍是
+> 官方 launcher 自己的版本表，与 `ptool use` 设的默认版本无关。这是刻意的：ptool 内部就靠裸 `py`
+> 来定位解释器路径，给 `py` 生成 shim 会形成自我递归。要用 ptool 的默认版本请敲 `python`。
+
+`ptool update` 使用的仓库缓存在 `~/.devtools/ptool/repo`。
 
 ## 在脚本中使用
 

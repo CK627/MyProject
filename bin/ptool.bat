@@ -86,10 +86,23 @@ if not "!PTOOL_DEFAULT_VERSION!"=="" (
     set "version=!PTOOL_DEFAULT_VERSION!"
     shift /1
     goto :run_tool
-) else (
-    echo Error: need tool name and version
-    exit /b 1
 )
+
+REM No default configured. Bailing out here would break bare `python` for every
+REM user on the machine: the installed layout PREPENDS this tool's shims to the
+REM machine PATH, so this is exactly the path a plain `python` takes. Fall back
+REM to the highest version a directory NAME spells out. Directory names only,
+REM never a subprocess, so this cannot travel back out through a shim.
+call :best_dir_version version
+if not "!version!"=="" (
+    shift /1
+    goto :run_tool
+)
+
+echo Error: need tool name and version
+echo No default version is set and no Python was found under !PYTHON_BASE_DIR!
+echo Run: ptool use ^<version^>
+exit /b 1
 
 :run_tool
 call :resolve_py "!version!" python_exe
@@ -177,6 +190,20 @@ echo   ptool help                          Show help
 if "%~2"=="" ( echo Error: specify a version & exit /b 1 )
 call :resolve_py "%~2" use_exe
 if not defined use_exe ( echo Error: Python %~2 not found & exit /b 1 )
+
+REM The config directory is administrator-only (it decides which python.exe the
+REM machine-level shims run). Probe before writing so a non-elevated call gets a
+REM usable message instead of a raw "Access is denied" from cmd. Redirect first:
+REM the other order adds a trailing space to the probe file, which does not
+REM matter here but keeps the pattern consistent across the file.
+>"%CONFIG_DIR%\.write-probe" echo ok 2>nul
+if not exist "%CONFIG_DIR%\.write-probe" (
+    echo Error: cannot write %CONFIG_FILE%
+    echo Administrator privileges are required. Open an elevated CMD and run:
+    echo   ptool use %~2
+    exit /b 1
+)
+del "%CONFIG_DIR%\.write-probe" >nul 2>&1
 
 findstr /v "PTOOL_DEFAULT_VERSION" "%CONFIG_FILE%" > "%CONFIG_FILE%.tmp"
 REM Redirect before echo: the other order appends a trailing space.
@@ -459,12 +486,43 @@ REM ============================================
 REM shim
 REM ============================================
 :cmd_shim
+REM Installed layout puts the shims in %INSTALL_DIR%\shims, which the installer
+REM PREPENDS to the machine PATH. That is the whole point: the effective PATH is
+REM machine entries first and user entries after, so a shim living in the user
+REM PATH can never outrank a machine-level python.exe. module\install.bat only
+REM exists after install.bat copied it there, so its presence is what tells the
+REM two layouts apart -- INSTALL_MODULE cannot, it falls back to the repo path
+REM and is therefore always defined.
+REM Repo layout keeps the per-user dir so a checkout stays usable without admin.
 set "SHIMS_DIR=%USERPROFILE%\.devtools\ptool\shims"
-if not exist "!SHIMS_DIR!" mkdir "!SHIMS_DIR!"
+set "SHIMS_SCOPE=user"
+if exist "%PROJECT_DIR%\module\install.bat" (
+    set "SHIMS_DIR=%PROJECT_DIR%\shims"
+    set "SHIMS_SCOPE=machine"
+)
+
+if not exist "!SHIMS_DIR!" mkdir "!SHIMS_DIR!" 2>nul
+
+REM Real write probe. mkdir can succeed and the write still fail (read-only
+REM dir, no admin), so the probe is what actually decides. Redirect first: the
+REM other order appends a trailing space to the file.
+>"!SHIMS_DIR!\.shim-probe" echo ok 2>nul
+if not exist "!SHIMS_DIR!\.shim-probe" (
+    echo Error: cannot write !SHIMS_DIR!
+    echo Administrator privileges are required. Open an elevated CMD and run:
+    echo   ptool shim
+    exit /b 1
+)
+del "!SHIMS_DIR!\.shim-probe" >nul 2>&1
 
 REM shims are thin forwards; ptool resolves the interpreter path itself
 REM so the path logic lives only in :resolve_py, never duplicated
 REM The old code copied the logic into each shim and forgot setlocal
+REM
+REM 'py' is deliberately NOT in this list. :resolve_py and :list_pythons call
+REM a bare `py`, which cmd resolves through PATH; once these shims are prepended
+REM to the machine PATH, a py.bat here would send that call straight back into
+REM ptool and loop forever. Do not add it.
 for %%t in (python python3 pip pip3) do (
     (
         echo @echo off
@@ -481,7 +539,20 @@ for %%t in (python python3 pip pip3) do (
 
 echo Shims created: !SHIMS_DIR!
 
-REM 确保 shims 目录在用户 PATH（否则 `python` 走系统 Python，不用默认版本）
+if "!SHIMS_SCOPE!"=="machine" (
+    REM Put on the machine PATH by the installer -- the Registry section in the
+    REM .iss and the 4th step in install.bat. Doing it here too would need admin
+    REM and would race the installer, so it is deliberately left out.
+    REM No brackets or parens in these comment lines on purpose: this is a
+    REM parenthesised block, and cmd counts a closing paren in a REM as ending
+    REM it.
+    echo Scope: machine ^(prepended to the machine PATH by the installer^)
+    exit /b 0
+)
+
+REM Repo layout: no installer involved, so place the dir on the user PATH here.
+REM This cannot outrank a machine-level python.exe, which is why the installed
+REM layout uses %INSTALL_DIR%\shims instead of this directory.
 powershell -NoProfile -Command "$d = Join-Path $env:USERPROFILE '.devtools\ptool\shims'; $p = [Environment]::GetEnvironmentVariable('Path','User'); $parts = @($p -split ';' | Where-Object { $_ -and ($_ -ne $d) }); [Environment]::SetEnvironmentVariable('Path', ($d + ';' + ($parts -join ';')).TrimEnd(';'), 'User'); Write-Output 'shims moved to front of user PATH'"
 exit /b 0
 
@@ -529,6 +600,59 @@ REM Dir name is Python plus 1-digit major and 1-2 digit minor, split by position
 REM   Python311 to 3.11, Python27 to 2.7, Python36 to 3.6, Python312 to 3.12
 if "!_VD:~6,1!"=="" exit /b 0
 set "%~2=!_VD:~6,1!.!_VD:~7,2!"
+exit /b 0
+
+REM ============================================
+REM Sortable score for a version string: major*10000 + minor*100 + patch
+REM   3.11 -> 31100    3.12 -> 31200    3.9 -> 30900    2.7 -> 20700
+REM so 3.12 outranks 3.9 -- what a human expects and what a plain string
+REM compare gets exactly backwards.
+REM The three components are initialised to 0 first and the loop only overwrites
+REM the ones that exist: an empty component would otherwise make `set /a` read a
+REM bare `*` and fail. Passing the NAMES to `set /a` (not the values) means an
+REM undefined name reads as 0 rather than raising an error.
+REM arg1 = version, arg2 = variable to receive the score
+REM ============================================
+:ver_score
+set "%~2=0"
+set "_SCORE=0"
+set "_SM=0"
+set "_SN=0"
+set "_SP=0"
+for /f "tokens=1,2,3 delims=." %%a in ("%~1") do (
+    if not "%%a"=="" set "_SM=%%a"
+    if not "%%b"=="" set "_SN=%%b"
+    if not "%%c"=="" set "_SP=%%c"
+)
+set /a "_SCORE=_SM*10000+_SN*100+_SP" >nul 2>&1
+set "%~2=!_SCORE!"
+exit /b 0
+
+REM ============================================
+REM Highest version a Python directory name under PYTHON_BASE_DIR spells out.
+REM Directory names only, no interpreter run: this feeds the default version, and
+REM a default is also what bin\ptool.bat falls back to at run time, so it must
+REM know only what :ver_from_dir knows -- otherwise the two would disagree.
+REM Sets the variable named by arg1; leaves it empty when nothing is found.
+REM ============================================
+:best_dir_version
+set "%~1="
+set "_BV="
+set "_BSCORE=-1"
+if "!PYTHON_BASE_DIR!"=="" exit /b 1
+for /d %%d in ("!PYTHON_BASE_DIR!\Python*") do (
+    if exist "%%d\python.exe" (
+        call :ver_from_dir "%%~nxd" _BNV
+        if defined _BNV (
+            call :ver_score "!_BNV!" _BSC
+            if !_BSC! gtr !_BSCORE! (
+                set "_BSCORE=!_BSC!"
+                set "_BV=!_BNV!"
+            )
+        )
+    )
+)
+if defined _BV set "%~1=!_BV!"
 exit /b 0
 
 REM ============================================
