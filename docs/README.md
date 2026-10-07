@@ -18,7 +18,8 @@ Windows（PowerShell）：
 irm https://raw.githubusercontent.com/CK627/MyProject/ptool/installer/install.ps1 | iex
 ```
 
-macOS 下载最新 Release 的 `.pkg` 安装；Linux 下载源码安装；Windows 下载 `.exe` 静默安装。
+macOS 下载最新 Release 的 `.dmg`（内含 `.pkg`，双击安装）；Linux 下载 `.tar.gz` 解压后安装；
+Windows 下载 `.exe` 静默安装。
 
 ### macOS / Linux
 
@@ -175,7 +176,7 @@ PYTHON_BASE_DIR="/usr/local/bin"
 # PTOOL_DEFAULT_VERSION="3.11"
 
 # ptool 版本（由 install / update 维护，请勿手动修改）
-PTOOL_VERSION="2.1.0"
+PTOOL_VERSION="2.2.11"
 ```
 
 `ptool scan` 会自动扫描以下路径查找 Python 安装目录：
@@ -234,8 +235,9 @@ ptool/
 │   ├── install.sh              # 一键安装（macOS / Linux）
 │   ├── install.ps1             # 一键安装（Windows）
 │   ├── install-from-source.sh  # 从源码安装 / 卸载（macOS / Linux）
+│   ├── linux-build.sh          # 打 Linux .tar.gz 安装包
 │   ├── macos/
-│   │   ├── build.sh            # 打包 .pkg / .dmg
+│   │   ├── build.sh            # 打包 .pkg / .dmg（.pkg 打进 dmg，不单独发布）
 │   │   ├── distribution.xml.in
 │   │   ├── postinstall.in
 │   │   └── uninstall.in
