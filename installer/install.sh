@@ -19,6 +19,9 @@
 # 于是子 shell 里的任何失败都不会中断，脚本会一路跑到底，最后照样打印
 # 「安装完成」——下载 404、installer 失败全被吞掉，用户只看到「没有效果」。
 # 现在改成独立执行 + 显式判退出码，失败时明确报错且不刷新终端。
+#
+# 挂载卷与下载产物的清理走 EXIT trap（见下方 cleanup），不再在每条失败分支里手写：
+# 手写版必然漏掉 Ctrl-C 和 sudo 输密码时取消，结果卷留在 /Volumes、dmg 留在 /tmp。
 
 (
     set -euo pipefail
@@ -32,6 +35,23 @@
     info() { echo "==> $*"; }
 
     command -v curl >/dev/null 2>&1 || err "需要 curl，请先安装"
+
+    # 下载目录与挂载点先置空：cleanup 挂在 EXIT 上，每条退出路径都会跑它，
+    # 包括「还没开始下载」「还没挂载」的那些，所以它必须能安全地什么都不做。
+    TMPDIR_DL=""
+    MNT=""
+    DMG=""
+    cleanup() {
+        if [ -n "$MNT" ]; then hdiutil detach "$MNT" >/dev/null 2>&1 || true; fi
+        if [ -n "$TMPDIR_DL" ]; then rm -rf "$TMPDIR_DL" || true; fi
+        return 0
+    }
+    # 清理只在 EXIT 上挂一次，不在每条失败分支里手写。手写的版本必然漏掉 Ctrl-C
+    # 和 sudo 输密码时取消：卷留在 /Volumes、dmg 留在 /tmp，用户看到的就是
+    # 「装一次多一个卷」。err 退出、被中断、正常结束，三条路都会走到这里。
+    # 只挂 EXIT，别把 INT/TERM 也列进来——那样 bash 跑完 handler 会继续往下执行
+    # （实测 rc=0），该中断的地方反而中断不了。
+    trap cleanup EXIT
 
     case "$(uname -s)" in
         Darwin)
@@ -48,7 +68,11 @@
 
             # 发布产物是 .dmg，.pkg 打在 dmg 里，所以要先挂载再从挂载点安装。
             # 别再改回直接下载 .pkg：Release 里没有这个资产，只会拿到 404。
-            DMG="/tmp/${TOOL}-${VER}.dmg"
+            #
+            # 下载到 mktemp -d 出来的私有目录，而不是固定的 /tmp/<工具>-<版本>.dmg：
+            # 固定名字在多人机器上可以被人抢先建成符号链接，curl -o 会顺着写穿到别处。
+            TMPDIR_DL=$(mktemp -d)
+            DMG="$TMPDIR_DL/${TOOL}-${VER}.dmg"
             URL="$BASE/releases/download/${VERSION}/${TOOL}-${VER}.dmg"
             info "下载 $URL"
             curl -fL --progress-bar "$URL" -o "$DMG" || err "下载失败：$URL"
@@ -57,33 +81,20 @@
             info "挂载安装包..."
             MNT=$(hdiutil attach -nobrowse -readonly "$DMG" \
                   | grep -o '/Volumes/.*' | head -1)
-            [ -n "$MNT" ] || { rm -f "$DMG"; err "挂载失败：$DMG"; }
+            [ -n "$MNT" ] || err "挂载失败：$DMG"
 
-            # 挂载后无论走哪条路径退出，都必须把卷卸掉、把 dmg 删掉，
-            # 否则失败一次就在 /Volumes 下留一个卷、在 /tmp 留一个几百 KB 的文件。
-            cleanup_dmg() {
-                hdiutil detach "$MNT" >/dev/null 2>&1 || true
-                rm -f "$DMG"
-            }
-
-            [ -f "$MNT/${TOOL}-${VER}.pkg" ] || {
-                cleanup_dmg
-                err "安装包里没有 ${TOOL}-${VER}.pkg"
-            }
+            [ -f "$MNT/${TOOL}-${VER}.pkg" ] || err "安装包里没有 ${TOOL}-${VER}.pkg"
 
             info "安装（需要管理员密码）..."
-            if ! sudo installer -pkg "$MNT/${TOOL}-${VER}.pkg" -target /; then
-                cleanup_dmg
-                err "安装失败（可能是密码错误，或安装包与当前系统不兼容）"
-            fi
-            cleanup_dmg
+            sudo installer -pkg "$MNT/${TOOL}-${VER}.pkg" -target / \
+                || err "安装失败（可能是密码错误，或安装包与当前系统不兼容）"
+            # 卸卷、删 dmg 一步都不用写在这里——EXIT trap 兜底，成功路径也不例外。
             ;;
         Linux)
             info "下载源码并安装..."
-            TMP=$(mktemp -d)
-            trap 'rm -rf "$TMP"' EXIT
-            curl -fsSL "$BASE/archive/refs/heads/${TOOL}.tar.gz" | tar xz -C "$TMP"
-            (cd "$TMP/${REPO}-${TOOL}" && ./installer/install-from-source.sh)
+            TMPDIR_DL=$(mktemp -d)
+            curl -fsSL "$BASE/archive/refs/heads/${TOOL}.tar.gz" | tar xz -C "$TMPDIR_DL"
+            (cd "$TMPDIR_DL/${REPO}-${TOOL}" && ./installer/install-from-source.sh)
             ;;
         *)
             err "不支持的系统。Windows 请用 PowerShell 一键安装"
