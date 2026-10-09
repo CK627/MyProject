@@ -16,14 +16,16 @@ REM
 REM The manual path at the bottom is the fallback for repo-layout installs,
 REM which have no unins000.exe.
 
-REM Derive the install dir from this script's own location instead of hardcoding
-REM it, so a non-default install target still uninstalls cleanly.
+REM Prefer the real installed copy. A repo checkout also contains bin\ptool.bat,
+REM so probing that first would clean PATH entries for the repo (no-ops), leave
+REM the actual machine PATH entries behind, and still report success.
 set "SCRIPT_DIR=%~dp0"
 set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
 set "INSTALL_DIR="
-for %%i in ("%SCRIPT_DIR%\..\..") do if exist "%%~fi\bin\ptool.bat" set "INSTALL_DIR=%%~fi"
-if not defined INSTALL_DIR if exist "%ProgramFiles%\devtools\ptool\bin\ptool.bat" set "INSTALL_DIR=%ProgramFiles%\devtools\ptool"
+if exist "%ProgramFiles%\devtools\ptool\bin\ptool.bat" set "INSTALL_DIR=%ProgramFiles%\devtools\ptool"
 if not defined INSTALL_DIR if exist "%ProgramFiles(x86)%\devtools\ptool\bin\ptool.bat" set "INSTALL_DIR=%ProgramFiles(x86)%\devtools\ptool"
+REM No Program Files copy: a repo layout. Derive it from this script's location.
+if not defined INSTALL_DIR for %%i in ("%SCRIPT_DIR%\..\..") do if exist "%%~fi\bin\ptool.bat" set "INSTALL_DIR=%%~fi"
 if not defined INSTALL_DIR set "INSTALL_DIR=%ProgramFiles%\devtools\ptool"
 
 echo ========================================
@@ -57,7 +59,9 @@ echo [Env] Removing machine PATH entries...
 REM Explicit ExpandString kind rather than Environment::SetEnvironmentVariable:
 REM a machine Path that silently loses REG_EXPAND_SZ stops expanding
 REM %SystemRoot%, which breaks half the entries on it.
-powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $bin='%INSTALL_DIR%\bin'; $shim='%INSTALL_DIR%\shims'; $legacy='%USERPROFILE%\.devtools\ptool\shims'; function N($s){ $s.Trim().TrimEnd('\').ToUpperInvariant() }; $k=[Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('SYSTEM\CurrentControlSet\Control\Session Manager\Environment',$true); if($null -eq $k){ Write-Output 'NEED_ADMIN'; exit 3 }; $p=[string]$k.GetValue('Path',''); $keep=@($p -split ';' | Where-Object { $_ -and (N $_) -ne (N $bin) -and (N $_) -ne (N $shim) }); $k.SetValue('Path', ($keep -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString); $k.Close(); $u=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment',$true); if($u -and $null -ne $u.GetValue('Path')){ $up=[string]$u.GetValue('Path'); $ukeep=@($up -split ';' | Where-Object { $_ -and (N $_) -ne (N $legacy) }); $u.SetValue('Path', ($ukeep -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString); $u.Close() }; Write-Output 'OK'"
+REM try/catch so a non-elevated run reports NEED_ADMIN deterministically:
+REM OpenSubKey(...,$true) throws on access denied instead of returning $null.
+powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $bin='%INSTALL_DIR%\bin'; $shim='%INSTALL_DIR%\shims'; $legacy='%USERPROFILE%\.devtools\ptool\shims'; function N($s){ $s.Trim().TrimEnd('\').ToUpperInvariant() }; try { $k=[Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('SYSTEM\CurrentControlSet\Control\Session Manager\Environment',$true); if($null -eq $k){ Write-Output 'NEED_ADMIN'; exit 3 }; $p=[string]$k.GetValue('Path',''); $keep=@($p -split ';' | Where-Object { $_ -and (N $_) -ne (N $bin) -and (N $_) -ne (N $shim) }); $k.SetValue('Path', ($keep -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString); $k.Close(); $u=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment',$true); if($u -and $null -ne $u.GetValue('Path')){ $up=[string]$u.GetValue('Path'); $ukeep=@($up -split ';' | Where-Object { $_ -and (N $_) -ne (N $legacy) }); $u.SetValue('Path', ($ukeep -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString); $u.Close() }; Write-Output 'OK' } catch { if($_.Exception -is [System.UnauthorizedAccessException] -or $_.Exception -is [System.Security.SecurityException]) { Write-Output 'NEED_ADMIN'; exit 3 } else { Write-Output ('ERROR: ' + $_.Exception.Message); exit 2 } }"
 if !errorlevel! equ 3 (
     echo Error: administrator privileges are required to update the machine PATH.
     echo Right-click uninstall.bat and choose "Run as administrator".

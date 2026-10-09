@@ -27,7 +27,11 @@ load_config() {
         while IFS='=' read -r key value; do
             [[ "$key" =~ ^#.*$ || -z "$key" ]] && continue
             key=$(echo "$key" | tr -d ' ')
-            value=$(echo "$value" | tr -d " '\"")
+            # Trim surrounding whitespace and strip one wrapping pair of double
+            # quotes. Never delete every space: PYTHON_BASE_DIR such as
+            # "/opt/My Python/bin" must survive intact (the old tr -d " '\""
+            # collapsed it to /opt/MyPython/bin).
+            value=$(printf '%s' "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^"\(.*\)"$/\1/')
             case "$key" in
                 PYTHON_BASE_DIR) PYTHON_BASE_DIR="$value" ;;
                 PTOOL_DEFAULT_VERSION) PTOOL_DEFAULT_VERSION="$value" ;;
@@ -212,8 +216,8 @@ cmd_tools() {
 }
 
 cmd_run() {
-    local version="$1"
-    local python_file="$2"
+    local version="$1"; shift
+    local python_file="$1"; shift
 
     if [ -z "$python_file" ] || [ ! -f "$python_file" ]; then
         echo "错误: 请指定有效的 Python 文件"
@@ -229,7 +233,8 @@ cmd_run() {
     fi
 
     echo "=== 运行 (Python $version) ==="
-    "$python_path" "$python_file"
+    # shift 之后剩下的参数原样透传给脚本：ptool run 3.11 f.py --flag
+    "$python_path" "$python_file" "$@"
 }
 
 # ============================================
@@ -247,7 +252,10 @@ case "$1" in
     home)     [ $# -lt 2 ] && { echo "错误: 请指定版本号"; exit 1; }; cmd_home "$2"; exit $? ;;
     info)     [ $# -lt 2 ] && { echo "错误: 请指定版本号"; exit 1; }; cmd_info "$2"; exit $? ;;
     tools)    [ $# -lt 2 ] && { echo "错误: 请指定版本号"; exit 1; }; cmd_tools "$2"; exit $? ;;
-    run)      [ $# -lt 3 ] && { echo "错误: 请指定版本号和文件"; exit 1; }; cmd_run "$2" "$3"; exit $? ;;
+    run)
+        [ $# -lt 3 ] && { echo "错误: 请指定版本号和文件"; exit 1; }
+        # $3 之后的参数透传给脚本本身：ptool run 3.11 f.py --flag
+        _run_ver="$2"; shift 2; cmd_run "$_run_ver" "$@"; exit $? ;;
     scan)     do_scan "$CONFIG_FILE"; exit $? ;;
     config)   do_config "$CONFIG_FILE"; exit 0 ;;
     install)  do_install "$PROJECT_DIR"; exit $? ;;

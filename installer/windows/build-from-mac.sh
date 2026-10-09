@@ -92,18 +92,29 @@ TOOL_UPPER="$(echo "$TOOL" | tr 'a-z' 'A-Z')"
 # 仓库里的 config 模板带的是 macOS/Linux 默认路径（如 /usr/local/bin），
 # 直接发到 Windows 上会让 `ptool list` 找不到任何东西。这里换成 Windows 默认值，
 # 安装后的 [Run] 扫描再用实际检测结果覆盖它。
+#
+# 键名从模板里推导（第一个 *_BASE_DIR= 行）。不要用 $TOOL_UPPER 拼键名：ptool 的
+# 键叫 PYTHON_BASE_DIR，拼出来是 PTOOL_BASE_DIR，永远匹配不上，替换会静默失效。
+# 找不到可替换的行就直接报错退出，好过悄悄发出一个带 unix 路径的配置。
 case "$TOOL" in
     ptool) WIN_BASE='C:\' ;;
     jtool) WIN_BASE='C:\Program Files\Java' ;;
     *)     WIN_BASE='C:\' ;;
 esac
-WIN_BASE="$WIN_BASE" python3 - "$STAGE/src/config/$TOOL.conf" "$TOOL_UPPER" <<'PYEOF'
-import os, sys
-path, key = sys.argv[1], sys.argv[2] + "_BASE_DIR"
+WIN_BASE="$WIN_BASE" python3 - "$STAGE/src/config/$TOOL.conf" <<'PYEOF'
+import os, re, sys
+path = sys.argv[1]
 lines = open(path, encoding="utf-8").read().splitlines(True)
-out = []
+out, done = [], False
 for ln in lines:
-    out.append(f'{key}="{os.environ["WIN_BASE"]}"\n' if ln.startswith(key + "=") else ln)
+    m = re.match(r'^([A-Z][A-Z0-9_]*_BASE_DIR=)', ln)
+    if m and not done:
+        out.append(m.group(1) + '"' + os.environ["WIN_BASE"] + '"\n')
+        done = True
+    else:
+        out.append(ln)
+if not done:
+    sys.exit("error: no *_BASE_DIR= line found in " + path)
 open(path, "w", encoding="utf-8").writelines(out)
 PYEOF
 

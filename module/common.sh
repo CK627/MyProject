@@ -89,15 +89,15 @@ do_scan() {
 
     mkdir -p "$(dirname "$config_file")"
     cat > "$config_file" << EOF
-# ptool 配置文件
+# ptool configuration
 
-# Python 安装路径（父目录）
+# Python base directory (the parent directory)
 PYTHON_BASE_DIR="$python_base_dir"
 
-# 默认版本
+# Default version
 $keep_default
 
-# ptool 版本（由 install / update 维护，请勿手动修改）
+# ptool version (maintained by install / update, do not edit)
 $keep_version
 EOF
 
@@ -327,7 +327,9 @@ if [ -f "\$CONFIG_FILE" ]; then
     while IFS='=' read -r key value; do
         [[ "\$key" =~ ^#.*$ || -z "\$key" ]] && continue
         key=\$(echo "\$key" | tr -d ' ')
-        value=\$(echo "\$value" | tr -d " '\"")
+        # Trim surrounding whitespace and one wrapping pair of quotes only --
+        # interior spaces in a path must survive (keep in sync with ptool.sh).
+        value=\$(printf '%s' "\$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*\$//' -e 's/^"\(.*\)"\$/\1/')
         case "\$key" in
             PYTHON_BASE_DIR) PYTHON_BASE_DIR="\$value" ;;
             PTOOL_DEFAULT_VERSION) PTOOL_DEFAULT_VERSION="\$value" ;;
@@ -548,7 +550,13 @@ do_install() {
     echo ""
 
     echo "[3/5] 扫描 Python..."
-    do_scan "$config_file"
+    # 非交互环境下找不到 Python 时 do_scan 返回 1。必须在这里中止：否则会带着
+    # 空配置跑完 [4/5][5/5] 并打印「安装完成！」——和 install.sh 里修过的
+    # 「失败仍报成功」是同一类问题。
+    if ! do_scan "$config_file"; then
+        echo "错误: 扫描 Python 失败，安装中止（配置未写入）" >&2
+        return 1
+    fi
     # 写入版本号（幂等：先清掉旧记录，避免重复追加）
     if [ -f "$script_dir/VERSION" ]; then
         local ver
@@ -629,7 +637,10 @@ do_uninstall() {
         echo "已删除: $repo_dir"
     fi
 
-    # 清理 shell 配置中的 PATH 行、补全 source 行与 # ptool 标记
+    # 清理 shell 配置中的 PATH 行、补全 source 行与 # ptool 标记。
+    # 这里遍历 3 个 rc 文件（do_setup_shell 只写 get_shell_rc() 那一个）是刻意的：
+    # 覆盖换过 shell、或被更老版本写到其他 rc 的情况；删的也只是含 ptool 路径的行，
+    # 不碰用户的其他配置。不要为了「两边对称」缩掉这份清单。
     for rc_file in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile"; do
         [ -f "$rc_file" ] || continue
         grep -q -e "$install_dir" -e "$shims_dir" -e "$comp_dir" -e "^# ptool$" "$rc_file" 2>/dev/null || continue

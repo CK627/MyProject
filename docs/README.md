@@ -174,14 +174,14 @@ ptool run 3.11 <TAB> # .py 文件
 配置文件位于安装目录内（见下方「跨平台支持」表格），Windows 与 macOS / Linux 路径不同。
 
 ```bash
-# Python 安装路径（父目录）
+# Python base directory (the parent directory)
 PYTHON_BASE_DIR="/usr/local/bin"
 
-# 默认版本
+# Default version
 # PTOOL_DEFAULT_VERSION="3.11"
 
-# ptool 版本（由 install / update 维护，请勿手动修改）
-PTOOL_VERSION="2.2.15"
+# ptool version (maintained by install / update, do not edit)
+PTOOL_VERSION="2.2.16"
 ```
 
 > 安装 / 升级时若 `PTOOL_DEFAULT_VERSION` 还没设置，安装程序会自动把**扫到的最高版本**填进去
@@ -232,6 +232,11 @@ macOS / Linux 会在 `~/.devtools/ptool/shims` 下生成 `python` / `python3` / 
 > 程序。代价是 `ptool use` 与 `ptool scan` 需要在管理员权限的 CMD 里运行，否则会提示
 > `cannot write ...\config\ptool.conf`。
 >
+> **macOS / Linux 侧不做同样的收紧**：那边 `config` 仍是 `666`（普通用户直接 `ptool use` 就能改）。
+> 因为 unix 的 shim 落在每用户的 `~/.devtools/ptool/shims`、不是机器级 PATH 上的全局命令，
+> 可写配置最多影响「本机其他用户自己」执行的解释器，提权面比 Windows 小得多。若你的机器需要
+> 与 Windows 同级的姿态，可自行 `sudo chmod 644` 配置并改为 `sudo ptool use`。
+>
 > **`py` 不在 shim 名单里**（只有 `python` / `python3` / `pip` / `pip3`），所以 `py -3.11` 走的仍是
 > 官方 launcher 自己的版本表，与 `ptool use` 设的默认版本无关。这是刻意的：ptool 内部就靠裸 `py`
 > 来定位解释器路径，给 `py` 生成 shim 会形成自我递归。要用 ptool 的默认版本请敲 `python`。
@@ -278,12 +283,16 @@ ptool/
 │   │   ├── distribution.xml.in
 │   │   ├── postinstall.in
 │   │   └── uninstall.in
-│   └── windows/
+├── windows/
 │       ├── install.bat         # Windows 安装（也是 module/install.bat 的来源）
 │       ├── uninstall.bat
 │       ├── build-from-mac.sh
 │       ├── build-remote.bat
 │       └── ptool.iss.in
+├── tests/
+│   ├── smoke.sh                # shell 侧冒烟（macOS / Linux）
+│   └── smoke.ps1               # Windows 侧冒烟
+├── .github/workflows/ci.yml    # CI：语法门 + shellcheck + 行尾契约 + 三平台冒烟
 └── docs/
     └── README.md               # 本文档
 ```
@@ -332,6 +341,22 @@ PYTHON_BASE_DIR="/Users/yourname/.pyenv/versions"
 ```
 
 修改后可用 `ptool list` 验证能否扫描到版本。
+
+## 开发与测试
+
+```bash
+# shell 侧冒烟：语法门 + 含空格路径的 config 解析 + shim 生成 + tag 解析
+bash tests/smoke.sh
+
+# Windows 侧冒烟：ptool help 退出码 / 未知命令 / CRLF 归一化
+pwsh tests/smoke.ps1
+```
+
+CI（`.github/workflows/ci.yml`）在 ubuntu / macos / windows 上跑上面两套冒烟，外加
+`bash -n`/`zsh -n`、shellcheck（error 级阻塞）与 `.bat`/`.ps1` 的 CRLF 行尾契约检查。
+
+> ⚠️ `installer/linux-build.sh`、`installer/macos/build.sh` 与 `installer/windows/build-from-mac.sh`
+> 都要求**工作区干净**（`git status --porcelain` 非空即拒绝构建），改动未提交会直接卡住打包。
 
 ## 许可证
 

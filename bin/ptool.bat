@@ -185,6 +185,9 @@ echo   ptool update                        Check and update
 echo   ptool uninstall [-y]                Uninstall (-y silent)
 echo   ptool shim                          Rebuild shims
 echo   ptool help                          Show help
+REM Without this the flow falls straight into :cmd_use below, which prints
+REM "Error: specify a version" and exits 1 for `ptool help` (and bare `ptool`).
+exit /b 0
 
 :cmd_use
 if "%~2"=="" ( echo Error: specify a version & exit /b 1 )
@@ -220,7 +223,7 @@ REM ============================================
 if "!PTOOL_DEFAULT_VERSION!"=="" ( echo No default version & exit /b 1 )
 echo Default: !PTOOL_DEFAULT_VERSION!
 call :resolve_py "!PTOOL_DEFAULT_VERSION!" cur_exe
-if not defined cur_exe set "cur_exe=(未找到，请运行 ptool scan)"
+if not defined cur_exe set "cur_exe=(not found, run: ptool scan)"
 echo Path: !cur_exe!
 exit /b 0
 
@@ -276,8 +279,23 @@ if "%~3"=="" ( echo Error: specify a file & exit /b 1 )
 call :resolve_py "%~2" run_exe
 if not defined run_exe ( echo Error: Python %~2 not found & exit /b 1 )
 if not exist "%~3" ( echo Error: file not found & exit /b 1 )
-echo === Run (Python %~2) ===
-"!run_exe!" "%~3"
+set "run_ver=%~2"
+set "run_file=%~3"
+REM Drop "run", the version and the file, then forward whatever is left to the
+REM script itself: `ptool run 3.11 f.py --flag` must reach python as --flag.
+REM Capture the version/file first -- shift would invalidate the %~n references.
+shift /1
+shift /1
+shift /1
+set "RUN_ARGS="
+:run_collect
+if "%~1"=="" goto :run_ready
+set "RUN_ARGS=!RUN_ARGS! %1"
+shift /1
+goto :run_collect
+:run_ready
+echo === Run (Python !run_ver!) ===
+"!run_exe!" "!run_file!" !RUN_ARGS!
 exit /b !errorlevel!
 
 REM ============================================
@@ -308,7 +326,10 @@ REM update
 REM ============================================
 :cmd_update
 REM 写安装目录需要管理员权限，非管理员时自动请求提权（弹 UAC）
-net session >nul 2>&1
+REM 用 fltmc 而不是 net session 判断管理员：后者要求 Server 服务在运行，
+REM 服务被停用的机器上管理员也会被判成非管理员，于是提权后的实例又去提权、
+REM 反复弹窗。fltmc 只要求提权，标准 Windows 都自带。
+fltmc >nul 2>&1
 if !errorlevel! neq 0 (
     echo update needs admin, requesting elevation...
     powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -ArgumentList 'update' -Verb RunAs"
@@ -373,6 +394,12 @@ if !errorlevel! neq 0 (
 if exist "!SRC!\installer\windows\install.bat" (
     copy /y "!SRC!\installer\windows\install.bat" "%MODULE_DIR%\install.bat" >nul
 )
+REM GitHub's generated archive does NOT apply .gitattributes eol=crlf (measured),
+REM so what was just copied out of it is LF. Normalise before it replaces the
+REM working CRLF copies -- an LF ptool.bat is exactly the parse-error-prone form
+REM this repo fights with .gitattributes.
+call :to_crlf "%BIN_DIR%\ptool.bat"
+call :to_crlf "%MODULE_DIR%\install.bat"
 if not exist "%CONFIG_FILE%" copy "!SRC!\config\ptool.conf" "%CONFIG_DIR%\" >nul
 
 findstr /v /b /c:"PTOOL_VERSION=" "%CONFIG_FILE%" > "%CONFIG_FILE%.tmp"
@@ -448,6 +475,10 @@ if !errorlevel! neq 0 (
 if exist "!REPO_DIR!\installer\windows\install.bat" (
     copy /y "!REPO_DIR!\installer\windows\install.bat" "%MODULE_DIR%\install.bat" >nul
 )
+REM A clone normally lands CRLF (checkout applies .gitattributes); normalise
+REM anyway -- idempotent and cheap.
+call :to_crlf "%BIN_DIR%\ptool.bat"
+call :to_crlf "%MODULE_DIR%\install.bat"
 if not exist "%CONFIG_FILE%" copy "!REPO_DIR!\config\ptool.conf" "%CONFIG_DIR%\" >nul
 
 findstr /v /b /c:"PTOOL_VERSION=" "%CONFIG_FILE%" > "%CONFIG_FILE%.tmp"
@@ -675,4 +706,24 @@ if "!_ts:~0,1!"==" " ( set "_ts=!_ts:~1!" & goto :trim_sp_lead )
 :trim_sp_tail
 if "!_ts:~-1!"==" " ( set "_ts=!_ts:~0,-1!" & goto :trim_sp_tail )
 set "%~1=!_ts!"
+exit /b 0
+
+REM ============================================
+REM Normalise a file's line endings to CRLF, in place.
+REM
+REM Needed for the .bat files :update_via_curl copies out of GitHub's branch
+REM archive: that archive does NOT apply .gitattributes eol=crlf (measured), so
+REM ptool.bat / install.bat arrive with LF endings and would silently replace
+REM the working CRLF copies on this machine.
+REM
+REM Explicit UTF8 (no BOM) on read and write: [IO.File]::WriteAllText's default
+REM would add a BOM, and a BOM breaks the first line of a .bat.
+REM No '!' anywhere in the one-liner: this file runs with delayed expansion on.
+REM arg1 = file to normalise (a missing file is not an error)
+REM ============================================
+:to_crlf
+if "%~1"=="" exit /b 0
+if not exist "%~1" exit /b 0
+powershell -NoProfile -Command "$p='%~1'; $t=[IO.File]::ReadAllText($p,[Text.UTF8Encoding]::new($false)); $t=$t -replace '\r?\n', (([char]13).ToString()+([char]10).ToString()); [IO.File]::WriteAllText($p,$t,[Text.UTF8Encoding]::new($false))"
+if !errorlevel! neq 0 echo Warning: could not normalise line endings of %~1
 exit /b 0

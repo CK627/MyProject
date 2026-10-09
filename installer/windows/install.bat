@@ -68,6 +68,9 @@ if "%INSTALLED%"=="1" (
     if not exist "%CONFIG_FILE%" copy "%PROJECT_DIR%\config\ptool.conf" "%CONFIG_DIR%\" >nul
     REM Copy this installer to module\ for ptool install/scan
     copy "%PROJECT_DIR%\installer\windows\install.bat" "%MODULE_DIR%\install.bat" >nul
+    REM VERSION too: :write_version reads {app}\VERSION, and without it the first
+    REM `ptool update` reports "v -> vX" as if no version were installed.
+    copy "%PROJECT_DIR%\VERSION" "%INSTALL_DIR%\" >nul
 )
 echo Done
 echo.
@@ -93,6 +96,7 @@ echo.
 
 echo [3/4] Scanning and generating shims...
 call :do_scan_inner
+if errorlevel 1 exit /b 1
 call :write_version
 REM Generate shims
 "%BIN_DIR%\ptool.bat" shim
@@ -110,7 +114,10 @@ REM Written through the .NET registry API with an explicit ExpandString kind:
 REM SetEnvironmentVariable would leave the value kind up to the framework, and a
 REM machine Path that silently loses REG_EXPAND_SZ stops expanding %SystemRoot%.
 REM No '!' anywhere in this one-liner: delayed expansion would swallow it.
-powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $shim='%SHIMS_DIR%'; $bin='%BIN_DIR%'; $legacy='%USERPROFILE%\.devtools\ptool\shims'; function N($s){ $s.Trim().TrimEnd('\').ToUpperInvariant() }; $k=[Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('SYSTEM\CurrentControlSet\Control\Session Manager\Environment',$true); if($null -eq $k){ Write-Output 'NEED_ADMIN'; exit 3 }; $p=[string]$k.GetValue('Path',''); $keep=@($p -split ';' | Where-Object { $_ -and (N $_) -ne (N $shim) -and (N $_) -ne (N $bin) }); $k.SetValue('Path', ((@($shim)+$keep+@($bin)) -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString); $k.Close(); $u=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment',$true); if($u -and $null -ne $u.GetValue('Path')){ $up=[string]$u.GetValue('Path'); $ukeep=@($up -split ';' | Where-Object { $_ -and (N $_) -ne (N $legacy) }); $u.SetValue('Path', ($ukeep -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString); $u.Close() }; Write-Output 'OK'"
+REM The work is wrapped in try/catch: OpenSubKey(...,$true) throws on access
+REM denied instead of returning $null, so the $null check below never fires by
+REM itself and a non-elevated run would fall into the generic error branch.
+powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $shim='%SHIMS_DIR%'; $bin='%BIN_DIR%'; $legacy='%USERPROFILE%\.devtools\ptool\shims'; function N($s){ $s.Trim().TrimEnd('\').ToUpperInvariant() }; try { $k=[Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('SYSTEM\CurrentControlSet\Control\Session Manager\Environment',$true); if($null -eq $k){ Write-Output 'NEED_ADMIN'; exit 3 }; $p=[string]$k.GetValue('Path',''); $keep=@($p -split ';' | Where-Object { $_ -and (N $_) -ne (N $shim) -and (N $_) -ne (N $bin) }); $k.SetValue('Path', ((@($shim)+$keep+@($bin)) -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString); $k.Close(); $u=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment',$true); if($u -and $null -ne $u.GetValue('Path')){ $up=[string]$u.GetValue('Path'); $ukeep=@($up -split ';' | Where-Object { $_ -and (N $_) -ne (N $legacy) }); $u.SetValue('Path', ($ukeep -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString); $u.Close() }; Write-Output 'OK' } catch { if($_.Exception -is [System.UnauthorizedAccessException] -or $_.Exception -is [System.Security.SecurityException]) { Write-Output 'NEED_ADMIN'; exit 3 } else { Write-Output ('ERROR: ' + $_.Exception.Message); exit 2 } }"
 
 REM Check the exit code: without this a failed write (no admin) would still fall
 REM through to the "Install complete" banner below, which is a lie.
@@ -178,6 +185,7 @@ for /d %%d in ("!found_dir!\Python*") do (
 echo.
 
 call :write_config
+if errorlevel 1 exit /b 1
 
 echo Config written: %CONFIG_FILE%
 echo.
@@ -199,6 +207,7 @@ if exist "%LOCALAPPDATA%\Programs\Python" set "found_dir=%LOCALAPPDATA%\Programs
 :scan_inner_found
 if not defined found_dir set "found_dir=C:\"
 call :write_config
+if errorlevel 1 exit /b 1
 echo Written: %CONFIG_FILE%
 exit /b 0
 
@@ -255,15 +264,15 @@ if not defined HAS_DEFAULT (
 )
 
 (
-    echo # ptool 配置文件
+    echo # ptool configuration
     echo.
-    echo # Python 安装路径（父目录）
+    echo # Python base directory (the parent directory)
     echo PYTHON_BASE_DIR="!found_dir!"
     echo.
-    echo # 默认版本
+    echo # Default version
     echo !KEEP_DEFAULT!
     echo.
-    echo # ptool 版本（由 install / update 维护，请勿手动修改）
+    echo # ptool version (maintained by install / update, do not edit)
     echo !KEEP_VERSION!
 ) > "%CONFIG_FILE%"
 exit /b 0
@@ -357,6 +366,7 @@ REM 复用 :do_scan_inner —— 检测不到就落到默认值，不会像 :do_
 REM ============================================
 :do_scan_silent
 call :do_scan_inner
+if errorlevel 1 exit /b 1
 call :write_version
 exit /b 0
 
@@ -369,7 +379,7 @@ echo.
 if exist "%CONFIG_FILE%" (
     type "%CONFIG_FILE%"
 ) else (
-    echo (不存在，请运行: install.bat scan)
+    echo (missing, run: install.bat scan)
 )
 exit /b 0
 
@@ -377,11 +387,11 @@ REM ============================================
 REM 帮助
 REM ============================================
 :do_help
-echo ptool 安装脚本 (Windows)
+echo ptool installer (Windows)
 echo.
-echo 用法:
-echo   install.bat          完整安装
-echo   install.bat scan     扫描 Python 路径，更新配置
-echo   install.bat config   查看配置
-echo   install.bat help     帮助
+echo Usage:
+echo   install.bat          Full install
+echo   install.bat scan     Scan Python paths, update config
+echo   install.bat config   Show config
+echo   install.bat help     Show help
 exit /b 0

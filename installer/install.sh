@@ -53,17 +53,36 @@
     # （实测 rc=0），该中断的地方反而中断不了。
     trap cleanup EXIT
 
+    # ---------------------------------------------------------------
+    # 版本解析（两平台共用）
+    #   · 发布 tag 是 annotated：ls-remote 会多打印 refs/tags/x^{}，必须用
+    #     grep -vF '^{}' 去掉，否则会选中 ptool-v2.2.15^{} 拼出错误 URL
+    #   · 排序用 sort -t. -k1,1n -k2,2n -k3,3n，不用 sort -V：-V 在旧系统上
+    #     不一定有（bin/ptool.sh 里就有同样的可用性判断）
+    #   · 没有 git 时回退 GitHub API：Linux 侧原本不要求装 git
+    # ---------------------------------------------------------------
+    resolve_latest() {
+        if command -v git >/dev/null 2>&1; then
+            git ls-remote --tags "$BASE.git" "refs/tags/${TOOL}-v*" \
+                | grep -vF '^{}' \
+                | sed "s|.*refs/tags/${TOOL}-v||" \
+                | sort -t. -k1,1n -k2,2n -k3,3n | tail -1
+        else
+            curl -fsSL "https://api.github.com/repos/$OWNER/$REPO/releases?per_page=100" \
+                | grep -oE "\"tag_name\"[[:space:]]*:[[:space:]]*\"${TOOL}-v[0-9.]+\"" \
+                | sed -E "s/.*\"${TOOL}-v([0-9.]+)\"/\1/" \
+                | sort -t. -k1,1n -k2,2n -k3,3n | tail -1
+        fi
+    }
+
     case "$(uname -s)" in
         Darwin)
-            command -v git >/dev/null 2>&1 || err "需要 git 解析版本号（xcode-select --install）"
             # hdiutil 是 macOS 自带命令，缺失说明系统环境异常，早报比晚报好
             command -v hdiutil >/dev/null 2>&1 || err "需要 hdiutil（macOS 自带）"
             info "解析最新版本..."
-            VERSION=$(git ls-remote --tags "$BASE.git" "refs/tags/${TOOL}-v*" \
-                      | grep -vF '^{}' \
-                      | sed 's|.*refs/tags/||' | sort -V | tail -1)
-            [ -n "$VERSION" ] || err "未找到 ${TOOL} 的版本 tag"
-            VER="${VERSION#${TOOL}-v}"
+            VER="$(resolve_latest)" || err "无法解析最新版本，请检查网络"
+            [ -n "$VER" ] || err "未找到 ${TOOL} 的版本 tag"
+            VERSION="${TOOL}-v${VER}"
             info "安装 ${TOOL} ${VER}"
 
             # 发布产物是 .dmg，.pkg 打在 dmg 里，所以要先挂载再从挂载点安装。
@@ -91,10 +110,22 @@
             # 卸卷、删 dmg 一步都不用写在这里——EXIT trap 兜底，成功路径也不例外。
             ;;
         Linux)
-            info "下载源码并安装..."
+            # 与 macOS 对齐：取 release 里已打包好的产物，而不是分支 HEAD。
+            # 分支 HEAD 是「未发布代码」，写进配置的版本号也随之漂移；release
+            # 资产（installer/linux-build.sh 产出、随 tag 上传）才是用户要装的东西。
+            info "解析最新版本..."
+            VER="$(resolve_latest)" || err "无法解析最新版本，请检查网络"
+            [ -n "$VER" ] || err "未找到 ${TOOL} 的发布版本"
+            ASSET="${TOOL}-${VER}-linux.tar.gz"
+            URL="$BASE/releases/download/${TOOL}-v${VER}/${ASSET}"
+            info "下载 $URL"
             TMPDIR_DL=$(mktemp -d)
-            curl -fsSL "$BASE/archive/refs/heads/${TOOL}.tar.gz" | tar xz -C "$TMPDIR_DL"
-            (cd "$TMPDIR_DL/${REPO}-${TOOL}" && ./installer/install-from-source.sh)
+            curl -fL --progress-bar "$URL" -o "$TMPDIR_DL/$ASSET" || err "下载失败：$URL"
+            [ -s "$TMPDIR_DL/$ASSET" ] || err "下载到的文件是空的：$ASSET"
+            tar -xzf "$TMPDIR_DL/$ASSET" -C "$TMPDIR_DL" || err "解压失败：$ASSET"
+            info "安装（需要管理员密码）..."
+            (cd "$TMPDIR_DL/${TOOL}-${VER}" && ./installer/install-from-source.sh install) \
+                || err "安装失败"
             ;;
         *)
             err "不支持的系统。Windows 请用 PowerShell 一键安装"

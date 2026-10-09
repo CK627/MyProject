@@ -103,7 +103,7 @@ Type: filesandordirs; Name: "{%USERPROFILE}\.devtools\@TOOL@"
 ; 紧接着 {app} 也删不掉，最后留在盘上的是 shims\ 和 unins000.exe。实测日志：
 ;     Deleting directory: ...\shims → Failed to delete directory (145). Will retry later.
 ;     Deleting directory: ...\      → Failed to delete directory (145). Will retry later.
-; （2.3.2 把 shim 从用户级目录搬进 {app}\shims 之前没有这个问题。）
+; （2.2.13 把 shim 从用户级目录搬进 {app}\shims 之前没有这个问题。）
 ;
 ; 时机正好：卸载顺序是 [UninstallRun] → 注册表 → 图标 → 文件 → {app} →
 ; [UninstallDelete] → 再来一次删目录（就是 "Will retry later" 的那次重试）。
