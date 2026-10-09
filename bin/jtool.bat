@@ -362,6 +362,13 @@ REM ============================================
 :update_via_curl
 echo Checking for updates...
 set "REMOTE_VERSION="
+REM Mirror first. raw.githubusercontent.com / api.github.com are not reachable from
+REM every network, and this one is: same VERSION file, one GET, no VPN needed.
+REM Override with JTOOL_MIRROR=<url>; set it to `none` to go straight to GitHub.
+if not defined JTOOL_MIRROR set "JTOOL_MIRROR=http://101.132.165.98/dist/jtool"
+REM --max-time matters: on a blocked network the connect does not fail, it hangs,
+REM and without it the whole update stalls here looking like a broken script.
+if /i not "!JTOOL_MIRROR!"=="none" for /f "usebackq delims=" %%v in (`curl -fsSL --connect-timeout 6 --max-time 15 "!JTOOL_MIRROR!/VERSION" 2^>nul`) do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
 for /f "usebackq delims=" %%v in (`powershell -NoProfile -Command "(Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/CK627/MyProject/jtool/VERSION').Content.Trim()"`) do set "REMOTE_VERSION=%%v"
 if "!REMOTE_VERSION!"=="" for /f "usebackq delims=" %%v in (`curl -fsSL "https://raw.githubusercontent.com/CK627/MyProject/jtool/VERSION" 2^>nul`) do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
 REM Third source: the GitHub contents API. raw.githubusercontent.com is unreachable
@@ -395,8 +402,20 @@ rmdir /s /q "%UPD_TMP%" 2>nul
 mkdir "%UPD_TMP%"
 
 echo Downloading update...
-powershell -NoProfile -Command "Invoke-WebRequest -UseBasicParsing 'https://github.com/CK627/MyProject/archive/refs/heads/jtool.tar.gz' -OutFile '%UPD_TMP%\src.tar.gz'"
-if not exist "%UPD_TMP%\src.tar.gz" curl -fsSL "https://github.com/CK627/MyProject/archive/refs/heads/jtool.tar.gz" -o "%UPD_TMP%\src.tar.gz"
+REM Mirror first here too. The mirror's source tarball is packed with the same
+REM top-level directory as GitHub's archive (MyProject-jtool\), so %UPD_SRC%
+REM below resolves either way.
+set "GOT_SRC=0"
+if /i not "!JTOOL_MIRROR!"=="none" (
+    curl -fsSL --connect-timeout 6 "!JTOOL_MIRROR!/!REMOTE_VERSION!/jtool-!REMOTE_VERSION!-src.tar.gz" -o "%UPD_TMP%\src.tar.gz" 2>nul
+    REM `if exist` is true for a 0-byte file, and curl leaves one behind on some
+    REM failures -- check the size, not just the name.
+    for %%A in ("%UPD_TMP%\src.tar.gz") do if %%~zA GTR 0 set "GOT_SRC=1"
+)
+if "!GOT_SRC!"=="0" (
+    powershell -NoProfile -Command "Invoke-WebRequest -UseBasicParsing 'https://github.com/CK627/MyProject/archive/refs/heads/jtool.tar.gz' -OutFile '%UPD_TMP%\src.tar.gz'"
+    if not exist "%UPD_TMP%\src.tar.gz" curl -fsSL "https://github.com/CK627/MyProject/archive/refs/heads/jtool.tar.gz" -o "%UPD_TMP%\src.tar.gz"
+)
 if not exist "%UPD_TMP%\src.tar.gz" ( echo Download failed, fallback to git & goto :update_via_git )
 
 tar -xzf "%UPD_TMP%\src.tar.gz" -C "%UPD_TMP%"

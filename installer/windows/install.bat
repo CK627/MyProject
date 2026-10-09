@@ -97,7 +97,11 @@ echo [3/4] Scanning and generating shims...
 call :do_scan_inner
 if errorlevel 1 exit /b 1
 call :write_version
-"%BIN_DIR%\jtool.bat" shim
+REM `call` is mandatory: running a .bat from inside a batch WITHOUT it replaces
+REM this script instead of returning, so step [4/4] (machine PATH) never ran and
+REM the "Install complete" banner never printed -- a silent half-install.
+call "%BIN_DIR%\jtool.bat" shim
+if errorlevel 1 exit /b 1
 echo.
 
 echo [4/4] Configuring PATH...
@@ -305,18 +309,38 @@ if not defined HAS_DEFAULT (
     )
 )
 
-(
-    echo # jtool configuration
-    echo.
-    echo # Java base directory (the parent directory)
-    echo JAVA_BASE_DIR="!found_dir!"
-    echo.
-    echo # Default version
-    echo !KEEP_DEFAULT!
-    echo.
-    echo # jtool version (maintained by install / update, do not edit)
-    echo !KEEP_VERSION!
-) > "%CONFIG_FILE%"
+REM One redirect per line, NOT a `( echo ... ) > file` block. A ')' inside the
+REM echoed text closes such a block early -- `... (the parent directory)` did --
+REM so every line after it goes to stdout and the file is never written; the
+REM shipped template (with a macOS default path) then silently sticks.
+REM
+REM Target a temp file and move it over the real one: a direct `> "%CONFIG_FILE%"`
+REM open-for-truncate can silently fail on an existing file, while create-tmp +
+REM move is what :write_version already uses and is reliable.
+set "CONFIG_TMP=%CONFIG_FILE%.tmp"
+if exist "%CONFIG_TMP%" del "%CONFIG_TMP%" >nul 2>&1
+>"%CONFIG_TMP%" echo # jtool configuration
+>>"%CONFIG_TMP%" echo.
+>>"%CONFIG_TMP%" echo # Java base directory (the parent directory)
+>>"%CONFIG_TMP%" echo JAVA_BASE_DIR="!found_dir!"
+>>"%CONFIG_TMP%" echo.
+>>"%CONFIG_TMP%" echo # Default version
+>>"%CONFIG_TMP%" echo !KEEP_DEFAULT!
+>>"%CONFIG_TMP%" echo.
+>>"%CONFIG_TMP%" echo # jtool version (maintained by install / update, do not edit)
+>>"%CONFIG_TMP%" echo !KEEP_VERSION!
+move /y "%CONFIG_TMP%" "%CONFIG_FILE%" >nul
+REM Verify what actually landed. Everything above can no-op without setting an
+REM error level (unwritable config dir, a stale file left in place), which is
+REM how a machine once ended up with a macOS path in its Windows config and no
+REM error anywhere. Turn that silence into a hard failure.
+findstr /b /c:"JAVA_BASE_DIR=" "%CONFIG_FILE%" >nul 2>&1
+if errorlevel 1 (
+    echo Error: %CONFIG_FILE% was not written
+    echo Administrator privileges are required. Open an elevated CMD and run:
+    echo   install.bat scan
+    exit /b 1
+)
 exit /b 0
 
 REM ============================================

@@ -7,17 +7,19 @@
 #   ./build-from-mac.sh             正式构建（校验工作区干净且已推送）
 #   ./build-from-mac.sh --force     跳过校验（本地测试）
 #
-# 凭据（二选一，密码不会写进命令行，避免出现在 ps 输出里）:
-#   export JTOOL_WIN_PASS='...'
-#   或写入 ~/.jtool-win-pass（建议 chmod 600）
+# 凭据（免密优先；密码不会写进命令行，避免出现在 ps 输出里）:
+#   1. SSH 免密（推荐）：ssh-copy-id <user>@<host>
+#   2. export JTOOL_WIN_PASS='...'
+#   3. 写入 ~/.jtool-win-pass（建议 chmod 600）
 
 set -euo pipefail
 
 TOOL="jtool"
 APPID="D1340466-0476-46D6-8B97-5AB23FF83D77"
 
-WIN_HOST="${JTOOL_WIN_HOST:-172.16.100.23}"
-WIN_USER="${JTOOL_WIN_USER:-CK}"
+# mDNS 名而不是 IP：机器的局域网 IP 换过一次，写死就得跟着改脚本。
+WIN_HOST="${JTOOL_WIN_HOST:-ck-win}"
+WIN_USER="${JTOOL_WIN_USER:-ck}"
 PASS_FILE="${JTOOL_WIN_PASS_FILE:-$HOME/.jtool-win-pass}"
 REMOTE_DIR="jtool-build"
 
@@ -41,20 +43,27 @@ WIN_PASS="${JTOOL_WIN_PASS:-}"
 if [ -z "$WIN_PASS" ] && [ -f "$PASS_FILE" ]; then
     WIN_PASS="$(cat "$PASS_FILE")"
 fi
-if [ -z "$WIN_PASS" ]; then
-    echo "错误: 未提供 Windows 密码" >&2
-    echo "      设置 JTOOL_WIN_PASS 环境变量，或写入 $PASS_FILE" >&2
-    exit 1
-fi
-
-PASS_TMP="$(mktemp)"
-chmod 600 "$PASS_TMP"
-printf '%s' "$WIN_PASS" > "$PASS_TMP"
-trap 'rm -f "$PASS_TMP"' EXIT
-
 SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=20)
-SSH=(sshpass -f "$PASS_TMP" ssh "${SSH_OPTS[@]}" "$WIN_USER@$WIN_HOST")
-SCP=(sshpass -f "$PASS_TMP" scp "${SSH_OPTS[@]}")
+
+if [ -n "$WIN_PASS" ]; then
+    PASS_TMP="$(mktemp)"
+    chmod 600 "$PASS_TMP"
+    printf '%s' "$WIN_PASS" > "$PASS_TMP"
+    trap 'rm -f "$PASS_TMP"' EXIT
+    SSH=(sshpass -f "$PASS_TMP" ssh "${SSH_OPTS[@]}" "$WIN_USER@$WIN_HOST")
+    SCP=(sshpass -f "$PASS_TMP" scp "${SSH_OPTS[@]}")
+else
+    # 没给密码就走免密。先探一次而不是等 scp 才失败：连接不通和「远程编译失败」
+    # 是两件事，混在一起报错没法定位。
+    if ! ssh -o BatchMode=yes -o ConnectTimeout=15 "${SSH_OPTS[@]}" "$WIN_USER@$WIN_HOST" "exit 0" >/dev/null 2>&1; then
+        echo "错误: 既未提供 Windows 密码，也无法免密登录 $WIN_HOST" >&2
+        echo "      推荐配免密：ssh-copy-id $WIN_USER@$WIN_HOST" >&2
+        echo "      或设置 JTOOL_WIN_PASS / 写入 $PASS_FILE" >&2
+        exit 1
+    fi
+    SSH=(ssh "${SSH_OPTS[@]}" "$WIN_USER@$WIN_HOST")
+    SCP=(scp "${SSH_OPTS[@]}")
+fi
 
 # ------------------------------------------------------------------
 # 校验
