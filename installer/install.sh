@@ -8,7 +8,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/CK627/MyProject/ptool/installer/install.sh | bash
 #
 # macOS : 下载最新 Release 的 .dmg，挂载后安装里面的 .pkg（带安装器收据）
-# Linux : 下载源码后运行 installer/install-from-source.sh
+# Linux : 下载最新 Release 的 <tool>-<ver>-linux.tar.gz，运行其中的 install-from-source.sh
 # Windows: 请用 PowerShell 一键安装（install.ps1）
 #
 # 注意：本脚本设计为可被 source 加载，因此不能用顶层 exit（会退出用户 shell），

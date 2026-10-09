@@ -190,6 +190,37 @@ case "$out" in
     *) pass "失败路径未打印成功横幅" ;;
 esac
 
+# --------------------------------------- 9) 卸载不残留空行 / 空目录
+# 回归：do_setup_shell 曾把空行写在配置块外，卸载删不掉，每装一轮 rc 里多一行；
+# 且卸载不清 /usr/local/devtools、~/.devtools/<tool> 两个空目录。
+echo "== 卸载：rc 不残留、空目录收干净 =="
+mkdir -p "$TMP/rc-test/home"
+printf 'export EDITOR=vim\n' > "$TMP/rc-test/home/.bashrc"
+RC0="$(cat "$TMP/rc-test/home/.bashrc")"
+HOME="$TMP/rc-test/home" PATH="$TMP/stub:$PATH" bash -c '
+    sudo() { "$@"; }
+    source "$1/module/common.sh"
+    get_install_dir() { echo "$HOME/fake-install"; }
+    do_install "$2" >/dev/null 2>&1
+    do_uninstall -y >/dev/null 2>&1
+' _ "$TOOL_DIR" "$TOOL_DIR"
+RC1="$(cat "$TMP/rc-test/home/.bashrc")"
+if [ "$RC1" = "$RC0" ]; then
+    pass "卸载后 .bashrc 与安装前逐字节一致（无残留空行）"
+else
+    fail "卸载后 .bashrc 有残留，末尾为: $(printf '%s' "$RC1" | tail -2)"
+fi
+if [ -d "$TMP/rc-test/home/.devtools" ]; then
+    fail "卸载后 ~/.devtools 未清空"
+else
+    pass "卸载后 ~/.devtools 已清空"
+fi
+if [ -d "$TMP/rc-test/home/fake-install" ]; then
+    fail "卸载后安装目录未删除"
+else
+    pass "卸载后安装目录已删除"
+fi
+
 echo
 if [ "$FAIL" -eq 0 ]; then
     echo "全部通过"

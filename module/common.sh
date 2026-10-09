@@ -142,10 +142,24 @@ do_update_via_curl() {
     command -v curl >/dev/null 2>&1 || { echo "错误: 需要 curl，请先安装"; return 1; }
     command -v tar >/dev/null 2>&1 || { echo "错误: 需要 tar，请先安装"; return 1; }
 
-    # Step 1: 读取远程版本号（raw 文件，不依赖 git）
+    # Step 1: 读取远程版本号（不依赖 git）
+    #
+    # 两条路依次降级：
+    #   1. $base_url/raw/... —— GitHub 会 302 到 raw.githubusercontent.com，最省流；
+    #      但该域名在部分网络（国内 IDC 实测）不可达。
+    #   2. GitHub contents API + Accept: raw —— 走 api.github.com，同一网络下通常
+    #      可达，且直接返回文件原文（不用解 base64）。
+    # 只留一条的话，受限网络里「版本读取」会先失败，而真正要装的 archive（走
+    # codeload）其实是通的 —— 用户会看到莫名其妙的「无法获取版本号」。
     echo "正在检查更新..."
-    local remote_version=""
-    remote_version=$(curl -fsSL "$base_url/raw/refs/heads/$branch/VERSION" 2>/dev/null | tr -d '[:space:]')
+    local remote_version="" owner_repo
+    owner_repo="${base_url#https://github.com/}"
+    remote_version=$(curl -fsSL --max-time 20 "$base_url/raw/refs/heads/$branch/VERSION" 2>/dev/null | tr -d '[:space:]')
+    if [ -z "$remote_version" ]; then
+        remote_version=$(curl -fsSL --max-time 20 -H 'Accept: application/vnd.github.raw' \
+            "https://api.github.com/repos/$owner_repo/contents/VERSION?ref=$branch" 2>/dev/null \
+            | tr -d '[:space:]')
+    fi
     if [ -z "$remote_version" ]; then
         echo "错误: 无法获取版本号，请检查网络"
         return 1
@@ -380,6 +394,39 @@ do_create_completions() {
 }
 
 # ============================================
+# 从 shell rc 里移除 ptool 配置块
+#
+# 两种历史格式都要认：
+#   · 新格式：被 `# >>> ptool >>>` / `# <<< ptool <<<` 框住的一段（含块内那行
+#     空行），整段删除即可 —— 装/卸多少轮都不会在 rc 里留下任何东西。
+#   · 老格式：只有散落的单行（`# ptool` + 两行含路径的行），按行删。老格式的
+#     块外那行空行无法用行匹配定位，所以老安装升级后仍会残留一个空行；
+#     重装一次就换成新格式，之后不再累积。
+# 返回 0 表示确实清掉了内容，1 表示这个 rc 里本来就没有 ptool。
+# ============================================
+_strip_rc_block() {
+    local rc_file="$1"
+    local install_dir="$2"
+    local tool_name="$3"
+    local shims_dir="$HOME/.devtools/$tool_name/shims"
+    local comp_dir="$HOME/.devtools/$tool_name/completions"
+
+    [ -f "$rc_file" ] || return 1
+    grep -q -e "^# >>> $tool_name >>>$" -e "^# $tool_name$" \
+            -e "$install_dir" -e "$shims_dir" -e "$comp_dir" "$rc_file" 2>/dev/null || return 1
+
+    sed -i.bak \
+        -e "/^# >>> $tool_name >>>$/,/^# <<< $tool_name <<<$/d" \
+        -e "/^# $tool_name$/d" \
+        -e "\|$install_dir|d" \
+        -e "\|$shims_dir|d" \
+        -e "\|$comp_dir|d" \
+        "$rc_file"
+    rm -f "${rc_file}.bak"
+    return 0
+}
+
+# ============================================
 # 写入 shell 配置（PATH + 补全）
 # 幂等：每次先移除旧配置块再追加，便于升级时刷新
 # ============================================
@@ -394,11 +441,13 @@ do_setup_shell() {
     [ -f "$shell_rc" ] || : > "$shell_rc"
 
     # 移除旧的 ptool 配置块，避免重复或残留
-    sed -i.bak "/^# ptool$/d; \|$install_dir|d; \|$shims_dir|d; \|$comp_dir|d" "$shell_rc"
-    rm -f "${shell_rc}.bak"
+    _strip_rc_block "$shell_rc" "$install_dir" "ptool"
 
-    # 只写固定的 3 行。包装函数不放在这里——它是多行的，按行模式清理会漏掉
-    # 函数体导致重复累积；放进被 source 的补全文件里，每次整体重新生成即可。
+    # 只写固定的 4 行，并用成对标记框住：卸载时整段删除，块内那行空行也一并
+    # 消失。老版本把空行写在块外，卸载后每装一轮都会在 rc 里多留一个空行
+    # （Linux 实测 22→23→24 行累积）——用标记框住是唯一能定位到那行空行的办法。
+    # 包装函数不放在这里——它是多行的，按行模式清理会漏掉函数体导致重复累积；
+    # 放进被 source 的补全文件里，每次整体重新生成即可。
     local comp_file
     if [ "${shell_rc##*/}" = ".zshrc" ]; then
         comp_file="$comp_dir/ptool.zsh"
@@ -407,10 +456,11 @@ do_setup_shell() {
     fi
 
     {
+        echo "# >>> ptool >>>"
         echo ""
-        echo "# ptool"
         echo "export PATH=\"$shims_dir:$bin_dir:\$PATH\""
         echo "[ -f \"$comp_file\" ] && source \"$comp_file\""
+        echo "# <<< ptool <<<"
     } >> "$shell_rc"
 
     echo "已写入: $shell_rc"
@@ -497,7 +547,9 @@ do_repair_artifacts() {
 
     local shell_rc
     shell_rc=$(get_shell_rc)
-    if ! grep -q "^# ${tool_name}$" "$shell_rc" 2>/dev/null; then
+    # 认新标记，也认老格式的 `# ptool`：老安装升级上来时不该被判定为「缺配置」
+    # 而被重复写入（重复写入本身幂等，但会让修复报告失真）。
+    if ! grep -q -e "^# >>> ${tool_name} >>>$" -e "^# ${tool_name}$" "$shell_rc" 2>/dev/null; then
         do_setup_shell "$install_dir" >/dev/null
         echo "  已补写 shell 配置: $shell_rc"
         repaired=1
@@ -539,6 +591,11 @@ do_install() {
     # 安装目录属 root，配置文件必须可写，否则 do_scan / ptool use 无法写入
     sudo chmod 666 "$config_file"
     sudo cp "$script_dir/module/common.sh" "$module_dir/"
+    # 安装目录也留一份 VERSION：update 会把它同步进来，安装却不放，会出现
+    # 「全新安装的目录里没有 VERSION、update 之后才有」的不一致。
+    if [ -f "$script_dir/VERSION" ]; then
+        sudo cp "$script_dir/VERSION" "$install_dir/VERSION"
+    fi
     echo "完成"
     echo ""
 
@@ -637,17 +694,33 @@ do_uninstall() {
         echo "已删除: $repo_dir"
     fi
 
-    # 清理 shell 配置中的 PATH 行、补全 source 行与 # ptool 标记。
+    # 清理 shell 配置中的 ptool 配置块。
     # 这里遍历 3 个 rc 文件（do_setup_shell 只写 get_shell_rc() 那一个）是刻意的：
-    # 覆盖换过 shell、或被更老版本写到其他 rc 的情况；删的也只是含 ptool 路径的行，
+    # 覆盖换过 shell、或被更老版本写到其他 rc 的情况；删的也只是 ptool 自己的块，
     # 不碰用户的其他配置。不要为了「两边对称」缩掉这份清单。
+    local rc_file
     for rc_file in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile"; do
-        [ -f "$rc_file" ] || continue
-        grep -q -e "$install_dir" -e "$shims_dir" -e "$comp_dir" -e "^# ptool$" "$rc_file" 2>/dev/null || continue
-        sed -i.bak "/^# ptool$/d; \|$install_dir|d; \|$shims_dir|d; \|$comp_dir|d" "$rc_file"
-        rm -f "${rc_file}.bak"
-        echo "已清理: $rc_file"
+        _strip_rc_block "$rc_file" "$install_dir" "ptool" && echo "已清理: $rc_file"
     done
+
+    echo ""
+
+    # 项目根目录 install_dir 已在上方 `sudo rm -rf` 删除。剩下的空目录分两层收掉：
+    #   · 用户级 ~/.devtools/ptool、~/.devtools —— 普通 rmdir，只在目录为空时成功，
+    #     所以同目录下还有别的东西时不会误删。
+    #   · 系统级 $(dirname "$install_dir")（/usr/local/devtools 或 /Library/devtools）
+    #     —— 需要 sudo；同样只在为空时删除。
+    # 也就是：装了几个工具就只删本项目的目录；只有本项目是最后一个时，才连同
+    # devtools 目录本身一起删掉。
+    local d
+    for d in "$HOME/.devtools/ptool" "$HOME/.devtools"; do
+        [ -d "$d" ] || continue
+        rmdir "$d" 2>/dev/null && echo "已删除空目录: $d"
+    done
+    if [ -d "$(dirname "$install_dir")" ]; then
+        sudo rmdir "$(dirname "$install_dir")" 2>/dev/null \
+            && echo "已删除空目录: $(dirname "$install_dir")"
+    fi
 
     echo ""
     echo "卸载完成！"
