@@ -23,6 +23,23 @@ get_install_dir() {
 }
 
 # ============================================
+# 国内镜像源
+# ============================================
+# update 也默认先问镜像：raw.githubusercontent.com 与 api.github.com 在国内不保证
+# 可达，而「更新」和「安装」一样会卡在读取版本号这第一步上。
+# 镜像布局：<base>/VERSION（纯文本版本号）、<base>/<version>/<asset>（发布资产）。
+# 覆盖：PTOOL_MIRROR=<url> 换地址，PTOOL_MIRROR=none 强制只走 GitHub。
+tool_mirror() {
+    local tool_name="$1"
+    local default="http://101.132.165.98/dist/${tool_name}"
+    case "$tool_name" in
+        ptool) printf '%s' "${PTOOL_MIRROR:-$default}" ;;
+        jtool) printf '%s' "${JTOOL_MIRROR:-$default}" ;;
+        *)     printf '%s' "$default" ;;
+    esac
+}
+
+# ============================================
 # 扫描 Python 路径
 # ============================================
 do_scan() {
@@ -152,9 +169,17 @@ do_update_via_curl() {
     # 只留一条的话，受限网络里「版本读取」会先失败，而真正要装的 archive（走
     # codeload）其实是通的 —— 用户会看到莫名其妙的「无法获取版本号」。
     echo "正在检查更新..."
-    local remote_version="" owner_repo
+    local remote_version="" owner_repo mirror
     owner_repo="${base_url#https://github.com/}"
-    remote_version=$(curl -fsSL --max-time 20 "$base_url/raw/refs/heads/$branch/VERSION" 2>/dev/null | tr -d '[:space:]')
+    mirror="$(tool_mirror "$tool_name")"
+    # 镜像优先，且超时必须短：国内访问 GitHub 常见的不是「连不上」而是「连上后
+    # 一直挂着」，没有 --max-time 就会把 update 卡死，看起来像命令坏了。
+    if [ "$mirror" != "none" ]; then
+        remote_version=$(curl -fsSL --connect-timeout 6 --max-time 15 "$mirror/VERSION" 2>/dev/null | tr -d '[:space:]')
+    fi
+    if [ -z "$remote_version" ]; then
+        remote_version=$(curl -fsSL --max-time 20 "$base_url/raw/refs/heads/$branch/VERSION" 2>/dev/null | tr -d '[:space:]')
+    fi
     if [ -z "$remote_version" ]; then
         remote_version=$(curl -fsSL --max-time 20 -H 'Accept: application/vnd.github.raw' \
             "https://api.github.com/repos/$owner_repo/contents/VERSION?ref=$branch" 2>/dev/null \
@@ -184,14 +209,27 @@ do_update_via_curl() {
     echo "发现新版本: v${local_version:-未知} → v$remote_version"
 
     # Step 4: 下载源码包并解压（不依赖 git）
+    # 镜像上的源码包用与 GitHub archive 相同的顶层目录名（MyProject-<branch>）打包，
+    # 所以下面 $src 两条路都能直接用。
     local tmp
     tmp=$(mktemp -d)
-    if ! curl -fsSL "$base_url/archive/refs/heads/$branch.tar.gz" | tar xz -C "$tmp"; then
-        rm -rf "$tmp"
-        echo "错误: 下载更新失败，请检查网络"
-        return 1
-    fi
     local src="$tmp/MyProject-$branch"
+    local got=0
+    if [ "$mirror" != "none" ]; then
+        local murl="$mirror/$remote_version/${tool_name}-${remote_version}-src.tar.gz"
+        # 源码包不大，但仍不给 --max-time：慢网络下截断会得到一个坏 tar。
+        if curl -fsSL --connect-timeout 6 "$murl" -o "$tmp/src.tar.gz" 2>/dev/null \
+           && tar xzf "$tmp/src.tar.gz" -C "$tmp" 2>/dev/null; then
+            got=1
+        fi
+    fi
+    if [ "$got" -eq 0 ]; then
+        if ! curl -fsSL "$base_url/archive/refs/heads/$branch.tar.gz" | tar xz -C "$tmp"; then
+            rm -rf "$tmp"
+            echo "错误: 下载更新失败，请检查网络"
+            return 1
+        fi
+    fi
 
     # Step 5: 复制文件到安装目录（保留用户配置）
     do_install_entry "$tool_name" "$install_dir" "$src"

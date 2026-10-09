@@ -22,10 +22,19 @@ REM the actual machine PATH entries behind, and still report success.
 set "SCRIPT_DIR=%~dp0"
 set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
 set "INSTALL_DIR="
+set "FROM_REPO=0"
 if exist "%ProgramFiles%\devtools\ptool\bin\ptool.bat" set "INSTALL_DIR=%ProgramFiles%\devtools\ptool"
 if not defined INSTALL_DIR if exist "%ProgramFiles(x86)%\devtools\ptool\bin\ptool.bat" set "INSTALL_DIR=%ProgramFiles(x86)%\devtools\ptool"
-REM No Program Files copy: a repo layout. Derive it from this script's location.
-if not defined INSTALL_DIR for %%i in ("%SCRIPT_DIR%\..\..") do if exist "%%~fi\bin\ptool.bat" set "INSTALL_DIR=%%~fi"
+REM No Program Files copy: a repo layout. Derive it from this script's location --
+REM but flag it. Nothing here may ever delete a directory derived this way: it is
+REM a checkout, and a checkout does not always carry .git (copied trees, archives,
+REM CI workspaces don't), so the .git guard below is not enough on its own.
+REM This once wiped a developer's working copy: the probe found bin\ptool.bat two
+REM levels up, no .git was present, and rmdir /s /q took the whole tree.
+if not defined INSTALL_DIR for %%i in ("%SCRIPT_DIR%\..\..") do if exist "%%~fi\bin\ptool.bat" (
+    set "INSTALL_DIR=%%~fi"
+    set "FROM_REPO=1"
+)
 if not defined INSTALL_DIR set "INSTALL_DIR=%ProgramFiles%\devtools\ptool"
 
 echo ========================================
@@ -39,6 +48,13 @@ if exist "%INSTALL_DIR%\unins000.exe" (
     echo Delegating to the Inno Setup uninstaller...
     start /wait "" "%INSTALL_DIR%\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
     echo.
+    REM Inno can't always delete unins000.exe itself (it's the running image), and
+    REM in a headless/ssh context the self-delete handoff can be skipped entirely,
+    REM leaving the exe and an empty {app} dir behind. Sweep whatever remains.
+    if exist "%INSTALL_DIR%" rmdir /s /q "%INSTALL_DIR%" 2>nul
+    REM Drop the now-empty devtools parent too -- only when no sibling project
+    REM is left (rmdir fails silently on a non-empty directory).
+    for %%i in ("%INSTALL_DIR%\..") do rmdir "%%~fi" 2>nul
     echo Uninstall complete.
     echo Please reopen a CMD window for the PATH change to take effect.
     echo.
@@ -88,8 +104,31 @@ if exist "%INSTALL_DIR%\.git" (
     echo        Delete it by hand if you really want it gone
     goto :uninstall_done
 )
+REM Same rule, no .git needed: a directory derived from THIS script's location is
+REM a source tree by construction, .git or not. A repo-layout "install" only ever
+REM wrote PATH entries, so removing those is the complete uninstall.
+if "%FROM_REPO%"=="1" (
+    echo [Skip] %INSTALL_DIR% holds this installer's own source, not deleting it
+    echo        PATH entries are already removed above; delete the tree by hand
+    echo        if you really want it gone
+    goto :uninstall_done
+)
+REM Last guard before the destructive step: an install dir never has installer\ or
+REM tests\ (only module\install.bat). Their presence means this is a source tree
+REM that slipped past the two checks above.
+if exist "%INSTALL_DIR%\installer" (
+    echo [Skip] %INSTALL_DIR% has an installer\ directory, not deleting it
+    goto :uninstall_done
+)
+if exist "%INSTALL_DIR%\tests" (
+    echo [Skip] %INSTALL_DIR% has a tests\ directory, not deleting it
+    goto :uninstall_done
+)
 
 rmdir /s /q "%INSTALL_DIR%"
+REM Drop the now-empty devtools parent too -- only when no sibling project is
+REM left (rmdir fails silently on a non-empty directory).
+for %%i in ("%INSTALL_DIR%\..") do rmdir "%%~fi" 2>nul
 echo [Done] Removed %INSTALL_DIR%
 
 :uninstall_done

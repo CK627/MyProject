@@ -7,6 +7,9 @@
 # 传统用法（安装后需重开终端或手动 source）:
 #   curl -fsSL https://raw.githubusercontent.com/CK627/MyProject/ptool/installer/install.sh | bash
 #
+# 国内镜像（无需 VPN，同一份脚本，只是换个下载地址）:
+#   source <(curl -fsSL http://101.132.165.98/dist/ptool/install.sh)
+#
 # macOS : 下载最新 Release 的 .dmg，挂载后安装里面的 .pkg（带安装器收据）
 # Linux : 下载最新 Release 的 <tool>-<ver>-linux.tar.gz，运行其中的 install-from-source.sh
 # Windows: 请用 PowerShell 一键安装（install.ps1）
@@ -30,6 +33,12 @@
     OWNER="CK627"
     REPO="MyProject"
     BASE="https://github.com/$OWNER/$REPO"
+
+    # 安装源：默认先走国内镜像，拿不到再回退 GitHub Release。
+    #   · 这台镜像机在国内直连可达，raw.githubusercontent.com / api.github.com 则不保证；
+    #     把镜像放在前面，「不开 VPN 也能装」才是真的，而不是「卡 30 秒后失败」。
+    #   · 覆盖方式：PTOOL_MIRROR=<url> 换镜像地址，PTOOL_MIRROR=none 强制只走 GitHub。
+    MIRROR="${PTOOL_MIRROR:-http://101.132.165.98/dist/ptool}"
 
     err() { echo "错误: $*" >&2; exit 1; }
     info() { echo "==> $*"; }
@@ -62,6 +71,14 @@
     #   · 没有 git 时回退 GitHub API：Linux 侧原本不要求装 git
     # ---------------------------------------------------------------
     resolve_latest() {
+        # 镜像优先：它就是一个纯文本 VERSION，一次 GET 就够，比 ls-remote / API 都快。
+        # 超时必须短——国内访问 GitHub 常见的不是「连不上」而是「连上后一直挂着」，
+        # 没有 --max-time 就会把整个安装卡死在第一步，看起来像脚本坏了。
+        if [ "$MIRROR" != "none" ]; then
+            local mv
+            mv=$(curl -fsSL --connect-timeout 6 --max-time 15 "$MIRROR/VERSION" 2>/dev/null | tr -d '[:space:]')
+            if [ -n "$mv" ]; then printf '%s\n' "$mv"; return 0; fi
+        fi
         if command -v git >/dev/null 2>&1; then
             git ls-remote --tags "$BASE.git" "refs/tags/${TOOL}-v*" \
                 | grep -vF '^{}' \
@@ -75,6 +92,29 @@
         fi
     }
 
+    # 下载发布资产：先镜像，再 GitHub Release。
+    # 镜像按 <base>/<version>/<asset> 布局，与 release 里的资产同名，所以调用方只
+    # 传文件名和版本号，不用关心当前走的是哪条路。
+    fetch_asset() {
+        # $1 资产文件名  $2 版本号  $3 输出路径
+        local asset="$1" ver="$2" out="$3"
+        rm -f "$out" 2>/dev/null || true
+        if [ "$MIRROR" != "none" ]; then
+            local murl="$MIRROR/$ver/$asset"
+            info "下载 $murl"
+            # 大文件（dmg / tar.gz）不能套短 --max-time，否则 20 秒就被掐断；
+            # 这里只给连接阶段设超时，传输阶段交给 curl 自己跑。
+            if curl -fL --connect-timeout 6 --progress-bar "$murl" -o "$out" 2>/dev/null \
+               && [ -s "$out" ]; then
+                return 0
+            fi
+            info "镜像上没有该版本，回退 GitHub Release"
+        fi
+        local gurl="$BASE/releases/download/${TOOL}-v${ver}/${asset}"
+        info "下载 $gurl"
+        curl -fL --progress-bar "$gurl" -o "$out"
+    }
+
     case "$(uname -s)" in
         Darwin)
             # hdiutil 是 macOS 自带命令，缺失说明系统环境异常，早报比晚报好
@@ -82,7 +122,6 @@
             info "解析最新版本..."
             VER="$(resolve_latest)" || err "无法解析最新版本，请检查网络"
             [ -n "$VER" ] || err "未找到 ${TOOL} 的版本 tag"
-            VERSION="${TOOL}-v${VER}"
             info "安装 ${TOOL} ${VER}"
 
             # 发布产物是 .dmg，.pkg 打在 dmg 里，所以要先挂载再从挂载点安装。
@@ -92,9 +131,7 @@
             # 固定名字在多人机器上可以被人抢先建成符号链接，curl -o 会顺着写穿到别处。
             TMPDIR_DL=$(mktemp -d)
             DMG="$TMPDIR_DL/${TOOL}-${VER}.dmg"
-            URL="$BASE/releases/download/${VERSION}/${TOOL}-${VER}.dmg"
-            info "下载 $URL"
-            curl -fL --progress-bar "$URL" -o "$DMG" || err "下载失败：$URL"
+            fetch_asset "${TOOL}-${VER}.dmg" "$VER" "$DMG" || err "下载失败：${TOOL}-${VER}.dmg"
             [ -s "$DMG" ] || err "下载到的文件是空的：$DMG"
 
             info "挂载安装包..."
@@ -117,10 +154,8 @@
             VER="$(resolve_latest)" || err "无法解析最新版本，请检查网络"
             [ -n "$VER" ] || err "未找到 ${TOOL} 的发布版本"
             ASSET="${TOOL}-${VER}-linux.tar.gz"
-            URL="$BASE/releases/download/${TOOL}-v${VER}/${ASSET}"
-            info "下载 $URL"
             TMPDIR_DL=$(mktemp -d)
-            curl -fL --progress-bar "$URL" -o "$TMPDIR_DL/$ASSET" || err "下载失败：$URL"
+            fetch_asset "$ASSET" "$VER" "$TMPDIR_DL/$ASSET" || err "下载失败：$ASSET"
             [ -s "$TMPDIR_DL/$ASSET" ] || err "下载到的文件是空的：$ASSET"
             tar -xzf "$TMPDIR_DL/$ASSET" -C "$TMPDIR_DL" || err "解压失败：$ASSET"
             info "安装（需要管理员密码）..."
