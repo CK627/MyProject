@@ -66,7 +66,10 @@ foreach ($f in $batFiles) {
     $i = 0
     foreach ($line in [IO.File]::ReadAllLines($f)) {
         $i++
-        if ($line -match 'powershell\s+[^\r\n]*-Command\s+"(.+)"\s*$') {
+        # 只认行首直接调用的 powershell -Command "..."。cmd 的
+        # `for /f ... in (`powershell ...`) do ...` 里嵌的那种不是独立 payload，
+        # 整行截出来的字符串本来就不可解析，必须排除（^ 锚点）。
+        if ($line -match '^\s*powershell\s+[^\r\n]*-Command\s+"(.+)"\s*$') {
             $payload = $Matches[1] -replace '\\"', '"'
             try {
                 $null = [ScriptBlock]::Create($payload)
