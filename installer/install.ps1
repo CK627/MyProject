@@ -12,18 +12,28 @@ $base = "https://github.com/CK627/MyProject"
 
 function Info([string]$msg) { Write-Host "==> $msg" }
 
-# 解析最新版本 tag（jtool-v2.2.1 -> 2.2.1）
+# 解析最新版本 tag（jtool-v2.2.15 -> 2.2.15）
+# 用 releases 而不是 tags：只有 release 里才有 setup exe，且这里按 100/页 翻页 ——
+# 本仓库是多项目 monorepo，tag（或 release）总数增长后单页会被截断、漏掉 jtool。
 Info "解析最新版本..."
-try {
-    $tags = (Invoke-RestMethod -Uri "https://api.github.com/repos/CK627/MyProject/tags?per_page=100" -Headers @{ "User-Agent" = "jtool-installer" }) |
-        ForEach-Object { $_.name } |
-        Where-Object { $_ -like "$tool-v*" }
-} catch {
-    throw "无法访问 GitHub API：$($_.Exception.Message)"
-}
-if (-not $tags) { throw "未找到 $tool 的版本 tag" }
+$headers = @{ "User-Agent" = "jtool-installer" }
+$releases = @()
+$page = 1
+do {
+    try {
+        $batch = Invoke-RestMethod -Uri "https://api.github.com/repos/CK627/MyProject/releases?per_page=100&page=$page" -Headers $headers
+    } catch {
+        throw "无法访问 GitHub API：$($_.Exception.Message)"
+    }
+    $releases += @(@($batch) | Where-Object { $_.tag_name -like "$tool-v*" })
+    $page++
+} while (@($batch).Count -eq 100 -and $page -le 5)
 
-$version = $tags | Sort-Object { [System.Version]($_ -replace "^$tool-v", "") } -Descending | Select-Object -First 1
+if (-not $releases) { throw "未找到 $tool 的 release" }
+
+$version = ($releases |
+    Sort-Object { [System.Version]($_.tag_name -replace "^$tool-v", "") } -Descending |
+    Select-Object -First 1).tag_name
 $ver = $version -replace "^$tool-v", ""
 Info "安装 $tool $ver"
 

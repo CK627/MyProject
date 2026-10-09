@@ -288,12 +288,27 @@ call :resolve_jdk "%~2" run_home
 if not defined run_home ( echo Error: JDK %~2 not found & exit /b 1 )
 
 for %%f in ("!java_file!") do set "class_name=%%~nf"
-echo === Compile (JDK %~2) ===
+
+REM Drop "run", the version and the file, then forward the rest to java:
+REM `jtool run 21 Hello.java arg1 arg2` -> `java Hello arg1 arg2`.
+set "run_ver=%~2"
+shift /1
+shift /1
+shift /1
+set "RUN_ARGS="
+:run_collect
+if "%~1"=="" goto :run_ready
+set "RUN_ARGS=!RUN_ARGS! %1"
+shift /1
+goto :run_collect
+:run_ready
+
+echo === Compile (JDK !run_ver!) ===
 "!run_home!\bin\javac.exe" "!java_file!"
 if !errorlevel! neq 0 ( echo Compile failed & exit /b 1 )
 echo.
 echo === Run ===
-"!run_home!\bin\java.exe" "!class_name!"
+"!run_home!\bin\java.exe" "!class_name!" !RUN_ARGS!
 set "exit_code=!errorlevel!"
 if exist "!class_name!.class" del "!class_name!.class"
 exit /b !exit_code!
@@ -325,8 +340,10 @@ REM ============================================
 REM update
 REM ============================================
 :cmd_update
-REM Writing to the install dir needs admin; request elevation when not admin
-net session >nul 2>&1
+REM Writing to the install dir needs admin; request elevation when not admin.
+REM Use fltmc, not `net session`: the latter needs the Server service, so a
+REM machine with it stopped would keep re-elevating in a loop.
+fltmc >nul 2>&1
 if !errorlevel! neq 0 (
     echo update needs admin, requesting elevation...
     powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -ArgumentList 'update' -Verb RunAs"
@@ -347,6 +364,11 @@ echo Checking for updates...
 set "REMOTE_VERSION="
 for /f "usebackq delims=" %%v in (`powershell -NoProfile -Command "(Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/CK627/MyProject/jtool/VERSION').Content.Trim()"`) do set "REMOTE_VERSION=%%v"
 if "!REMOTE_VERSION!"=="" for /f "usebackq delims=" %%v in (`curl -fsSL "https://raw.githubusercontent.com/CK627/MyProject/jtool/VERSION" 2^>nul`) do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
+REM Third source: the GitHub contents API. raw.githubusercontent.com is unreachable
+REM on some networks (CN IDCs, measured) while api.github.com works; with raw-only
+REM probing the version check fails even though the archive download below (which
+REM goes through codeload) would have succeeded.
+if "!REMOTE_VERSION!"=="" for /f "usebackq delims=" %%v in (`curl -fsSL -H "Accept: application/vnd.github.raw" "https://api.github.com/repos/CK627/MyProject/contents/VERSION?ref=jtool" 2^>nul`) do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
 if "!REMOTE_VERSION!"=="" (
     echo Version read failed, falling back to git...
     goto :update_via_git
@@ -392,6 +414,10 @@ if exist "!SRC!\installer\windows\install.bat" (
     copy /y "!SRC!\installer\windows\install.bat" "%MODULE_DIR%\install.bat" >nul
 )
 if not exist "%CONFIG_FILE%" copy "!SRC!\config\jtool.conf" "%CONFIG_DIR%\" >nul
+REM The GitHub archive ships .bat as LF (server-side archives skip .gitattributes
+REM eol=crlf). Normalise to CRLF so chcp 65001 + mixed echo stays byte-aligned.
+call :to_crlf "%BIN_DIR%\jtool.bat"
+call :to_crlf "%MODULE_DIR%\install.bat"
 
 findstr /v /b /c:"JTOOL_VERSION=" "%CONFIG_FILE%" > "%CONFIG_FILE%.tmp"
 REM Redirect before echo: the other order appends a trailing space.
@@ -467,6 +493,8 @@ if exist "!REPO_DIR!\installer\windows\install.bat" (
     copy /y "!REPO_DIR!\installer\windows\install.bat" "%MODULE_DIR%\install.bat" >nul
 )
 if not exist "%CONFIG_FILE%" copy "!REPO_DIR!\config\jtool.conf" "%CONFIG_DIR%\" >nul
+call :to_crlf "%BIN_DIR%\jtool.bat"
+call :to_crlf "%MODULE_DIR%\install.bat"
 
 findstr /v /b /c:"JTOOL_VERSION=" "%CONFIG_FILE%" > "%CONFIG_FILE%.tmp"
 REM Redirect before echo: the other order appends a trailing space.
@@ -813,4 +841,18 @@ if "!_ts:~0,1!"==" " ( set "_ts=!_ts:~1!" & goto :trim_sp_lead )
 :trim_sp_tail
 if "!_ts:~-1!"==" " ( set "_ts=!_ts:~0,-1!" & goto :trim_sp_tail )
 set "%~1=!_ts!"
+exit /b 0
+
+REM ============================================
+REM Normalise a file's line endings to CRLF (UTF-8, no BOM).
+REM The GitHub server-side archive does NOT apply .gitattributes eol=crlf, so
+REM `jtool update` would copy a LF batch file into the install dir; chcp 65001 +
+REM mixed ASCII/UTF-8 echo misaligns bytes in that case. No '!' here: delayed
+REM expansion would swallow it.
+REM ============================================
+:to_crlf
+if "%~1"=="" exit /b 0
+if not exist "%~1" exit /b 0
+powershell -NoProfile -Command "$p='%~1'; $t=[IO.File]::ReadAllText($p,[Text.UTF8Encoding]::new($false)); $t=$t -replace '\r?\n', (([char]13).ToString()+([char]10).ToString()); [IO.File]::WriteAllText($p,$t,[Text.UTF8Encoding]::new($false))"
+if !errorlevel! neq 0 echo Warning: could not normalise line endings of %~1
 exit /b 0

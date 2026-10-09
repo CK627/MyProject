@@ -1,0 +1,79 @@
+name: ci
+
+# 本仓库是多项目 monorepo（每个项目一个分支），CI 只关心 jtool 分支
+on:
+  push:
+    branches: [jtool]
+  pull_request:
+    branches: [jtool]
+
+jobs:
+  # 语法门 + shell 侧冒烟；macOS / Linux 双跑，覆盖 BSD/GNU 差异
+  shell:
+    name: shell (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: bash -n / zsh -n + 冒烟
+        run: bash tests/smoke.sh
+
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck（error 阻塞 / warning 仅提示）
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+          mapfile -t files < <(find . -type f \
+            \( -name '*.sh' -o -name '*.bash' -o -name 'postinstall.in' -o -name 'uninstall.in' \) \
+            -not -path './dist/*')
+          echo "-- severity=error（阻塞）"
+          shellcheck --shell=bash --severity=error "${files[@]}"
+          echo "-- severity=warning（仅提示；存量告警收敛后可改为阻塞）"
+          shellcheck --shell=bash --severity=warning "${files[@]}" || true
+
+  # 行尾契约：.bat / .ps1 在工作树与 git archive 导出里都必须是 CRLF
+  # （GitHub 服务端生成的归档不执行该转换，所以 Windows 的 jtool update
+  #   在复制后自行归一化，见 bin/jtool.bat 的 :to_crlf）
+  line-endings:
+    name: line endings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: .bat / .ps1 必须是 CRLF
+        run: |
+          set -uo pipefail
+          fail=0
+          check() {
+            if perl -0777 -ne 'exit(1) if /(?<!\r)\n/' "$1"; then
+              echo "  ok   - $2"
+            else
+              echo "  FAIL - $2（含裸 LF，应为 CRLF）"
+              fail=1
+            fi
+          }
+          echo "== 工作树 =="
+          while IFS= read -r f; do check "$f" "$f"; done < <(git ls-files '*.bat' '*.ps1')
+          echo "== git archive 导出 =="
+          tmp=$(mktemp -d)
+          git archive HEAD | tar -x -C "$tmp" || exit 1
+          while IFS= read -r f; do check "$f" "archive:${f#"$tmp"/}"; done \
+            < <(find "$tmp" -type f \( -name '*.bat' -o -name '*.ps1' \))
+          exit "$fail"
+
+  # Windows 侧冒烟：cmd 的行为只能在 Windows 上验
+  windows:
+    name: windows smoke
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: windows 冒烟
+        shell: pwsh
+        run: ./tests/smoke.ps1

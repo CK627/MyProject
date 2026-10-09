@@ -12,7 +12,18 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-TOOL="$(basename "$PROJECT_DIR")"
+
+# 目录名可能是 jtool（仓库检出）或 jtool-<版本>（发行 .tar.gz 解出来的），
+# 不能直接拿 basename 当工具名——那会让 scan/config 子命令去找
+# config/jtool-2.3.4.conf 这种不存在的文件。以 config/ 下的 .conf 名为准。
+TOOL=""
+for _c in "$PROJECT_DIR"/config/*.conf; do
+    [ -f "$_c" ] || continue
+    TOOL="${_c##*/}"
+    TOOL="${TOOL%.conf}"
+    break
+done
+[ -n "$TOOL" ] || TOOL="$(basename "$PROJECT_DIR")"
 CONFIG="$PROJECT_DIR/config/$TOOL.conf"
 
 source "$PROJECT_DIR/module/common.sh"

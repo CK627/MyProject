@@ -67,6 +67,9 @@ if "%INSTALLED%"=="1" (
     if not exist "%CONFIG_FILE%" copy "%PROJECT_DIR%\config\jtool.conf" "%CONFIG_DIR%\" >nul
     REM Copy this installer into module\ so jtool install / jtool scan can call it
     copy "%PROJECT_DIR%\installer\windows\install.bat" "%MODULE_DIR%\install.bat" >nul
+    REM Lay down VERSION too: a fresh repo install otherwise has no VERSION in the
+    REM install dir, so the first update would print "v(unknown) -> vX" noise.
+    if exist "%PROJECT_DIR%\VERSION" copy "%PROJECT_DIR%\VERSION" "%INSTALL_DIR%\" >nul
 )
 echo Done
 echo.
@@ -92,6 +95,7 @@ echo.
 
 echo [3/4] Scanning and generating shims...
 call :do_scan_inner
+if errorlevel 1 exit /b 1
 call :write_version
 "%BIN_DIR%\jtool.bat" shim
 echo.
@@ -161,6 +165,7 @@ call :list_jdks_of "!found_dir!"
 echo.
 
 call :write_config
+if errorlevel 1 exit /b 1
 
 echo Config written: %CONFIG_FILE%
 echo.
@@ -171,6 +176,7 @@ exit /b 0
 call :find_java_base found_dir
 if not defined found_dir set "found_dir=C:\Program Files\Java"
 call :write_config
+if errorlevel 1 exit /b 1
 echo Written: %CONFIG_FILE%
 exit /b 0
 
@@ -300,15 +306,15 @@ if not defined HAS_DEFAULT (
 )
 
 (
-    echo # jtool 配置文件
+    echo # jtool configuration
     echo.
-    echo # Java 安装路径（父目录）
+    echo # Java base directory (the parent directory)
     echo JAVA_BASE_DIR="!found_dir!"
     echo.
-    echo # 默认版本
+    echo # Default version
     echo !KEEP_DEFAULT!
     echo.
-    echo # jtool 版本（由 install / update 维护，请勿手动修改）
+    echo # jtool version (maintained by install / update, do not edit)
     echo !KEEP_VERSION!
 ) > "%CONFIG_FILE%"
 exit /b 0
@@ -386,6 +392,7 @@ REM prompting the way :do_scan does
 REM ============================================
 :do_scan_silent
 call :do_scan_inner
+if errorlevel 1 exit /b 1
 call :write_version
 exit /b 0
 

@@ -27,7 +27,11 @@ load_config() {
         while IFS='=' read -r key value; do
             [[ "$key" =~ ^#.*$ || -z "$key" ]] && continue
             key=$(echo "$key" | tr -d ' ')
-            value=$(echo "$value" | tr -d " '\"")
+            # Trim surrounding whitespace and strip one wrapping pair of double
+            # quotes. Never delete every space: JAVA_BASE_DIR such as
+            # "/opt/My Java" must survive intact (the old tr -d " '\"" collapsed
+            # it to /opt/MyJava).
+            value=$(printf '%s' "$value" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/^"\(.*\)"$/\1/')
             case "$key" in
                 JAVA_BASE_DIR) JAVA_BASE_DIR="$value" ;;
                 JTOOL_DEFAULT_VERSION) JTOOL_DEFAULT_VERSION="$value" ;;
@@ -197,8 +201,8 @@ cmd_tools() {
 }
 
 cmd_run() {
-    local version="$1"
-    local java_file="$2"
+    local version="$1"; shift
+    local java_file="$1"; shift
 
     if [ -z "$java_file" ] || [ ! -f "$java_file" ]; then
         echo "错误: 请指定有效的 Java 文件"
@@ -221,7 +225,8 @@ cmd_run() {
 
     echo ""
     echo "=== 运行 ==="
-    "$jdk_home/bin/java" "$class_name"
+    # 版本与文件之后的参数原样透传给 java：jtool run 21 Hello.java arg1 arg2
+    "$jdk_home/bin/java" "$class_name" "$@"
     local exit_code=$?
 
     rm -f "${class_name}.class"
@@ -243,7 +248,10 @@ case "$1" in
     home)     [ $# -lt 2 ] && { echo "错误: 请指定版本号"; exit 1; }; cmd_home "$2"; exit $? ;;
     info)     [ $# -lt 2 ] && { echo "错误: 请指定版本号"; exit 1; }; cmd_info "$2"; exit $? ;;
     tools)    [ $# -lt 2 ] && { echo "错误: 请指定版本号"; exit 1; }; cmd_tools "$2"; exit $? ;;
-    run)      [ $# -lt 3 ] && { echo "错误: 请指定版本号和文件"; exit 1; }; cmd_run "$2" "$3"; exit $? ;;
+    run)
+        [ $# -lt 3 ] && { echo "错误: 请指定版本号和文件"; exit 1; }
+        # 版本与文件之后的参数透传给脚本本身：jtool run 21 Hello.java arg1 arg2
+        _run_ver="$2"; shift 2; cmd_run "$_run_ver" "$@"; exit $? ;;
     scan)     do_scan "$CONFIG_FILE"; exit $? ;;
     config)   do_config "$CONFIG_FILE"; exit 0 ;;
     install)  do_install "$PROJECT_DIR"; exit $? ;;
