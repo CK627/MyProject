@@ -1,0 +1,71 @@
+# -*- coding: utf-8 -*-
+"""字节块扫描原语：findings 去重入库（add）与单块多策略扫描（scan_blob）"""
+from .decode import decode_chain, fragments
+from .utils import FLAG_RE
+
+
+def add(finding, findings, seen):
+    """去重：解码/片段按内容，关键词按文本，其余按全文"""
+    score, kind, tok, val, loc = finding
+    v = val if isinstance(val, str) else val.decode('utf-8', 'replace')
+    if kind in ('hex', 'base64'):
+        k = ('dec', kind, v[:100])
+    elif kind.startswith('片段'):
+        k = ('frag', v[:100])
+    elif kind == '关键词':
+        k = ('kw', v[:140])
+    elif kind == '明文flag':
+        k = ('flag', v[:160])
+    elif kind in ('JWT', '命令回显', '环境/配置', '短文本响应'):
+        k = ('ctx', kind, v[:220])                       # 同值跨视图合并（双份抓包常见）
+    else:
+        k = (kind, v[:140], loc)
+    if k in seen:
+        return
+    seen.add(k)
+    findings.append(finding)
+
+
+def scan_blob(blob, keywords, do_decode, depth, findings, seen, loc):
+    """字节块扫描：明文 flag / 片段 / 关键词上下文 / 自动解码"""
+    for m in FLAG_RE.finditer(blob):
+        add((0.97, '明文flag', b'', m.group(0), loc), findings, seen)
+    fragments(blob, keywords, findings, seen, loc)
+    for enc in ('ascii', 'utf-16'):
+        if enc == 'utf-16':
+            if blob.count(b'\x00') < len(blob) * 0.2:
+                continue
+            try:
+                text = blob.decode('utf-16-le', 'replace')
+            except Exception:
+                continue
+        else:
+            try:
+                text = blob.decode('latin-1')
+            except Exception:
+                continue
+        hay = text.lower()
+        for kw in keywords:
+            i, cnt = 0, 0
+            while cnt < 6:
+                i = hay.find(kw, i)
+                if i < 0:
+                    break
+                raw_seg = text[max(0, i - 40): i + 110]
+                if sum(ch.isprintable() or ch in '\r\n\t' for ch in raw_seg) < len(raw_seg) * 0.7:
+                    i += len(kw)
+                    cnt += 1
+                    continue
+                seg = raw_seg.replace('\x00', '')
+                seg = ''.join(ch if ch.isprintable() or ch in '\r\n\t' else '.' for ch in seg)
+                seg = ' '.join(seg.split())
+                if seg:
+                    score = 0.45 if '{' in seg else 0.40
+                    add((score, '关键词', kw.encode(), seg.encode('utf-8', 'replace'), loc), findings, seen)
+                i += len(kw)
+                cnt += 1
+    if do_decode:
+        hits = []
+        decode_chain(blob, keywords, depth, hits, seen)
+        for score, name, tok, dec in hits:
+            findings.append((score, name, tok, dec, loc))

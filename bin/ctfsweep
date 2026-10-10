@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# ctfsweep 启动器（macOS / Linux）
+# 解析软链接定位仓库根目录，交给 python3 -m ctfsweep 执行。
+set -euo pipefail
+
+src="${BASH_SOURCE[0]}"
+while [ -L "$src" ]; do
+    dir="$(cd "$(dirname "$src")" && pwd)"
+    src="$(readlink "$src")"
+    [[ "$src" != /* ]] && src="$dir/$src"
+done
+root="$(cd "$(dirname "$src")/.." && pwd)"
+
+if ! command -v python3 >/dev/null 2>&1; then
+    echo "ctfsweep: 未找到 python3（需要 Python 3.8+）" >&2
+    exit 127
+fi
+
+exec env PYTHONPATH="$root${PYTHONPATH:+:$PYTHONPATH}" python3 -B -m ctfsweep "$@"

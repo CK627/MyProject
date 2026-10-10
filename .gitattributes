@@ -1,0 +1,4 @@
+# Windows 批处理用 CRLF，避免 LF 在 cmd 下解析中文字节错位
+*.bat text eol=crlf
+# Shell 脚本用 LF
+*.sh  text eol=lf

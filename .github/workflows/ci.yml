@@ -1,0 +1,21 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  smoke:
+    name: smoke (python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.8', '3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: 冒烟（语法门 + 单元冒烟 + 启动器）
+        run: bash tests/smoke.sh
