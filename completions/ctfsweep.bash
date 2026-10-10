@@ -4,7 +4,7 @@ _ctfsweep() {
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
-    opts="-k --keywords --min-score --no-decode --depth --limit --extract --extract-dir --pwd-file --config --version -h --help"
+    opts="-f --file -k --keywords --min-score --no-decode --depth --limit --extract --extract-dir --pwd-file --config --version -h --help"
     case "$prev" in
         -k|--keywords)
             COMPREPLY=( $(compgen -W "flag ctf key secret" -- "$cur") )
@@ -14,7 +14,7 @@ _ctfsweep() {
             COMPREPLY=( $(compgen -d -- "$cur") )
             return 0
             ;;
-        --pwd-file|--config)
+        -f|--file|--pwd-file|--config)
             COMPREPLY=( $(compgen -f -- "$cur") )
             return 0
             ;;

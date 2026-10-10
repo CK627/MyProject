@@ -96,7 +96,8 @@ python3 -m ctfsweep <文件或目录> [选项]     # 在项目根目录内
 ./installer/install.sh --prefix /usr/local
 ```
 
-安装完成后 `ctfsweep` 命令即全局可用（若 `~/.local/bin` 不在 PATH，脚本会给出提示）。
+安装完成后 `ctfsweep` 命令即全局可用（若 `~/.local/bin` 不在 PATH，脚本会给出提示），
+同时会把补全配置写入 shell（重开终端后 `ctf<TAB>` 即可补全）。
 
 ### 卸载
 
@@ -114,6 +115,9 @@ python3 -m ctfsweep <文件或目录> [选项]     # 在项目根目录内
 ```bash
 # 扫描一个抓包（默认输出 >= 0.40 的全部候选）
 ctfsweep capture.pcap
+
+# 短命令 ctf（安装脚本加的别名）与 -f 写法，都等价
+ctf -f capture.pcap
 
 # 只看高置信结果（直接要 flag 时）
 ctfsweep capture.pcap --min-score 0.85
@@ -134,7 +138,8 @@ ctfsweep Security.evtx -k flag1,flag2,flag3
 
 | 选项 | 说明 |
 |------|------|
-| `<文件或目录>` | 必填。支持单个文件或目录递归 |
+| `<文件或目录>` | 必填（或用 `-f` 指定）。支持单个文件或目录递归 |
+| `-f, --file F` | 指定要扫描的文件（等同位置参数，两种写法都行） |
 | `-k, --keywords` | 追加关键词（逗号分隔），默认 `flag,ctf` |
 | `--min-score N` | 只显示置信度 ≥ N 的结果（默认 0.40，设 0 显示全部） |
 | `--no-decode` | 关闭 hex / base64 自动解码 |
@@ -203,10 +208,18 @@ NO_DECODE=false                # true 关闭自动解码
 
 ## Tab 补全
 
+`installer/install.sh` 安装时会**自动把补全与短命令配置写入 `~/.zshrc` / `~/.bashrc`**（幂等，
+重复安装不会写重），重开终端后即生效：
+
 ```bash
-# zsh：把 completions/ctfsweep.zsh 所在目录加入 fpath 后重开终端
-# bash：source completions/ctfsweep.bash，或放入 /etc/bash_completion.d/
+ctf -f capture.pcap   # 短命令（安装脚本会加 alias ctf='ctfsweep'）
+ctfs<TAB>             # 补全命令名 → ctfsweep（ctf<TAB> 会同时列出系统自带的 ctf_insert）
+ctfsweep --ex<TAB>    # 补全选项（--extract / --extract-dir ...）
+ctfsweep -f <TAB>     # 补全文件路径
 ```
+
+> 手动接线：zsh 把 `completions/ctfsweep.zsh` 加入 fpath 或直接 source 它（需已启用 compinit）；
+> bash source `completions/ctfsweep.bash` 即可。
 
 ## 项目结构
 
@@ -239,8 +252,8 @@ CtfSweep/
 │   ├── ctfsweep.zsh               # zsh 补全
 │   └── ctfsweep.bash              # bash 补全
 ├── installer/
-│   ├── install.sh                 # 安装到 $PREFIX/bin（默认 ~/.local）
-│   └── install-from-source.sh     # 源码安装 / 卸载（uninstall 只删本仓库的软链）
+│   ├── install.sh                 # 安装：软链到 $PREFIX/bin + 自动接线 shell 补全（幂等）
+│   └── install-from-source.sh     # 源码安装 / 卸载（卸载含 shell 配置清理）
 ├── tests/
 │   ├── gen_fixtures.py            # 生成确定性测试样例（pcap/pcapng/evtx/内嵌 zip）
 │   ├── test_smoke.py              # 纯标准库冒烟（19 项断言）

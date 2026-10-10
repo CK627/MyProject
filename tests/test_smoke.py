@@ -76,6 +76,8 @@ def main():
         print('== t2.pcapng ==')
         rc, out = run_cli([os.path.join(tmp, 't2.pcapng')])
         check('flag{pcapng-smoke-ok}' in out, 'pcapng 明文 flag')
+        rc, out = run_cli(['-f', os.path.join(tmp, 't2.pcapng')])
+        check(rc == 0 and 'flag{pcapng-smoke-ok}' in out, '-f/--file 等价位置参数')
 
         print('== t3.evtx ==')
         rc, out = run_cli([os.path.join(tmp, 't3.evtx')])

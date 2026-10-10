@@ -5,14 +5,15 @@
 #   ./installer/install-from-source.sh install   [--prefix DIR]
 #   ./installer/install-from-source.sh uninstall [--prefix DIR]
 #
-# 卸载只会移除"指向本仓库"的软链接，不会触碰其他文件。
+# 卸载会：移除"指向本仓库"的软链接 + 清理 shell 配置中的补全行；
+# 不触碰其他文件。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PREFIX="${PREFIX:-$HOME/.local}"
 
 usage() {
-    sed -n '2,7p' "$0"
+    sed -n '2,10p' "$0"
     exit 1
 }
 
@@ -42,9 +43,8 @@ install_it() {
     chmod +x "$ROOT/bin/ctfsweep"
     ln -sf "$ROOT/bin/ctfsweep" "$TARGET"
     echo "已安装: $TARGET -> $ROOT/bin/ctfsweep"
-    echo "可选——shell 补全："
-    echo "  bash: 将 completions/ctfsweep.bash 放入 /etc/bash_completion.d/（或 source 它）"
-    echo "  zsh : 将 completions/ctfsweep.zsh 所在目录加入 fpath 后重开终端"
+    echo "提示: 补全与 PATH 接线可直接用 installer/install.sh 一键完成；"
+    echo "      手动方式——zsh 把 completions/ctfsweep.zsh 加入 fpath 或 source 它。"
     case ":$PATH:" in
         *":$PREFIX/bin:"*) ;;
         *) echo "提示: $PREFIX/bin 不在 PATH 中，请把 'export PATH=\"$PREFIX/bin:\$PATH\"' 加入 shell 配置。" ;;
@@ -60,7 +60,7 @@ uninstall_it() {
                 echo "已卸载: 移除 $TARGET"
                 ;;
             *)
-                echo "跳过: $TARGET 指向其他位置（$dest），未删除。"
+                echo "跳过: $TARGET 指向其他位置（${dest}），未删除。"
                 ;;
         esac
     elif [ -e "$TARGET" ]; then
@@ -68,6 +68,16 @@ uninstall_it() {
     else
         echo "无需卸载: $TARGET 不存在。"
     fi
+    # 清理 shell 配置中的补全行（只匹配本项目的 source 行与注释）
+    for RC in "$HOME/.zshrc" "$HOME/.bashrc"; do
+        [ -f "$RC" ] || continue
+        if grep -q "completions/ctfsweep" "$RC" 2>/dev/null; then
+            tmp="$RC.ctfsweep.tmp.$$"
+            grep -v -e "completions/ctfsweep" -e "^# ctfsweep$" -e "^alias ctf='ctfsweep'" "$RC" > "$tmp"
+            mv "$tmp" "$RC"
+            echo "已清理 shell 补全配置: $RC"
+        fi
+    done
 }
 
 case "$ACTION" in

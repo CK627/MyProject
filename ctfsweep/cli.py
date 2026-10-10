@@ -20,6 +20,7 @@ HELP = """ctfsweep — CTF 流量 / 日志 / 注册表 快速扫描器（零依�
 支持输入: pcap / pcapng（抓包）、evtx（事件日志）、.reg / 任意文本
 
 选项:
+  -f, --file F      指定要扫描的文件（等同位置参数，两种写法都行）
   -k, --keywords    额外关键词(逗号分隔)，默认仅 flag,ctf
   --min-score N     只显示置信度 >= N 的结果（默认 0.40，设 0 显示全部）
   --no-decode       关闭 hex / base64 自动解码
@@ -114,7 +115,10 @@ def main():
     i = 0
     while i < len(args):
         a = args[i]
-        if a in ('-k', '--keywords') and i + 1 < len(args):
+        if a in ('-f', '--file') and i + 1 < len(args):
+            path = args[i + 1]
+            i += 2
+        elif a in ('-k', '--keywords') and i + 1 < len(args):
             keywords += [k.strip() for k in args[i + 1].split(',') if k.strip()]
             i += 2
         elif a == '--no-decode':
