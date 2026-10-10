@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # ctfsweep 启动器（macOS / Linux）
-# 解析软链接定位仓库根目录，交给 python3 -m ctfsweep 执行。
+# 解析软链接定位自身目录，再交给 python3 -m ctfsweep 执行。
+# 兼容两种布局：
+#   仓库检出   <root>/bin/ctfsweep + <root>/ctfsweep/        → PYTHONPATH=<root>
+#   devtools   <root>/bin/ctfsweep + <root>/lib/ctfsweep/    → PYTHONPATH=<root>/lib
 set -euo pipefail
 
 src="${BASH_SOURCE[0]}"
@@ -11,9 +14,15 @@ while [ -L "$src" ]; do
 done
 root="$(cd "$(dirname "$src")/.." && pwd)"
 
+if [ -d "$root/lib/ctfsweep" ]; then
+    pyroot="$root/lib"
+else
+    pyroot="$root"
+fi
+
 if ! command -v python3 >/dev/null 2>&1; then
     echo "ctfsweep: 未找到 python3（需要 Python 3.8+）" >&2
     exit 127
 fi
 
-exec env PYTHONPATH="$root${PYTHONPATH:+:$PYTHONPATH}" python3 -B -m ctfsweep "$@"
+exec env PYTHONPATH="$pyroot${PYTHONPATH:+:$PYTHONPATH}" python3 -B -m ctfsweep "$@"

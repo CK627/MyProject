@@ -7,13 +7,15 @@
 覆盖：
   * CLI：--version / --help / 无参数 / 路径不存在
   * VERSION 文件与包版本一致性
+  * shell 脚本体检：$VAR 后不得紧跟全角字符（bash 变量名解析坑）
   * t1.pcap：明文 flag / hex 解码 / DNS base64 外带 / JWT / 环境变量回显 / --min-score 过滤
-  * t2.pcapng：pcapng 封装
+  * t2.pcapng：pcapng 封装 + -f/--file 参数
   * t3.evtx：UTF-16 明文 + 花括号片段 + 启发式拼接
   * t4.pcap --extract：文件雕刻 + zip 内容扫描 + 落盘
   * 目录模式
 """
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -43,6 +45,22 @@ def run_cli(args):
     return proc.returncode, proc.stdout.decode('utf-8', 'replace')
 
 
+def check_shell_scripts():
+    """体检 shell 脚本：$VAR 后不得紧跟非 ASCII 字符（bash 会把全角字符并入变量名导致解析错误）"""
+    pat = re.compile(r'\$[A-Za-z_][A-Za-z0-9_]*[^\x00-\x7f]')
+    bad = []
+    for root, dirs, files in os.walk(ROOT):
+        dirs[:] = [d for d in dirs if d not in ('.git', '__pycache__')]
+        for f in sorted(files):
+            if not (f.endswith('.sh') or f == 'ctfsweep'):
+                continue
+            p = os.path.join(root, f)
+            for i, line in enumerate(open(p, encoding='utf-8', errors='replace'), 1):
+                if pat.search(line):
+                    bad.append('%s:%d' % (os.path.relpath(p, ROOT), i))
+    check(not bad, 'shell 变量名体检（%s）' % (', '.join(bad) if bad else '全部通过'))
+
+
 def main():
     tmp = tempfile.mkdtemp(prefix='ctfsweep-smoke-')
     try:
@@ -62,6 +80,9 @@ def main():
         check(rc == 0 and '置信度模型' in out, '--help 返回 0')
         rc, out = run_cli(['/no/such/file.pcap'])
         check(rc == 2, '路径不存在时返回 2')
+
+        print('== shell 脚本体检 ==')
+        check_shell_scripts()
 
         print('== t1.pcap：多载体 flag ==')
         rc, out = run_cli([os.path.join(tmp, 't1.pcap')])

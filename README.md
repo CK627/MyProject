@@ -86,23 +86,37 @@ python3 -m ctfsweep <文件或目录> [选项]     # 在项目根目录内
 ./bin/ctfsweep <文件或目录> [选项]          # 或使用仓库启动器（任意目录）
 ```
 
-### 安装到 PATH
+### 安装（devtools 布局，与 jtool / ptool 同规）
 
 ```bash
-# 安装到 ~/.local（默认，无需 sudo）
+# 用户级（默认，无需 sudo）→ ~/.devtools/ctfsweep
 ./installer/install.sh
 
-# 或指定前缀
-./installer/install.sh --prefix /usr/local
+# 系统级（多用户共享）→ /Library/devtools/ctfsweep（macOS）
+#                      /usr/local/devtools/ctfsweep（Linux）
+sudo ./installer/install.sh
 ```
 
-安装完成后 `ctfsweep` 命令即全局可用（若 `~/.local/bin` 不在 PATH，脚本会给出提示），
-同时会把补全配置写入 shell（重开终端后 `ctf<TAB>` 即可补全）。
+安装脚本会完成三件事：① 部署到 devtools 目录（bin / lib / config / completions / uninstall）；
+② 把 PATH 与补全写入 shell 配置（幂等，重复安装不会写重）；③ 自动清理旧版软链
+（`~/.local/bin`）。重开终端后 `ctfsweep` 与短命令 `ctf` 即可用。
+
+### 目录布局
+
+| 层级 | macOS | Linux | 说明 |
+|------|-------|-------|------|
+| 系统级安装 | `/Library/devtools/ctfsweep/` | `/usr/local/devtools/ctfsweep/` | 需 sudo；含 bin / lib / config / completions / uninstall |
+| 用户级安装 | `~/.devtools/ctfsweep/` | 同 | 无 sudo 时的默认位置 |
+| 用户数据目录 | `~/.devtools/ctfsweep/` | 同 | 补全等用户级数据放这里；后续若有缓存/更新机制，同规放此（与 `~/.devtools/ptool/` 一致） |
 
 ### 卸载
 
 ```bash
-./installer/install-from-source.sh uninstall      # 只移除本仓库创建的软链接
+./installer/uninstall.sh            # 用户级一键清理
+sudo ./installer/uninstall.sh       # 连同系统级目录一起清理
+
+# 或直接使用安装目录内的副本：
+sudo /Library/devtools/ctfsweep/uninstall
 ```
 
 ### Windows
@@ -208,8 +222,8 @@ NO_DECODE=false                # true 关闭自动解码
 
 ## Tab 补全
 
-`installer/install.sh` 安装时会**自动把补全与短命令配置写入 `~/.zshrc` / `~/.bashrc`**（幂等，
-重复安装不会写重），重开终端后即生效：
+`installer/install.sh` 安装时会**自动把 PATH、短命令别名与补全写入 `~/.zshrc` / `~/.bashrc`**
+（幂等，重复安装不会写重；补全本体在 `~/.devtools/ctfsweep/completions/`），重开终端后即生效：
 
 ```bash
 ctf -f capture.pcap   # 短命令（安装脚本会加 alias ctf='ctfsweep'）
@@ -218,8 +232,8 @@ ctfsweep --ex<TAB>    # 补全选项（--extract / --extract-dir ...）
 ctfsweep -f <TAB>     # 补全文件路径
 ```
 
-> 手动接线：zsh 把 `completions/ctfsweep.zsh` 加入 fpath 或直接 source 它（需已启用 compinit）；
-> bash source `completions/ctfsweep.bash` 即可。
+> 手动接线：zsh 直接 `source ~/.devtools/ctfsweep/completions/ctfsweep.zsh`（需已启用 compinit）；
+> bash source 同目录下的 `ctfsweep.bash` 即可。
 
 ## 项目结构
 
@@ -252,12 +266,13 @@ CtfSweep/
 │   ├── ctfsweep.zsh               # zsh 补全
 │   └── ctfsweep.bash              # bash 补全
 ├── installer/
-│   ├── install.sh                 # 安装：软链到 $PREFIX/bin + 自动接线 shell 补全（幂等）
-│   └── install-from-source.sh     # 源码安装 / 卸载（卸载含 shell 配置清理）
+│   ├── install.sh                 # 安装（devtools 布局；sudo 运行为系统级，默认用户级）
+│   ├── uninstall.sh               # 卸载（安装目录 + shell 配置 + 旧版软链，含 sudo 提示）
+│   └── install-from-source.sh     # 兼容入口（转向 install.sh / uninstall.sh）
 ├── tests/
 │   ├── gen_fixtures.py            # 生成确定性测试样例（pcap/pcapng/evtx/内嵌 zip）
-│   ├── test_smoke.py              # 纯标准库冒烟（19 项断言）
-│   └── smoke.sh                   # 冒烟总入口（语法门 + 单元冒烟 + 启动器）
+│   ├── test_smoke.py              # 纯标准库冒烟（20 项断言）
+│   └── smoke.sh                   # 冒烟总入口（语法门 + 单元冒烟 + 启动器 + 安装/卸载循环）
 └── .github/workflows/ci.yml       # CI：Python 3.8 / 3.11 / 3.13 三版本跑冒烟
 ```
 
@@ -294,6 +309,11 @@ CI（`.github/workflows/ci.yml`）在 ubuntu 上以 Python **3.8 / 3.11 / 3.13**
 用 `--pwd-file` 挂更大的字典；或先在整目录 `--extract` 让工具预扫全部抓包采集
 流量中的候选口令（很多题目口令就藏在其他流量里）。另外留意"假加密"——工具会先
 自动绕过。
+
+**Q: 安装到了哪里？为什么不是 ~/.local/bin？**
+与 jtool / ptool 统一为 devtools 布局：默认用户级 `~/.devtools/ctfsweep/`；`sudo` 安装则
+系统级 `/Library/devtools/ctfsweep/`。补全等用户数据同规放在 `~/.devtools/ctfsweep/`
+（与 ptool 的 `~/.devtools/ptool/` 一致）。
 
 **Q: 会不会污染我的目录？**
 只有 `--extract` 会写文件，默认写到 `<抓包名>_extracted/`（可用 `--extract-dir` 改）；
