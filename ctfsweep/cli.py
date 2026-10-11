@@ -7,6 +7,7 @@ from . import __version__
 from .core.capture import PCAP_MAGICS, PCAPNG_MAGIC
 from .core.decode import assemble_suggestion
 from .core.extract import PWD_POOL, _pk, precollect_pwds
+from .core import judge
 from .core import selfmgr
 from .core.report import report
 from .core.scanner import scan_capture, scan_rawfile
@@ -23,6 +24,7 @@ HELP = """ctfsweep — CTF 流量 / 日志 / 注册表 快速扫描器（零依�
   ctfsweep install            从源码仓库安装到 devtools
   ctfsweep uninstall [-y]     卸载（-y 跳过确认）
   ctfsweep config             显示配置与安装信息
+  ctfsweep train [--data F]   训练本地判断核模型（留一组评估 + 保存；--epochs N / --model-out F）
   ctfsweep help               显示本帮助
 
 支持输入: pcap / pcapng（抓包）、evtx（事件日志）、.reg / 任意文本
@@ -40,6 +42,7 @@ HELP = """ctfsweep — CTF 流量 / 日志 / 注册表 快速扫描器（零依�
                     加密 zip 自动尝试：空口令→常用表→--pwd-file 字典→流量采集口令
   --extract-dir D   指定提取输出目录（默认与抓包同目录）
   --pwd-file F      附加口令字典文件（每行一个，用于加密压缩包）
+  --judge           用本地判断核模型对候选打分（p=…，并列出重点候选；需先 ctfsweep train）
   --config F        指定配置文件（默认读取 ~/.config/ctfsweep/ctfsweep.conf）
   --version         显示版本
   -h, --help        显示本帮助
@@ -56,6 +59,10 @@ HELP = """ctfsweep — CTF 流量 / 日志 / 注册表 快速扫描器（零依�
   0.45 低   DNS 查询名（域名白名单一眼可辨）
   0.42 低   接口短文本响应（HTTP 事务配对结果）
   0.40 低   关键词上下文（普通字符串命中，需人工浏览）
+
+判断核（--judge）:
+  本地训练的轻量判断网络（纯 Python MLP），对候选输出 p 分并按"答案相关性"排序；
+  训练: ctfsweep train（数据 = 本机解题标注 ~/.devtools/ctfsweep/judge/dataset.jsonl）
 """
 
 
@@ -99,6 +106,7 @@ def _cmd_config():
     if mode == 'installed':
         udir = os.path.join(os.path.expanduser('~'), '.devtools', 'ctfsweep')
         print('用户数据: %s（补全副本等）' % udir)
+    print('判断核数据: %s（数据集/模型，update 与卸载不受影响）' % judge.user_dir())
 
     env_conf = os.environ.get('CTFSWEEP_CONF')
     conv = os.path.join(os.path.expanduser('~'), '.config', 'ctfsweep', 'ctfsweep.conf')
@@ -127,19 +135,65 @@ def _cmd_config():
     _show('NO_DECODE', 'false')
     mirror = os.environ.get('CTFSWEEP_MIRROR', selfmgr.MIRROR_DEFAULT)
     print('镜像源: %s（CTFSWEEP_MIRROR 可覆盖；none = 只走 GitHub）' % mirror)
+
+    mp = judge.model_path()
+    if os.path.isfile(mp):
+        try:
+            pred = judge.JudgePredictor.load(mp)
+            print('判断核模型: %s（已就绪，%s）' % (mp, pred.describe()))
+        except Exception as ex:
+            print('判断核模型: %s（加载失败: %r）' % (mp, ex))
+    else:
+        print('判断核模型: %s（不存在；ctfsweep train 可训练）' % mp)
+    return 0
+
+
+def _cmd_train(args):
+    """ctfsweep train：训练本地判断核（留一组评估 + 保存模型）。"""
+    data_path, model_out, epochs = None, None, 250
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == '--data' and i + 1 < len(args):
+            data_path = args[i + 1]
+            i += 2
+        elif a in ('--model-out', '--model') and i + 1 < len(args):
+            model_out = args[i + 1]
+            i += 2
+        elif a == '--epochs' and i + 1 < len(args):
+            try:
+                epochs = int(args[i + 1])
+            except Exception:
+                pass
+            i += 2
+        else:
+            i += 1
+    data_path = data_path or judge.default_dataset_path()
+    model_out = model_out or judge.model_path()
+    if not os.path.isfile(data_path):
+        print('未找到数据集: %s' % data_path)
+        print('提示: 数据集 = 本机解题标注（每行一条候选 + 真/假标签），积累后即可训练。')
+        return 2
+    rows = judge.load_rows(data_path)
+    if len(rows) < 8:
+        print('数据太少（%d 条），至少需要 8 条标注样本。' % len(rows))
+        return 2
+    judge.run_training(rows, model_out=model_out, epochs=epochs)
     return 0
 
 
 def main():
     args = sys.argv[1:]
-    # 管理子命令（update / install / uninstall / config / help）
-    if args and args[0] in ('update', 'install', 'uninstall', 'config', 'help'):
+    # 管理子命令（update / install / uninstall / config / train / help）
+    if args and args[0] in ('update', 'install', 'uninstall', 'config', 'train', 'help'):
         sub, rest = args[0], args[1:]
         if sub == 'help':
             print(HELP)
             return 0
         if sub == 'config':
             return _cmd_config()
+        if sub == 'train':
+            return _cmd_train(rest)
         if sub == 'update':
             return selfmgr.cmd_update(rest)
         if sub == 'install':
@@ -181,6 +235,7 @@ def main():
     limit = _conf_int('LIMIT', 50)
     min_score = _conf_float('MIN_SCORE', 0.40)
     do_extract, extract_dir = False, None
+    do_judge = False
     i = 0
     while i < len(args):
         a = args[i]
@@ -210,6 +265,9 @@ def main():
             except Exception as ex:
                 print('口令字典读取失败: %r' % ex)
             i += 2
+        elif a == '--judge':
+            do_judge = True
+            i += 1
         elif a == '--config' and i + 1 < len(args):
             i += 2
         elif a == '--depth' and i + 1 < len(args):
@@ -236,6 +294,18 @@ def main():
     if not os.path.exists(path):
         print('路径不存在: %s' % path)
         return 2
+
+    judge_net = None
+    if do_judge:
+        mpath = judge.model_path()
+        if os.path.isfile(mpath):
+            try:
+                judge_net = judge.JudgePredictor.load(mpath)
+                print('[判断核] 已加载模型: %s（%s）' % (mpath, judge_net.describe()))
+            except Exception as ex:
+                print('[判断核] 模型加载失败: %r' % ex)
+        else:
+            print('[判断核] 未找到模型（%s），请先运行: ctfsweep train' % mpath)
 
     if os.path.isdir(path):
         targets = []
@@ -292,7 +362,30 @@ def main():
                 n_mid += 1
             else:
                 n_low += 1
-        report(findings, limit, min_score)
+        _pfunc = None
+        if judge_net is not None:
+            finder = judge.ContextFinder(data)
+            ftype = 'capture' if (data[:4] in PCAP_MAGICS or data[:4] == PCAPNG_MAGIC) else 'raw'
+            _pcache = {}
+
+            def _pfunc(f, _finder=finder, _ft=ftype, _cache=_pcache):
+                key = (f[1], str(f[3])[:120])
+                if key not in _cache:
+                    _cache[key] = judge.predict_finding(judge_net, f, _finder, _ft)
+                return _cache[key]
+
+        report(findings, limit, min_score, pfunc=_pfunc)
+        if judge_net is not None:
+            pool = sorted([f for f in findings if f[0] >= min_score],
+                          key=lambda f: -f[0])[:max(limit, 60)]
+            pool.sort(key=lambda f: -_pfunc(f))
+            top = pool[:6]
+            if top:
+                print('  【判断核·重点候选】（模型排序，优先核验）')
+                for f in top:
+                    v = f[3] if isinstance(f[3], str) else f[3].decode('utf-8', 'replace')
+                    v = ' '.join(v.split())
+                    print('    p=%.2f  %s   @%s' % (_pfunc(f), v[:110], f[4]))
         frag_vals = []
         for f in findings:
             if f[1].startswith('片段'):

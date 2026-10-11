@@ -9,7 +9,7 @@ LEVEL_TITLES = {
 }
 
 
-def report(findings, limit, min_score):
+def report(findings, limit, min_score, pfunc=None):
     findings = [f for f in findings if f[0] >= min_score]
     findings.sort(key=lambda f: -f[0])
     cur = None
@@ -22,20 +22,26 @@ def report(findings, limit, min_score):
         v = ' '.join(v.split())
         t = tok if isinstance(tok, str) else tok.decode('latin-1', 'replace')
         prefix = '[%.2f %s]' % (score, lv)
+        sfx = ''
+        if pfunc is not None:
+            try:
+                sfx = '   p=%.2f' % pfunc((score, kind, tok, val, loc))
+            except Exception:
+                sfx = ''
         if kind == '明文flag':
-            print('    %s 明文flag: %s   @%s' % (prefix, v, loc))
+            print('    %s 明文flag: %s   @%s%s' % (prefix, v, loc, sfx))
         elif kind == 'DNS查询':
-            print('    %s DNS查询: %s   @%s' % (prefix, v, loc))
+            print('    %s DNS查询: %s   @%s%s' % (prefix, v, loc, sfx))
         elif kind == 'JWT':
-            print('    %s JWT令牌: %s   @%s' % (prefix, v[:230], loc))
+            print('    %s JWT令牌: %s   @%s%s' % (prefix, v[:230], loc, sfx))
         elif kind in ('命令回显', '环境/配置', '短文本响应'):
-            print('    %s %s: %s   @%s' % (prefix, kind, v[:230], loc))
+            print('    %s %s: %s   @%s%s' % (prefix, kind, v[:230], loc, sfx))
         elif kind in ('hex', 'base64'):
-            print('    %s %s解码: %s...  =>  %s   @%s' % (prefix, kind, t[:44], v[:160], loc))
+            print('    %s %s解码: %s...  =>  %s   @%s%s' % (prefix, kind, t[:44], v[:160], loc, sfx))
         elif kind.startswith('片段'):
-            print('    %s %s: %s   @%s' % (prefix, kind, v[:120], loc))
+            print('    %s %s: %s   @%s%s' % (prefix, kind, v[:120], loc, sfx))
         else:
-            print('    %s 关键词[%s]: ...%s...   @%s' % (prefix, t, v[:150], loc))
+            print('    %s 关键词[%s]: ...%s...   @%s%s' % (prefix, t, v[:150], loc, sfx))
     if len(findings) > limit:
         print('  ...（其余省略，共 %d 条候选）' % len(findings))
     if not findings:

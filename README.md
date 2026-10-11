@@ -153,6 +153,24 @@ sudo /Library/devtools/ctfsweep/uninstall   # 或安装目录内的副本
 - 🎛️ `--min-score` 过滤、`--limit` 截断、`--depth` 控制解码深度、`--no-decode` 关闭解码
 - 🛡️ 单文件出错不中断，继续扫下一个
 
+### 判断核（实验特性，`train` + `--judge`）
+
+本地训练的**轻量判断网络**：对扫描候选做"答案相关性"打分（`p=0.9x`），用于人工核验前的排序与降噪。
+
+- 🧠 **纯 Python 手写 MLP 集成**（默认 5 × 28→10→1，约 1.5k 参数，权重为 ~30KB 的 JSON）——零依赖、完全离线、训练确定性
+- 🏷️ 训练数据 = 本机积累的解题标注（`~/.config/ctfsweep/judge/dataset.jsonl`：每行 = 候选 + 真/假标签），**update / 卸载不会触碰**
+- 📏 **留一组评估**（leave-one-group-out）：每组轮流当测试集，评估泛化后再全量重训；实测当前题库汇总 AUC ≈ 0.92
+- 🔌 无模型时工具行为与之前完全一致；`--judge` 时输出 `p=` 分与【判断核·重点候选】
+
+```bash
+ctfsweep train                 # 训练（留一组评估 + 保存模型到 ~/.config/ctfsweep/judge/model.json）
+ctfsweep train --epochs 500    # 自定义训练轮数
+ctfsweep file.pcap --judge     # 扫描时给候选打 p 分，并列出模型排序的重点候选
+```
+
+> 诚实边界：判断核的"推理"是**统计归纳**（形状 / 上下文 / 模式），不是语义理解——
+> 开放语义推理仍交给 LLM / 人工；它的定位是"扫描器找全 → 判断核排序 → 人最终确认"。
+
 ### 工程特性
 
 - ⚡ **零第三方依赖**：任意 Python 3.8+，无需 pip install 任何东西
@@ -202,6 +220,7 @@ ctfsweep Security.evtx -k flag1,flag2,flag3
 | `--extract` | 从流量中提取文件并按内容扫描（详见下文） |
 | `--extract-dir D` | 指定提取输出目录（默认 `<抓包名>_extracted/`，与抓包同目录） |
 | `--pwd-file F` | 附加口令字典文件（每行一个，用于加密压缩包） |
+| `--judge` | 用本地判断核模型对候选打分（`p=…` + 重点候选排序；需先 `ctfsweep train`） |
 | `--config F` | 指定配置文件（默认读取 `~/.config/ctfsweep/ctfsweep.conf`） |
 | `--version` | 显示版本 |
 | `-h, --help` | 显示帮助 |
@@ -214,9 +233,10 @@ ctfsweep Security.evtx -k flag1,flag2,flag3
 | `ctfsweep install` | 在源码仓库内运行：把当前源码安装到 devtools |
 | `ctfsweep uninstall [-y]` | 卸载（`-y` 跳过确认） |
 | `ctfsweep config` | 显示运行模式、安装位置与生效配置 |
+| `ctfsweep train [--data F] [--epochs N] [--model-out F]` | 训练本地判断核：留一组评估 + 全量重训 + 保存模型 |
 | `ctfsweep help` | 显示帮助 |
 
-> 子命令名（update / install / uninstall / config / help）优先于文件路径解析——若要扫描恰好同名的文件，
+> 子命令名（update / install / uninstall / config / train / help）优先于文件路径解析——若要扫描恰好同名的文件，
 > 请用 `-f 文件名` 或 `./文件名`。
 
 ### 典型场景
@@ -234,6 +254,9 @@ ctfsweep Security.evtx -k flag1,flag2      # [拼接建议] 区段
 # 加密压缩包：跨文件采集口令池自动尝试
 ctfsweep ./all_captures/ --extract         # 预扫全部抓包采集候选口令
 ctfsweep secret.zip --pwd-file rockyou.txt # 或用自定义字典（zip 会先解压扫描）
+
+# 判断核：对候选按"答案相关性"排序（先 ctfsweep train 一次，之后每次扫描都可加 --judge）
+ctfsweep Security.evtx --judge              # 输出 p= 分 + 【判断核·重点候选】
 ```
 
 ## 支持的输入格式

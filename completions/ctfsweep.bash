@@ -1,16 +1,16 @@
 # ctfsweep 补全（bash）：source 本文件，或放入 /etc/bash_completion.d/。
 # 兼容 bash 3.2（macOS 自带版本）。
 # 行为与 zsh 版对齐：TAB 直接列出全部选项（不必先敲 "-"）；
-# 子命令专属参数（update --check / uninstall -y）与选项值补全亦已支持。
+# 子命令专属参数（update --check / uninstall -y / train --data）与选项值补全亦已支持。
 _ctfsweep() {
     local cur prev opts subcmds
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
-    opts="-f --file -F --folder -k --keywords --min-score --no-decode --depth --limit --extract --extract-dir --pwd-file --config --version -h --help"
-    subcmds="update install uninstall config help"
+    opts="-f --file -F --folder -k --keywords --min-score --no-decode --depth --limit --extract --extract-dir --pwd-file --judge --config --version -h --help"
+    subcmds="update install uninstall config train help"
 
-    # 子命令专属参数（ctfsweep update ... / ctfsweep uninstall ...）
+    # 子命令专属参数（ctfsweep update ... / ctfsweep train ...）
     if [ "$COMP_CWORD" -ge 2 ]; then
         case "${COMP_WORDS[1]}" in
             update)
@@ -19,6 +19,20 @@ _ctfsweep() {
                 ;;
             uninstall)
                 COMPREPLY=( $(compgen -W "-y --yes" -- "$cur") )
+                return 0
+                ;;
+            train)
+                case "$prev" in
+                    --data|--model-out|--model)
+                        COMPREPLY=( $(compgen -f -- "$cur") )
+                        return 0
+                        ;;
+                    --epochs)
+                        COMPREPLY=( $(compgen -W "100 250 500 1000" -- "$cur") )
+                        return 0
+                        ;;
+                esac
+                COMPREPLY=( $(compgen -W "--data --model-out --epochs" -- "$cur") )
                 return 0
                 ;;
             install|config|help)

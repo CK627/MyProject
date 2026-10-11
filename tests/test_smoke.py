@@ -14,8 +14,10 @@
   * t2.pcapng：pcapng 封装 + -f/--file 参数
   * t3.evtx：UTF-16 明文 + 花括号片段 + 启发式拼接 + 噪音闸门（dll 后缀 / GUID / 乱码区剔除）
   * t4.pcap --extract：文件雕刻 + zip 内容扫描 + 落盘
+  * 判断核（judge）：微型数据集训练与分离、train 子命令（留一组评估）、--judge 打分与无模型兜底
   * 目录模式
 """
+import json
 import os
 import re
 import shutil
@@ -30,6 +32,7 @@ sys.path.insert(0, HERE)
 
 import gen_fixtures  # noqa: E402
 from ctfsweep import __version__  # noqa: E402
+from ctfsweep.core import judge  # noqa: E402
 
 FAILS = []
 
@@ -79,8 +82,84 @@ def check_completions():
     check('-F --folder' in code and '--folder:' in code, 'zsh 补全：含 -F --folder（指定文件夹）')
     check('--extract' in code and '--min-score' in code, 'zsh 补全：含主要选项')
     check('--check' in code, 'zsh 补全：update --check 在场')
+    check('train' in code and '--judge' in code, 'zsh 补全：含 train 子命令与 --judge')
     bash = open(os.path.join(ROOT, 'completions', 'ctfsweep.bash'), encoding='utf-8').read()
     check('--extract' in bash and '--check' in bash and '--folder' in bash, 'bash 补全：含主要选项与 --check')
+    check('train' in bash and '--judge' in bash, 'bash 补全：含 train 与 --judge')
+
+
+def _judge_samples():
+    """微型数据集：正=真片段语境（空格/正常词），负=dll 后缀拼贴（二进制噪音）"""
+    return [
+        {'kind': '片段(前)', 'score': 0.6, 'val': '{krjl424', 'file_type': 'raw',
+         'data': b'"cmd.exe /c echo {krjl424" /f', 'label': 1, 'group': 'g1', 'file': 'g1'},
+        {'kind': '片段(前)', 'score': 0.6, 'val': '{wtq998', 'file_type': 'raw',
+         'data': b'echo {wtq998 more', 'label': 1, 'group': 'g1', 'file': 'g1'},
+        {'kind': '片段(尾)', 'score': 0.55, 'val': 'zlmqu458xktq}', 'file_type': 'raw',
+         'data': b'Service Key: zlmqu458xktq}\r\n', 'label': 1, 'group': 'g1', 'file': 'g1'},
+        {'kind': '片段(尾)', 'score': 0.55, 'val': 'q3dalb773}', 'file_type': 'raw',
+         'data': b'echo q3dalb773} here', 'label': 1, 'group': 'g1', 'file': 'g1'},
+        {'kind': '片段(前)', 'score': 0.6, 'val': '{yq5511', 'file_type': 'raw',
+         'data': b'add user {yq5511 now', 'label': 1, 'group': 'g1', 'file': 'g1'},
+        {'kind': '片段(尾)', 'score': 0.55, 'val': 'dll55e3}', 'file_type': 'raw',
+         'data': b'C:\\Windows\\system32\\setupetw.dll55e3}JK', 'label': 0, 'group': 'g2', 'file': 'g2'},
+        {'kind': '片段(尾)', 'score': 0.55, 'val': 'dllb39e}', 'file_type': 'raw',
+         'data': b'C:\\Windows\\system32\\setupetw.dllb39e}XK', 'label': 0, 'group': 'g2', 'file': 'g2'},
+        {'kind': '片段(尾)', 'score': 0.55, 'val': 'exe6ce1}', 'file_type': 'raw',
+         'data': b'C:\\Windows\\system32\\OpenWith.exe6ce1}\xa6', 'label': 0, 'group': 'g2', 'file': 'g2'},
+        {'kind': '片段(尾)', 'score': 0.55, 'val': 'dll984b}', 'file_type': 'raw',
+         'data': b'C:\\Windows\\System32\\RstrtMgr.dll984b}\x0e', 'label': 0, 'group': 'g2', 'file': 'g2'},
+        {'kind': '片段(尾)', 'score': 0.55, 'val': 'dllff1c}', 'file_type': 'raw',
+         'data': b'C:\\Windows\\system32\\shwebsvc.dllff1c}\xf4', 'label': 0, 'group': 'g2', 'file': 'g2'},
+    ]
+
+
+def check_judge(tmp):
+    """判断核：机制训练、CLI train、--judge 打分、无模型兜底"""
+    samples = _judge_samples()
+    rows = []
+    for s in samples:
+        rows.append({'v': 1, 'group': s['group'], 'file': s['file'], 'kind': s['kind'],
+                     'score': s['score'], 'val': judge.normalize_val(s['val']),
+                     'label': s['label'], 'note': 'smoke',
+                     'feats': judge.extract_features(s)})
+
+    # 1) 机制：微型训练能分离正负
+    net = judge.JudgeNet(seed=1)
+    X, y = judge.rows_to_xy(rows)
+    net.train(X, y)
+    p_pos = net.predict(judge.extract_features(samples[0]))
+    p_neg = net.predict(judge.extract_features(samples[5]))
+    check(p_pos > 0.5 > p_neg, '微型训练：正负分离（p 正 %.2f > 0.5 > 负 %.2f）' % (p_pos, p_neg))
+
+    # 2) CLI train：留一组评估 + 保存
+    ds = os.path.join(tmp, 'judge_ds.jsonl')
+    mdl = os.path.join(tmp, 'judge_model.json')
+    with open(ds, 'w', encoding='utf-8') as f:
+        for r in rows:
+            f.write(json.dumps(r, ensure_ascii=False) + '\n')
+    rc, out = run_cli(['train', '--data', ds, '--model-out', mdl, '--epochs', '150'])
+    check(rc == 0 and os.path.isfile(mdl), 'train 子命令：训练并保存模型')
+    check('留一组评估' in out and 'AUC' in out, 'train 输出留一组评估信息')
+
+    # 3) --judge：扫描输出 p 分与重点候选
+    os.environ['CTFSWEEP_JUDGE_MODEL'] = mdl
+    try:
+        rc, out = run_cli([os.path.join(tmp, 't3.evtx'), '--judge'])
+    finally:
+        os.environ.pop('CTFSWEEP_JUDGE_MODEL', None)
+    check(rc == 0 and '已加载模型' in out, '--judge：显示模型加载信息')
+    check('p=' in out, '--judge：扫描结果带 p 分')
+    check('【判断核·重点候选】' in out, '--judge：重点候选区块')
+
+    # 4) 无模型兜底：提示但扫描照常
+    os.environ['CTFSWEEP_JUDGE_MODEL'] = os.path.join(tmp, 'no_such_model.json')
+    try:
+        rc, out = run_cli([os.path.join(tmp, 't2.pcapng'), '--judge'])
+    finally:
+        os.environ.pop('CTFSWEEP_JUDGE_MODEL', None)
+    check('未找到模型' in out and 'flag{pcapng-smoke-ok}' in out,
+          '--judge 无模型：提示并正常扫描')
 
 
 def main():
@@ -100,7 +179,7 @@ def main():
         check(rc == 1 and '用法' in out, '无参数时打印帮助并返回 1')
         rc, out = run_cli(['--help'])
         check(rc == 0 and '置信度模型' in out, '--help 返回 0')
-        check('update' in out and 'uninstall' in out, '--help 含管理子命令')
+        check('update' in out and 'train' in out, '--help 含管理子命令（含 train）')
         rc, out = run_cli(['/no/such/file.pcap'])
         check(rc == 2, '路径不存在时返回 2')
 
@@ -149,6 +228,9 @@ def main():
         check('flag{zip-carve-ok}' in out, 'zip 内 flag 内容扫描')
         carved = os.listdir(exdir) if os.path.isdir(exdir) else []
         check(any(f.endswith('.zip') for f in carved), 'zip 文件已落盘')
+
+        print('== 判断核（judge）==')
+        check_judge(tmp)
 
         print('== 目录模式 ==')
         rc, out = run_cli([tmp])

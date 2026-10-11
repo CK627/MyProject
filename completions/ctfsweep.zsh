@@ -9,6 +9,7 @@
 #   ctf -f <TAB>          → 补全文件；-F <TAB> → 补全文件夹；--extract-dir <TAB> → 补全目录
 #   ctf --min-score <TAB> → 0.40 / 0.55 / 0.85 / 0.95
 #   ctf update <TAB>      → --check；ctf uninstall <TAB> → -y / --yes
+#   ctf train <TAB>       → --data / --epochs / --model-out
 #   已输入过的选项不会重复列出（-f 与 --file 视为同一个）
 
 # ---- 候选清单 ----
@@ -17,6 +18,7 @@ _ctfsweep_subcmds=(
   'install:从源码仓库安装到 devtools'
   'uninstall:卸载 ctfsweep'
   'config:显示配置与安装信息'
+  'train:训练本地判断核（judge）模型'
   'help:显示帮助'
 )
 
@@ -28,6 +30,7 @@ _ctfsweep_opts_long=(
   '--file:指定要扫描的文件'
   '--folder:指定要扫描的文件夹（整个项目目录）'
   '--help:显示帮助'
+  '--judge:用判断核模型对候选打分（需先 train）'
   '--keywords:追加关键词（逗号分隔）'
   '--limit:每个文件最多输出条数'
   '--min-score:只显示置信度不低于该值的结果'
@@ -54,13 +57,19 @@ _ctfsweep_opts_uninstall=(
   '--yes:跳过确认'
 )
 
+_ctfsweep_opts_train=(
+  '--data:数据集文件（默认 ~/.devtools/ctfsweep/judge/dataset.jsonl）'
+  '--epochs:训练轮数'
+  '--model-out:模型输出路径'
+)
+
 _ctfsweep() {
   local cur prev i item name used_str disp dw pshort pitem
   local use_short=0
   cur="${words[CURRENT]}"
   prev="${words[CURRENT-1]}"
 
-  # 子命令专属参数区（ctfsweep update ... / ctfsweep uninstall ...）
+  # 子命令专属参数区（ctfsweep update ... / ctfsweep train ...）
   if (( CURRENT >= 3 )); then
     case "${words[2]}" in
       update)
@@ -69,6 +78,20 @@ _ctfsweep() {
         ;;
       uninstall)
         _describe -O 'uninstall 选项' _ctfsweep_opts_uninstall
+        return 0
+        ;;
+      train)
+        case "$prev" in
+          --data|--model-out|--model)
+            _files
+            return 0
+            ;;
+          --epochs)
+            compadd -- 100 250 500 1000
+            return 0
+            ;;
+        esac
+        _describe -O 'train 选项' _ctfsweep_opts_train
         return 0
         ;;
       install|config|help)
