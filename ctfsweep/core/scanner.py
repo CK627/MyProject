@@ -4,6 +4,7 @@ import io
 import os
 import zipfile
 
+from .ad import print_ad_info, scan_ad
 from .blobscan import add, scan_blob
 from .capture import LINKNAMES, dns_qname, l4_parse, load_packets
 from .decode import decode_chain, flagify, fragments
@@ -90,6 +91,16 @@ def scan_capture(data, keywords, do_decode, depth, extract=None):
             continue
         loc = 'UDP %s:%d->%s:%d 包#%d' % (src, sport, dst, dport, num)
         scan_blob(payload, keywords, do_decode, depth, findings, seen, loc)
+
+    # AD / 域协议（Kerberos / NTLMSSP / LDAP）：这类流量没有 flag 明文，
+    # 靠字符串扫描必然零命中，这里解票据与凭据（hashcat 可直接用）
+    try:
+        ad_info = scan_ad(tcp_streams, udp_payloads,
+                          lambda f: add(f, findings, seen))
+    except Exception:
+        ad_info = None
+    if ad_info:
+        print_ad_info(ad_info)
 
     if extract:
         os.makedirs(extract['outdir'], exist_ok=True)

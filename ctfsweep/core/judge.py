@@ -32,7 +32,7 @@ FEATURES = (
 
 _KNOWN_KINDS = ('明文flag', 'hex', 'base64', '片段(前)', '片段(尾)', '关键词',
                 'JWT', '命令回显', '环境/配置', '短文本响应', 'DNS查询',
-                '加壳候选', '明文')
+                '加壳候选', '明文', 'Kerberos票据', 'NetNTLM', 'LDAP口令', '域账号')
 
 
 def normalize_val(val):

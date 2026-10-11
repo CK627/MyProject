@@ -10,6 +10,7 @@
     t2.pcapng   pcapng 封装（EPB）的明文 flag
     t3.evtx     evtx 风格 UTF-16LE 字节（明文 flag + 两个花括号片段 + 五类噪音样本）
     t4.pcap     HTTP 流中内嵌 zip（内含 flag 文本），供 --extract 测试
+    t5-ad.pcap  AD 域流量：Kerberos(88) RC4 票据 + SMB NTLM 认证 + LDAP 明文绑定
 """
 import base64
 import io
@@ -23,11 +24,11 @@ def _ip(s):
     return bytes(int(x) for x in s.split('.'))
 
 
-def eth_ipv4(payload, proto):
+def eth_ipv4(payload, proto, src='10.9.9.10', dst='10.9.9.20'):
     eth = b'\x02\x00\x00\x00\x00\x01' + b'\x02\x00\x00\x00\x00\x02' + struct.pack('>H', 0x0800)
     total = 20 + len(payload)
     ip = (struct.pack('>BBHHHBBH', 0x45, 0, total, 0x1337, 0x4000, 64, proto, 0)
-          + _ip('10.9.9.10') + _ip('10.9.9.20'))
+          + _ip(src) + _ip(dst))
     return eth + ip + payload
 
 
@@ -140,6 +141,108 @@ def build_t4():
     return pcap_file(frames)
 
 
+# ---------------------------------------------------------------- AD / 域协议样例
+def _der_len(n):
+    if n < 0x80:
+        return bytes([n])
+    raw = n.to_bytes((n.bit_length() + 7) // 8, 'big')
+    return bytes([0x80 | len(raw)]) + raw
+
+
+def der_tlv(tag, content):
+    return bytes([tag]) + _der_len(len(content)) + content
+
+
+def der_int(v):
+    return der_tlv(0x02, v.to_bytes(max(1, (v.bit_length() + 7) // 8), 'big'))
+
+
+def der_gstr(s):
+    return der_tlv(0x1B, s.encode())
+
+
+def der_principal(parts):
+    """PrincipalName：name-string 用隐式 SEQUENCE OF GeneralString（真实 KDC 的写法）"""
+    return der_tlv(0x30, der_tlv(0xA0, der_int(1))
+                   + der_tlv(0xA1, b''.join(der_gstr(p) for p in parts)))
+
+
+def der_encdata(etype, cipher, kvno=2):
+    return der_tlv(0x30, der_tlv(0xA0, der_int(etype)) + der_tlv(0xA1, der_int(kvno))
+                   + der_tlv(0xA2, der_tlv(0x04, cipher)))
+
+
+def build_asrep(user, realm, spn, cipher):
+    ticket = der_tlv(0x61, der_tlv(0x30, der_tlv(0xA0, der_int(5)) + der_tlv(0xA1, der_gstr(realm))
+                     + der_tlv(0xA2, der_principal(spn)) + der_tlv(0xA3, der_encdata(23, cipher))))
+    body = der_tlv(0x30,
+                   der_tlv(0xA0, der_int(5)) + der_tlv(0xA1, der_int(11))
+                   + der_tlv(0xA3, der_gstr(realm))
+                   + der_tlv(0xA4, der_principal([user]))
+                   + der_tlv(0xA5, ticket)
+                   + der_tlv(0xA6, der_encdata(23, cipher)))
+    return der_tlv(0x6B, body)
+
+
+def build_ntlm2(challenge, target='CORP'):
+    return (b'NTLMSSP\x00' + struct.pack('<I', 2)
+            + struct.pack('<HHI', 0, 0, 0)          # TargetName 字段
+            + struct.pack('<I', 0x00000001)
+            + challenge
+            + b'\x00' * 8 + b'\x00' * 8)
+
+
+def build_ntlm3(user, domain, host, nt_response):
+    lm = b'\x00' * 24
+    dom = domain.encode('utf-16-le')
+    usr = user.encode('utf-16-le')
+    hst = host.encode('utf-16-le')
+    base = 64
+    lm_off = base
+    nt_off = lm_off + len(lm)
+    dom_off = nt_off + len(nt_response)
+    usr_off = dom_off + len(dom)
+    hst_off = usr_off + len(usr)
+
+    def fld(off, ln):
+        return struct.pack('<HHI', ln, ln, off)
+
+    head = (b'NTLMSSP\x00' + struct.pack('<I', 3)
+            + fld(lm_off, len(lm)) + fld(nt_off, len(nt_response))
+            + fld(dom_off, len(dom)) + fld(usr_off, len(usr)) + fld(hst_off, len(hst))
+            + struct.pack('<HHI', 0, 0, 0)          # session key
+            + struct.pack('<I', 0x00000001))
+    return head + lm + nt_response + dom + usr + hst
+
+
+def build_ldap_bind(dn, password):
+    return der_tlv(0x30, der_int(1) + der_tlv(0x60, der_int(3)
+                                             + der_tlv(0x04, dn.encode())
+                                             + der_tlv(0x80, password.encode())))
+
+
+def build_t5_ad():
+    """t5-ad.pcap：Kerberos(88) RC4 票据 + SMB NTLM 认证 + LDAP 明文绑定"""
+    cipher = bytes((i * 37 + 11) % 256 for i in range(48))
+    asrep = build_asrep('svc_sql', 'CORP.LOCAL', ['MSSQLSvc', 'dc01.corp.local'], cipher)
+    krb = struct.pack('>I', len(asrep)) + asrep
+
+    challenge = bytes.fromhex('0123456789abcdef')
+    nt = bytes.fromhex('aabbccddeeff00112233445566778899') + b'\x01\x01\x00\x00' + b'\x00' * 28
+    ntlm3 = build_ntlm3('kanna.seto', 'corp', 'WIN10-PC', nt)
+    ntlm2 = build_ntlm2(challenge)
+
+    ldap = build_ldap_bind('cn=svc_sql,dc=corp,dc=local', 'P@ssw0rd-AD-2026')
+    frames = [
+        eth_ipv4(tcp(50001, 88, 1, krb[:1200]), 6),
+        eth_ipv4(tcp(88, 50001, 1, krb[1200:]), 6, src='10.9.9.20', dst='10.9.9.10'),
+        eth_ipv4(tcp(50002, 445, 1, ntlm3), 6),
+        eth_ipv4(tcp(445, 50002, 1, ntlm2), 6, src='10.9.9.20', dst='10.9.9.10'),
+        eth_ipv4(tcp(50003, 389, 1, ldap), 6),
+    ]
+    return pcap_file(frames)
+
+
 def generate(outdir):
     os.makedirs(outdir, exist_ok=True)
     files = {
@@ -147,6 +250,7 @@ def generate(outdir):
         't2.pcapng': build_t2(),
         't3.evtx': build_t3(),
         't4.pcap': build_t4(),
+        't5-ad.pcap': build_t5_ad(),
     }
     for name in sorted(files):
         with open(os.path.join(outdir, name), 'wb') as f:

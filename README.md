@@ -114,6 +114,30 @@ sudo /Library/devtools/ctfsweep/uninstall   # 或安装目录内的副本
 - 📦 **"加壳"识别**：txt / 响应体内容是 flag 本体但不带 `flag{}` 外壳时给出加壳建议
 - 🔑 关键词上下文扫描（默认 `flag,ctf`，`-k` 可扩展；UTF-16LE / ASCII 双模式）
 
+### AD / 域协议取证（Kerberos · NTLM · LDAP）
+
+AD 类题目（Kerberoasting / AS-REP Roasting / NetNTLM 中继 / LDAP 明文绑定）的流量里
+**没有 `flag{}` 明文**，也不走 HTTP 外带，纯字符串扫描必然零命中。这块能力直接把域协议里的
+"答案素材"解出来，并转成 hashcat / john 能吃的格式：
+
+- 🎫 **Kerberos（TCP/UDP 88）**：解析 AS-REP / TGS-REP，给出域、账号、SPN、etype、票据长度
+  - `etype 23 (RC4)` → 直接产出 `$krb5asrep$23$...`（hashcat -m 18200）/ `$krb5tgs$23$...`（-m 13100）
+  - `etype 17/18 (AES)` → 标注需字典（-m 19700 / 19900），不明示为"可爆破"
+- 🔐 **NTLMSSP（SMB / HTTP / 任意流）**：按连接配对 challenge 与响应，产出
+  **NetNTLMv2**（-m 5600）/ NetNTLMv1（-m 5500），未配到 challenge 时至少给出 `域\账号@主机`
+- 🔑 **LDAP simple bind（389 / 3268）**：明文绑定口令（0.93 高置信）
+- 🗂️ 额外打印【AD / 域渗透线索】区块：域、账号清单、SPN 清单、票据与破解建议
+
+```text
+【AD / 域渗透线索】
+  域: WIRE.COM
+  账号(2): Administrator、kanna.seto
+  SPN(3): krbtgt/WIRE.COM、Administrator、host/dc01.wire.com
+  票据: AS-REP kanna.seto  etype 18 (AES256)  cipher 264B  AES：hashcat -m 19700/19900 需字典
+  NetNTLMv2: kanna.seto
+    └ kanna.seto::wire.com:e9b597a6e03a5122:c4ec074163bee82d9f829d1aa22de185:0101...
+```
+
 ### HTTP 深度分析
 
 - 📋 请求序列（带时间戳）：目录扫描次序、登录、上传等操作一览
@@ -137,12 +161,16 @@ sudo /Library/devtools/ctfsweep/uninstall   # 或安装目录内的副本
 
   | 分数 | 级别 | 含义 |
   |------|------|------|
+  | 0.93 | 高 | LDAP 明文绑定口令 |
+  | 0.90 | 高 | 可离线爆破的 RC4 Kerberos 票据（AS-REP / TGS） |
+  | 0.85 | 高 | NetNTLMv1/v2 响应（可直接交给 hashcat） |
   | 0.97 | 高 | 明文完整 flag |
   | 0.95 | 高 | 解码后得到完整 flag（hex/base64/DNS 等） |
   | 0.75 | 中 | 内容"加壳"候选（疑似 flag 本体） |
   | 0.72 | 中 | JWT 令牌（payload 已解码） |
   | 0.65 | 中 | 未闭合片段（分段 flag 前半截） |
-  | 0.62 | 中 | 命令回显 / 环境变量密钥回显 |
+  | 0.62 | 中 | 命令回显 / 环境变量密钥回显 / AES Kerberos 票据（需字典） |
+  | 0.55 | 中 | 域账号 / SPN 清单（AD 线索） |
   | 0.60 / 0.55 | 中 | 裸花括号片段 `{xxx` / `xxx}` |
   | 0.45 | 低 | DNS 查询名 |
   | 0.42 | 低 | 接口短文本响应 |
@@ -351,6 +379,7 @@ CtfSweep/
 │       ├── decode.py              # hex/base64 解码链、片段探测、加壳与拼接建议
 │       ├── blobscan.py            # 字节块扫描原语（findings 去重 + 多策略扫描）
 │       ├── http.py                # 请求序列 / POST 字段 / JWT / 事务配对
+│       ├── ad.py                  # AD 域取证：Kerberos 票据 / NTLMSSP / LDAP 明文绑定（hashcat 格式输出）
 │       ├── extract.py             # 文件雕刻、口令池、zip 弱口令与假加密绕过
 │       ├── scanner.py             # 抓包扫描与原始文件扫描的编排
 │       ├── report.py              # 置信度报告渲染
@@ -369,8 +398,8 @@ CtfSweep/
 │   ├── uninstall.sh               # 卸载（安装目录 + shell 配置 + 旧版软链）
 │   └── publish-mirror.sh          # 把源码快照与一键脚本发布到国内镜像服务器
 ├── tests/
-│   ├── gen_fixtures.py            # 生成确定性测试样例（pcap/pcapng/evtx/内嵌 zip）
-│   ├── test_smoke.py              # 纯标准库冒烟（CLI + 扫描行为 + shell 脚本体检）
+│   ├── gen_fixtures.py            # 生成确定性测试样例（pcap/pcapng/evtx/内嵌 zip/AD 域流量）
+│   ├── test_smoke.py              # 纯标准库冒烟（CLI + 扫描行为 + AD 协议 + shell 脚本体检）
 │   └── smoke.sh                   # 冒烟总入口（语法门 + 单元冒烟 + 启动器 + 安装/卸载循环 + 引导模式）
 └── .github/workflows/ci.yml       # CI：Python 3.8 / 3.11 / 3.13 三版本跑冒烟
 ```

@@ -34,6 +34,8 @@ def report(findings, limit, min_score, pfunc=None):
             print('    %s DNS查询: %s   @%s%s' % (prefix, v, loc, sfx))
         elif kind == 'JWT':
             print('    %s JWT令牌: %s   @%s%s' % (prefix, v[:230], loc, sfx))
+        elif kind in ('Kerberos票据', 'NetNTLM', 'LDAP口令', '域账号'):
+            print('    %s %s: %s   @%s%s' % (prefix, kind, v[:230], loc, sfx))
         elif kind in ('命令回显', '环境/配置', '短文本响应'):
             print('    %s %s: %s   @%s%s' % (prefix, kind, v[:230], loc, sfx))
         elif kind in ('hex', 'base64'):

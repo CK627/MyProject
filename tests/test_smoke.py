@@ -15,6 +15,7 @@
   * t3.evtx：UTF-16 明文 + 花括号片段 + 启发式拼接 + 噪音闸门（dll 后缀 / GUID / 乱码区剔除）
   * t4.pcap --extract：文件雕刻 + zip 内容扫描 + 落盘
   * 判断核（judge）：微型数据集训练与分离、train 子命令（留一组评估）、--judge 打分与无模型兜底
+  * t5-ad.pcap：AD 域协议（Kerberos 票据 / NetNTLM 响应 / LDAP 明文绑定 / SPN）
   * 目录模式
 """
 import json
@@ -228,6 +229,16 @@ def main():
         check('flag{zip-carve-ok}' in out, 'zip 内 flag 内容扫描')
         carved = os.listdir(exdir) if os.path.isdir(exdir) else []
         check(any(f.endswith('.zip') for f in carved), 'zip 文件已落盘')
+
+        print('== t5-ad.pcap：AD / 域协议 ==')
+        rc, out = run_cli([os.path.join(tmp, 't5-ad.pcap')])
+        check('【AD / 域渗透线索】' in out, 'AD 线索区块出现')
+        check('域: CORP.LOCAL' in out, 'Kerberos 域名解析（CORP.LOCAL）')
+        check('$krb5asrep$23$svc_sql@CORP.LOCAL:' in out, 'AS-REP Roasting 哈希（-m 18200 格式）')
+        check('RC4-HMAC' in out and '可离线爆破' in out, 'RC4 票据标注可爆破')
+        check('NetNTLMv2' in out and 'kanna.seto::corp:' in out, 'NetNTLMv2 响应（-m 5600 格式）')
+        check('P@ssw0rd-AD-2026' in out, 'LDAP 明文绑定口令')
+        check('MSSQLSvc/dc01.corp.local' in out, 'SPN（Kerberoasting 目标）')
 
         print('== 判断核（judge）==')
         check_judge(tmp)
