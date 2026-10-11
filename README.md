@@ -1,9 +1,94 @@
 # ctfsweep - CTF 流量 / 日志 / 注册表 快速扫描器
 
-> 面向 CTF 与应急响应的取证扫描工具：把流量包、事件日志、注册表里"可疑的东西"
-> 一次性翻出来，并按**置信度分级**输出——高置信可直接核验，低置信留作人工排查线索。
+> 面向 CTF 与应急响应的取证扫描工具：把流量包（pcap / pcapng）、Windows 事件日志（evtx）、
+> 注册表（.reg）里"可疑的东西"一次性翻出来，并按**置信度分级**输出——高置信可直接核验，
+> 低置信留作人工排查线索。
 >
-> 零依赖（纯标准库，Python 3.8+），`python3 -m ctfsweep <文件或目录>` 即用。
+> 零依赖（纯标准库，Python 3.8+），`ctfsweep <文件或目录>` 即用；支持 macOS / Linux / Windows。
+
+## 安装
+
+### 命令行一键安装
+
+macOS / Linux（安装后自动刷新当前终端，无需手动 source）：
+
+```bash
+source <(curl -fsSL https://raw.githubusercontent.com/CK627/MyProject/CtfSweep/installer/install.sh)
+```
+
+> 也可以 `curl -fsSL ... | bash`（安装后重开终端生效）。
+> 默认安装到用户级 `~/.devtools/ctfsweep`（无需 sudo）；要系统级安装见下方「从源码安装」。
+
+### 国内镜像（无需 VPN）
+
+GitHub 的 raw 域名在国内不保证可达。镜像服务器在国内，源码快照与 GitHub 分支同源：
+
+```bash
+# macOS / Linux
+source <(curl -fsSL http://101.132.165.98/dist/ctfsweep/install.sh)
+```
+
+安装脚本**先访问镜像，拿不到再回退 GitHub**。换源用环境变量：
+
+```bash
+CTFSWEEP_MIRROR=https://mirror.example.com/ctfsweep source <(curl -fsSL .../install.sh)
+CTFSWEEP_MIRROR=none source <(curl -fsSL .../install.sh)   # 强制只走 GitHub
+```
+
+### macOS / Linux（从源码安装）
+
+```bash
+cd /path/to/CtfSweep
+./installer/install-from-source.sh install          # 用户级（默认 → ~/.devtools/ctfsweep）
+sudo ./installer/install-from-source.sh install     # 系统级（→ /Library/devtools/ctfsweep）
+```
+
+安装完成后执行 `source ~/.zshrc`（或 `source ~/.bashrc`）或重新打开终端。
+
+> 在源码仓库内直接运行 `./installer/install.sh` 也可以——脚本会自动识别本地源码并安装，
+> 等价于上一条命令。
+
+### 免安装试用
+
+```bash
+cd /path/to/CtfSweep
+python3 -m ctfsweep <文件或目录> [选项]     # 在项目根目录内
+./bin/ctfsweep <文件或目录> [选项]          # 或使用仓库启动器（任意目录）
+```
+
+### Windows
+
+Windows 下无需安装：运行 `bin\ctfsweep.bat <文件或目录>`（任意目录可用），
+或把项目根目录加入 `PYTHONPATH` 后使用 `python -m ctfsweep`。
+
+> 目前没有 Windows 的 PowerShell 一键安装脚本（一键安装覆盖 macOS / Linux，见上）。
+
+---
+
+> 安装脚本会做三件事：① 部署到 devtools 目录（bin / lib / config / completions / uninstall）；
+> ② 把 PATH、短命令别名 `ctf` 与补全写入 shell 配置（幂等，重复安装不会写重）；
+> ③ 自动清理旧版软链（`~/.local/bin`）。重开终端后 `ctfsweep` 与 `ctf` 即可用。
+
+### 安装位置（devtools 布局）
+
+| 层级 | macOS | Linux | 说明 |
+|------|-------|-------|------|
+| 系统级安装 | `/Library/devtools/ctfsweep/` | `/usr/local/devtools/ctfsweep/` | 需 sudo；含 bin / lib / config / completions / uninstall |
+| 用户级安装 | `~/.devtools/ctfsweep/` | 同 | 无 sudo 时的默认位置 |
+| 用户数据目录 | `~/.devtools/ctfsweep/` | 同 | 补全等用户级数据；未来缓存/更新机制同规（与 `~/.devtools/ptool/` 一致） |
+
+## 卸载
+
+```bash
+./installer/uninstall.sh            # 用户级一键清理
+sudo ./installer/uninstall.sh       # 连同系统级目录一起清理
+
+# 或直接使用安装目录内的副本：
+sudo /Library/devtools/ctfsweep/uninstall
+```
+
+卸载会删除安装目录（含 bin / lib / config / completions / uninstall）与用户数据目录，
+并清理 shell 配置里由 ctfsweep 写入的 PATH 行、别名与补全 source 行（不触碰其他配置）。
 
 ## 功能特性
 
@@ -69,62 +154,11 @@
 
 - ⚡ **零第三方依赖**：任意 Python 3.8+，无需 pip install 任何东西
 - 📁 目录递归扫描；260MB 注册表全量 10 秒内、常规抓包亚秒级
-- 🧰 完整工程配套：CLI 包装器、安装脚本、shell 补全、配置文件、冒烟测试、CI
+- 🧰 完整工程配套：CLI 包装器、一键/源码安装脚本、shell 补全、配置文件、冒烟测试、CI
 
-## 环境要求
+## 使用方法
 
-- Python **3.8+**（无第三方依赖）
-- 支持 macOS / Linux / Windows
-
-## 安装
-
-### 免安装直接运行（推荐先试）
-
-```bash
-cd /path/to/CtfSweep
-python3 -m ctfsweep <文件或目录> [选项]     # 在项目根目录内
-./bin/ctfsweep <文件或目录> [选项]          # 或使用仓库启动器（任意目录）
-```
-
-### 安装（devtools 布局，与 jtool / ptool 同规）
-
-```bash
-# 用户级（默认，无需 sudo）→ ~/.devtools/ctfsweep
-./installer/install.sh
-
-# 系统级（多用户共享）→ /Library/devtools/ctfsweep（macOS）
-#                      /usr/local/devtools/ctfsweep（Linux）
-sudo ./installer/install.sh
-```
-
-安装脚本会完成三件事：① 部署到 devtools 目录（bin / lib / config / completions / uninstall）；
-② 把 PATH 与补全写入 shell 配置（幂等，重复安装不会写重）；③ 自动清理旧版软链
-（`~/.local/bin`）。重开终端后 `ctfsweep` 与短命令 `ctf` 即可用。
-
-### 目录布局
-
-| 层级 | macOS | Linux | 说明 |
-|------|-------|-------|------|
-| 系统级安装 | `/Library/devtools/ctfsweep/` | `/usr/local/devtools/ctfsweep/` | 需 sudo；含 bin / lib / config / completions / uninstall |
-| 用户级安装 | `~/.devtools/ctfsweep/` | 同 | 无 sudo 时的默认位置 |
-| 用户数据目录 | `~/.devtools/ctfsweep/` | 同 | 补全等用户级数据放这里；后续若有缓存/更新机制，同规放此（与 `~/.devtools/ptool/` 一致） |
-
-### 卸载
-
-```bash
-./installer/uninstall.sh            # 用户级一键清理
-sudo ./installer/uninstall.sh       # 连同系统级目录一起清理
-
-# 或直接使用安装目录内的副本：
-sudo /Library/devtools/ctfsweep/uninstall
-```
-
-### Windows
-
-在项目目录内直接运行 `bin\ctfsweep.bat`，或把项目根目录加入 `PYTHONPATH` 后使用
-`python -m ctfsweep`。
-
-## 快速开始
+### 快速开始
 
 ```bash
 # 扫描一个抓包（默认输出 >= 0.40 的全部候选）
@@ -145,8 +179,6 @@ ctfsweep ./logs/
 # 事件日志搜索特定关键词
 ctfsweep Security.evtx -k flag1,flag2,flag3
 ```
-
-## 使用方法
 
 ### 命令行选项
 
@@ -222,7 +254,7 @@ NO_DECODE=false                # true 关闭自动解码
 
 ## Tab 补全
 
-`installer/install.sh` 安装时会**自动把 PATH、短命令别名与补全写入 `~/.zshrc` / `~/.bashrc`**
+安装时会**自动把 PATH、短命令别名与补全写入 `~/.zshrc` / `~/.bashrc`**
 （幂等，重复安装不会写重；补全本体在 `~/.devtools/ctfsweep/completions/`），重开终端后即生效：
 
 ```bash
@@ -266,20 +298,21 @@ CtfSweep/
 │   ├── ctfsweep.zsh               # zsh 补全
 │   └── ctfsweep.bash              # bash 补全
 ├── installer/
-│   ├── install.sh                 # 安装（devtools 布局；sudo 运行为系统级，默认用户级）
-│   ├── uninstall.sh               # 卸载（安装目录 + shell 配置 + 旧版软链，含 sudo 提示）
-│   └── install-from-source.sh     # 兼容入口（转向 install.sh / uninstall.sh）
+│   ├── install.sh                 # 一键安装（可 source；远程自举：镜像优先、GitHub 回退）
+│   ├── install-from-source.sh     # 从源码安装 / 卸载（一键脚本引导后调用的也是它）
+│   ├── uninstall.sh               # 卸载（安装目录 + shell 配置 + 旧版软链）
+│   └── publish-mirror.sh          # 把源码快照与一键脚本发布到国内镜像服务器
 ├── tests/
 │   ├── gen_fixtures.py            # 生成确定性测试样例（pcap/pcapng/evtx/内嵌 zip）
-│   ├── test_smoke.py              # 纯标准库冒烟（20 项断言）
-│   └── smoke.sh                   # 冒烟总入口（语法门 + 单元冒烟 + 启动器 + 安装/卸载循环）
+│   ├── test_smoke.py              # 纯标准库冒烟（CLI + 扫描行为 + shell 脚本体检）
+│   └── smoke.sh                   # 冒烟总入口（语法门 + 单元冒烟 + 启动器 + 安装/卸载循环 + 引导模式）
 └── .github/workflows/ci.yml       # CI：Python 3.8 / 3.11 / 3.13 三版本跑冒烟
 ```
 
 ## 开发与测试
 
 ```bash
-# 一键冒烟：语法门（compileall） + 19 项单元冒烟 + shell 语法 + 启动器
+# 一键冒烟：compileall 语法门 + 单元冒烟 + shell 语法 + 启动器 + 安装/卸载循环 + 引导模式（离线模拟）
 bash tests/smoke.sh
 
 # 单独跑单元冒烟
@@ -287,12 +320,23 @@ python3 tests/test_smoke.py
 
 # 手动生成测试样例（确定性输出）
 python3 tests/gen_fixtures.py /tmp/fixtures
+
+# 发布到国内镜像（把当前分支快照 + 一键脚本推到镜像服务器，要求工作区干净）
+./installer/publish-mirror.sh
 ```
 
 CI（`.github/workflows/ci.yml`）在 ubuntu 上以 Python **3.8 / 3.11 / 3.13** 三个版本
 运行同一套冒烟，保证最低版本承诺不漂移。
 
 ## 常见问题
+
+**Q: 为什么要用 `source <(curl ...)`？`curl ... | bash` 不行吗？**
+两种都行。`source` 方式下安装脚本运行在你的当前 shell 里，装完立即刷新配置、无需重开终端；
+管道方式脚本在子进程里运行，装完重开终端（或手动 `source ~/.zshrc`）即可。
+
+**Q: 一键安装提示下载失败 / raw.githubusercontent.com 连不上？**
+国内网络直接用镜像地址：`source <(curl -fsSL http://101.132.165.98/dist/ctfsweep/install.sh)`。
+安装脚本本身就是**先镜像、后 GitHub** 的顺序，两条都失败才报错。
 
 **Q: 需要装 Wireshark 或 scapy 吗？**
 不需要。解析器是纯 Python 实现（不到 200 行），这也是"零依赖"的一部分。
