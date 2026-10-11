@@ -274,8 +274,9 @@ NO_DECODE=false                # true 关闭自动解码
 ```bash
 ctfs<TAB>              # 补全命令名 → ctfsweep（ctf<TAB> 会同时列出系统自带的 ctf_insert）
 ctf <TAB>              # 子命令 + 全部选项 + 文件（不敲 "-" 也能直接看到 --extract 等）
-ctf --<TAB>            # 列出全部长选项；ctf -<TAB> 连 -f / -k / -h 一起列出
+ctf -<TAB> / --<TAB>   # 全部选项；同义短/长合并为一行显示（如 "-f --file"，只出现一次）
 ctf --ex<TAB>          # 按前缀补全（--extract / --extract-dir ...）
+ctf -f<TAB>            # 补全短选项 → -f（--f<TAB> 同理 → --file）
 ctf -f <TAB>           # 补全文件路径（--extract-dir <TAB> 补全目录）
 ctf --min-score <TAB>  # 补全取值（0.40 / 0.55 / 0.85 / 0.95）
 ctf update <TAB>       # → --check；ctf uninstall <TAB> → -y / --yes
@@ -284,7 +285,9 @@ ctf update <TAB>       # → --check；ctf uninstall <TAB> → -y / --yes
 说明：
 
 - **不敲 `-` 也能看到选项**：zsh 的 `_describe -t options` 有默认门禁（prefix-needed，
-  光标不以 `-` 开头就不列出选项），本项目改用 `_describe -O` 绕过，TAB 直接列出 `--xxx`；bash 版行为一致。
+  光标不以 `-` 开头就不列出选项）；本项目改用「`compadd -l -d` + 手写显示串」直接列出，
+  TAB 即见全部选项；bash 版行为一致。
+- **同义短/长选项合并显示**（如 `-f --file`，只出现一次）；`-f<TAB>` 与 `--f<TAB>` 均按前缀补全。
 - 已输入过的选项不会重复列出（`-f` 与 `--file` 视为同一个）。
 
 > 手动接线：zsh 直接 `source ~/.devtools/ctfsweep/completions/ctfsweep.zsh`（需已启用 compinit）；

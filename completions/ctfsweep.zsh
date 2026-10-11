@@ -2,10 +2,10 @@
 # ctfsweep 补全（zsh）：把本文件所在目录加入 fpath 后重开终端，或直接 source 本文件
 # （installer/install.sh 会把 source 行写进 ~/.zshrc，自动生效）。
 #
-# 候选为手写清单（不依赖 _arguments），保证各版本 zsh 下行为一致、直观：
-#   ctf <TAB>             → 子命令 + 全部长选项 + 文件（不敲 "-" 也能看到 --选项）
-#   ctf --<TAB>           → 全部长选项
-#   ctf -<TAB>            → 全部选项（含 -f / -k / -h）
+# 候选为手写清单（不依赖 _arguments）：
+#   ctf <TAB>             → 子命令 + 全部选项 + 文件（不敲 "-" 也能看到 --选项）
+#   ctf -<TAB> / --<TAB>  → 全部选项；同义短/长选项合并为一行显示（如 "-f --file"）
+#   ctf -f<TAB>           → 直接补全 -f（短形式仍可按前缀补全；--f<TAB> → --file）
 #   ctf -f <TAB>          → 补全文件；--extract-dir <TAB> → 补全目录
 #   ctf --min-score <TAB> → 0.40 / 0.55 / 0.85 / 0.95
 #   ctf update <TAB>      → --check；ctf uninstall <TAB> → -y / --yes
@@ -35,10 +35,12 @@ _ctfsweep_opts_long=(
   '--version:显示版本'
 )
 
-_ctfsweep_opts_short=(
-  '-f:指定要扫描的文件（同 --file）'
-  '-h:显示帮助（同 --help）'
-  '-k:追加关键词（同 --keywords）'
+# 同义短/长配对（格式 "短 长:描述"）：列表里合并显示为 "-f --file"；
+# 单横线输入（如 -f）时按短形式提供补全
+_ctfsweep_opts_pairs=(
+  '-f --file:指定要扫描的文件'
+  '-h --help:显示帮助'
+  '-k --keywords:追加关键词（逗号分隔）'
 )
 
 _ctfsweep_opts_update=(
@@ -51,7 +53,8 @@ _ctfsweep_opts_uninstall=(
 )
 
 _ctfsweep() {
-  local cur prev i item name used_str
+  local cur prev i item name used_str disp dw pshort pitem
+  local use_short=0
   cur="${words[CURRENT]}"
   prev="${words[CURRENT-1]}"
 
@@ -100,8 +103,6 @@ _ctfsweep() {
   esac
 
   # 收集已用过的选项（空格分隔串；-f / -k / -h 归一为对应长选项；--x=y 截到 --x）
-  local -a opts_show
-  opts_show=()
   used_str=' '
   for (( i = 2; i < CURRENT; i++ )); do
     case "${words[i]}" in
@@ -111,30 +112,64 @@ _ctfsweep() {
       -*) used_str+="${${words[i]}%%=*} " ;;
     esac
   done
+
+  # 拼装选项候选与显示串（配对项合并显示为 "-f --file"）
+  # 单横线场景（- / -f 等）配对项以【短形式】作为匹配词：保证 -f<TAB> 可补全，
+  # 且裸 "-" + TAB 不会被整体补成 "--"（全部候选的共同前缀保持为 "-"）。
+  local -a wshow dword dodesc
+  wshow=()
+  dword=()
+  dodesc=()
+  use_short=0
+  [[ "$cur" == -* && "$cur" != --* ]] && use_short=1
   for item in "${_ctfsweep_opts_long[@]}"; do
     name="${item%%:*}"
-    [[ "$used_str" == *" $name "* ]] || opts_show+=("$item")
-  done
-  if [[ "$cur" == -* && "$cur" != --* ]]; then
-    for item in "${_ctfsweep_opts_short[@]}"; do
-      name="${item%%:*}"
-      [[ "$used_str" == *" $name "* ]] || opts_show+=("$item")
+    desc="${item#*:}"
+    disp="$name"
+    pshort=""
+    for pitem in "${_ctfsweep_opts_pairs[@]}"; do
+      ptmp="${pitem%%:*}"
+      if [[ "$name" == "${ptmp##* }" ]]; then
+        disp="$ptmp"
+        pshort="${ptmp%% *}"
+        desc="${pitem#*:}"
+        break
+      fi
     done
+    [[ "$used_str" == *" $name "* ]] && continue
+    if (( use_short )) && [[ -n "$pshort" ]]; then
+      wshow+=("$pshort")
+    else
+      wshow+=("$name")
+    fi
+    dword+=("$disp")
+    dodesc+=("$desc")
+  done
+
+  # 加入候选：显示串自带 "word -- 描述" 排版；-l 保证一屏一行（不排多列）。
+  # 不指定 -o：默认按显示串排序 —— --长选项在前，"-f --file" 等短形式组自然落在末尾。
+  if (( ${#wshow} )); then
+    local wmax=0
+    for dw in "${dword[@]}"; do
+      (( ${#dw} > wmax )) && wmax=${#dw}
+    done
+    local -a ddisp
+    ddisp=()
+    for (( i = 1; i <= ${#wshow}; i++ )); do
+      ddisp+=("$(printf "%-$((wmax+2))s-- %s" "${dword[i]}" "${dodesc[i]}")")
+    done
+    compadd -l -d ddisp -- "${wshow[@]}"
   fi
 
-  # 光标在选项区（- / -- / --x）：列出选项
-  # 用 _describe -O（而非 -t options）：后者默认「没敲 - 就不显示选项」（prefix-needed
-  # 样式，见 _describe 源码），-O 则总是可列出——这正是「不敲 - 也能 TAB 出选项」的关键。
+  # 光标在选项区：到此为止（选项场景不补文件）
   if [[ "$cur" == -* ]]; then
-    (( ${#opts_show} )) && _describe -O 'ctfsweep 选项' opts_show
     return 0
   fi
 
-  # 其他位置：子命令（仅第二个词）+ 长选项 + 文件
+  # 其他位置：子命令（仅第二个词）+ 文件
   if (( CURRENT == 2 )); then
     _describe -t commands 'ctfsweep 子命令' _ctfsweep_subcmds
   fi
-  (( ${#opts_show} )) && _describe -O 'ctfsweep 选项' opts_show
   _files
 }
 
