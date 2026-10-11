@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """字节块扫描原语：findings 去重入库（add）与单块多策略扫描（scan_blob）"""
 from .decode import decode_chain, fragments
-from .utils import FLAG_RE
+from .utils import FLAG_RE, kw_boundary_ok
 
 
 def add(finding, findings, seen):
@@ -51,6 +51,10 @@ def scan_blob(blob, keywords, do_decode, depth, findings, seen, loc):
                 i = hay.find(kw, i)
                 if i < 0:
                     break
+                if not kw_boundary_ok(text, i, kw):
+                    i += len(kw)          # 词内误报（FolderValueFlags / create_pdo_flag 等）
+                    cnt += 1
+                    continue
                 raw_seg = text[max(0, i - 40): i + 110]
                 if sum(ch.isprintable() or ch in '\r\n\t' for ch in raw_seg) < len(raw_seg) * 0.7:
                     i += len(kw)

@@ -8,7 +8,7 @@
 产物:
     t1.pcap     明文/hex/DNS-base64 三种 flag + JWT + 环境变量回显
     t2.pcapng   pcapng 封装（EPB）的明文 flag
-    t3.evtx     evtx 风格 UTF-16LE 字节（明文 flag + 两个花括号片段）
+    t3.evtx     evtx 风格 UTF-16LE 字节（明文 flag + 两个花括号片段 + 五类噪音样本）
     t4.pcap     HTTP 流中内嵌 zip（内含 flag 文本），供 --extract 测试
 """
 import base64
@@ -106,6 +106,21 @@ def build_t3():
     parts.append('reg add HKLM\\Software\\Run /v flag1 /d "cmd.exe /c echo {krjl424"'.encode('utf-16-le'))
     parts.append(b'\x00' * 16)
     parts.append('sc description flag3 "Service Key: zlmqu458xktq}"'.encode('utf-16-le'))
+    parts.append(b'\x00' * 16)
+    # ---- 噪音样本（严格模式闸门应全部剔除，不得出现在扫描结果中）----
+    # 1) 文件名后缀拼贴：.dll 后邻接二进制字节（prev='.' 闸门）
+    parts.append(b'C:\\Windows\\system32\\setupetw.dll55e3}JK\x00\x00')
+    # 2) 注册表 GUID 路径（纯 hex 闸门）
+    parts.append('[HKEY_CLASSES_ROOT\\CLSID\\{3050f3B3-98b5-11cf-bb82}]'.encode('utf-16-le'))
+    parts.append(b'\x00' * 16)
+    # 3) 密集乱码 token 区（无空白闸门）
+    parts.append(b"2h@P~Iz0xl2=C6RhJ+g&[S?+Eh8_Q6y['ehZ.]w={v8ozb{5@b59J4l9r%c,oz@u=MVcA6oS3]UIG2_e9J$+xyQ7w&K@1")
+    parts.append(b'\x00' * 16)
+    # 4) 词内误报样本（关键字后紧跟字母：flag→Flags）
+    parts.append('"FolderValueFlags"=dword:00000001'.encode('utf-16-le'))
+    parts.append(b'\x00' * 16)
+    # 5) 标识符内部命中样本（下划线/字母包裹：create_pdo_flag、msctf）
+    parts.append('"create_pdo_flag"=hex:34,00 "amd64_windows-msctf_x"'.encode('utf-16-le'))
     parts.append(b'\x00' * 32)
     return b''.join(parts)
 

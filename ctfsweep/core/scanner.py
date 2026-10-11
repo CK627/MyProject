@@ -10,7 +10,7 @@ from .decode import decode_chain, flagify, fragments
 from .extract import PWD_POOL, carve_files, collect_pwds_from_blob, extract_scan
 from .http import build_http_transactions, http_summary, jwt_summary
 from .utils import (FLAG_RE, JWT_RE, SECRET_LINE_RE, SENSITIVE_NAME_RE,
-                    decode_score, printable_ratio, try_b64, ts_str)
+                    decode_score, kw_boundary_ok, printable_ratio, try_b64, ts_str)
 
 
 def scan_capture(data, keywords, do_decode, depth, extract=None):
@@ -178,6 +178,16 @@ def scan_rawfile(data, keywords, do_decode, depth, limit):
             i = data.find(pat, i)
             if i < 0:
                 break
+            nb = data[i + len(pat): i + len(pat) + 2]
+            nxt_letter = len(nb) == 2 and nb[1] == 0 and (65 <= nb[0] <= 90 or 97 <= nb[0] <= 122)
+            nxt_open = len(nb) == 2 and nb[1] == 0 and nb[0] == 0x7b
+            pb = data[i - 2:i]
+            prv_word = (len(pb) == 2 and pb[1] == 0
+                        and (48 <= pb[0] <= 57 or 65 <= pb[0] <= 90 or 97 <= pb[0] <= 122 or pb[0] == 0x5f))
+            if nxt_letter or (prv_word and not nxt_open):
+                i += 2                # 词内误报（关键字后紧跟字母 / 标识符内部命中）
+                cnt += 1
+                continue
             seg = data[max(0, i - 80): i + 180].decode('utf-16-le', 'replace')
             push(kw, seg, 0.45 if '{' in seg else 0.40)
             i += 2
@@ -191,6 +201,15 @@ def scan_rawfile(data, keywords, do_decode, depth, limit):
             i = low.find(pat, i)
             if i < 0:
                 break
+            nb = low[i + len(pat): i + len(pat) + 1]
+            nxt_letter = bool(nb) and 97 <= nb[0] <= 122
+            nxt_open = nb == b'{'
+            pb = low[i - 1] if i else 0
+            prv_word = 48 <= pb <= 57 or 97 <= pb <= 122 or pb == 0x5f
+            if nxt_letter or (prv_word and not nxt_open):
+                i += 1                # 词内误报
+                cnt += 1
+                continue
             seg = data[max(0, i - 80): i + 180].decode('latin-1', 'replace')
             push(kw, seg, 0.45 if '{' in seg else 0.40)
             i += 1
@@ -208,6 +227,10 @@ def scan_rawfile(data, keywords, do_decode, depth, limit):
                 i = lowt.find(kw, i)
                 if i < 0:
                     break
+                if not kw_boundary_ok(lowt, i, kw):
+                    i += len(kw)      # 词内误报
+                    cnt += 1
+                    continue
                 seg = txt[max(0, i - 60): i + 160]
                 push(kw, seg, 0.45 if '{' in seg else 0.40)
                 i += len(kw)
@@ -217,7 +240,7 @@ def scan_rawfile(data, keywords, do_decode, depth, limit):
     for m in FLAG_RE.finditer(compact):
         add((0.97, '明文flag', b'', m.group(0), '(原始字节)'), findings, seen)
     for blob in (compact, data):
-        fragments(blob, keywords, findings, seen, '(原始字节)')
+        fragments(blob, keywords, findings, seen, '(原始字节)', strict_text=True)
         if do_decode:
             hits = []
             decode_chain(blob, keywords, depth, hits, seen)

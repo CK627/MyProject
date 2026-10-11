@@ -29,8 +29,14 @@ def decode_chain(blob, keywords, depth, out, seen):
             decode_chain(dec, keywords, depth - 1, out, seen)
 
 
-def fragments(blob, keywords, findings, seen, loc):
-    """花括号片段探测：分段 flag 题的核心线索（如 {krjl424 / zlmqu458xktq}）"""
+def fragments(blob, keywords, findings, seen, loc, strict_text=False):
+    """花括号片段探测：分段 flag 题的核心线索（如 {krjl424 / zlmqu458xktq}）
+
+    strict_text=True（原始文件：evtx / .reg / 任意文本）时启用噪音闸门，剔除二进制巧合：
+      1) 纯 hex 片段 —— 注册表 GUID / 十六进制路径（如 {3050f3 / {5046ab8c…）
+      2) 紧跟在 . \\ / 之后的「文件名后缀」拼贴（如 setupetw.dll55e3}）
+      3) 周边 80 字节内无任何空白的密集 token 区（乱码数据里的巧合配对）
+    """
 
     def text_like(st, en):
         ctx = blob[max(0, st - 30): en + 40]
@@ -38,10 +44,25 @@ def fragments(blob, keywords, findings, seen, loc):
             return False
         return sum(32 <= c < 127 or c in (9, 10, 13) for c in ctx) / len(ctx) > 0.6
 
+    def noisy(st, en, inner):
+        """严格模式噪音判定（True = 剔除）"""
+        if len(inner) >= 6 and re.fullmatch(rb'[0-9a-f]+', inner):
+            return True
+        prev = blob[st - 1:st]
+        if prev and prev in b'.\\/':
+            return True
+        ctx = blob[max(0, st - 40): en + 40]
+        if sum(ctx.count(c) for c in (b' ', b'\t', b'\r', b'\n')) < 2:
+            return True
+        return False
+
+    def skip(st, en, inner):
+        return (not text_like(st, en)) or (strict_text and noisy(st, en, inner))
+
     for m in re.finditer(rb'(?i)(flag|ctf)[A-Za-z0-9_]{0,6}\{[A-Za-z0-9_\-\.{}]{2,90}', blob):
         if FLAG_RE.match(blob, m.start()):
             continue
-        if not text_like(m.start(), m.end()):
+        if skip(m.start(), m.end(), m.group(0).split(b'{', 1)[-1]):
             continue
         val = m.group(0)[:80]
         k = ('frag-open', val)
@@ -55,7 +76,7 @@ def fragments(blob, keywords, findings, seen, loc):
             continue
         if not (any(97 <= c <= 122 for c in inner) and any(48 <= c <= 57 for c in inner)):
             continue
-        if not text_like(m.start(), m.end()):
+        if skip(m.start(), m.end(), inner):
             continue
         val = m.group(0)[:80]
         k = ('frag-open', val)
@@ -70,7 +91,7 @@ def fragments(blob, keywords, findings, seen, loc):
             continue
         if not (any(97 <= c <= 122 for c in inner) and any(48 <= c <= 57 for c in inner)):
             continue
-        if not text_like(m.start(), m.end()):
+        if skip(m.start(), m.end(), inner):
             continue
         val = m.group(0)[:80]
         k = ('frag-close', val)

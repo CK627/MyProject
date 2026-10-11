@@ -52,6 +52,7 @@ HELP = """ctfsweep — CTF 流量 / 日志 / 注册表 快速扫描器（零依�
   0.65 中   (flag|ctf)…{ 未闭合片段（典型的分段 flag 前半截）
   0.62 中   命令回显 / 环境变量密钥回显（webshell、取证题关键线索）
   0.60 中   裸花括号片段 {xxxx    0.55 中   裸闭合片段 xxxx}
+            （evtx / reg 等原始文件自动剔除噪音：GUID / 路径后缀拼贴 / 乱码区巧合）
   0.45 低   DNS 查询名（域名白名单一眼可辨）
   0.42 低   接口短文本响应（HTTP 事务配对结果）
   0.40 低   关键词上下文（普通字符串命中，需人工浏览）
@@ -259,10 +260,11 @@ def main():
             print('[口令池] 预扫 %d 个抓包，采集 %d 个候选口令（用于加密压缩包尝试）' % (n, len(PWD_POOL)))
 
     highs, n_high, n_mid, n_low = {}, 0, 0, 0
-    global_frags = []
+    global_frags, global_frag_src = [], {}
     for fp in targets:
+        fname = os.path.basename(fp)
         print('=' * 78)
-        print('[文件] %s (%.1f KB)' % (os.path.basename(fp), os.path.getsize(fp) / 1024))
+        print('[文件] %s (%.1f KB)' % (fname, os.path.getsize(fp) / 1024))
         try:
             data = open(fp, 'rb').read()
         except Exception as ex:
@@ -298,23 +300,34 @@ def main():
                 if v and v not in frag_vals:
                     frag_vals.append(v)
         for v in frag_vals:
-            if v not in global_frags:
+            if v not in global_frag_src:
                 global_frags.append(v)
+                global_frag_src[v] = []
+            if fname not in global_frag_src[v]:
+                global_frag_src[v].append(fname)
         if len(frag_vals) >= 2:
-            print('  [拼接建议] 本文件检出 %d 个片段：%s' % (len(frag_vals), ' | '.join(frag_vals[:12])))
+            print('  [拼接建议] 本文件检出 %d 个片段（供人工确认）：' % len(frag_vals))
+            print('    %s' % ' | '.join(frag_vals[:12]))
             s = assemble_suggestion(frag_vals)
             if s:
-                print('             启发式拼接尝试（人工确认）：%s' % s[:200])
+                print('    启发式拼接尝试（人工确认）：%s' % s[:200])
     print('=' * 78)
-    if len(set(global_frags)) >= 2:
+    if len(global_frags) >= 2:
         print('【全局片段拼接建议】（跨文件收集到 %d 个片段，供人工确认）' % len(global_frags))
-        print('  片段池：%s' % ' | '.join(global_frags[:24]))
+        print('  片段池（按文件标注来源）：')
+        for v in global_frags[:24]:
+            print('    %s   ← %s' % (v, '、'.join(global_frag_src.get(v, [])[:4])))
+        if len(global_frags) > 24:
+            print('    ...（其余 %d 个省略）' % (len(global_frags) - 24))
         s = assemble_suggestion(global_frags)
         if s:
-            print('  启发式拼接尝试：%s' % s[:240])
+            print('  启发式拼接尝试（人工确认）：%s' % s[:240])
     if highs:
         print('【高置信候选汇总】（可直接核验/提交）')
         for v, src in highs.items():
             print('  * %s   (来自 %s)' % (v, src))
-    print('统计: 高置信 %d 条 / 中(需人工) %d 条 / 低(线索) %d 条' % (n_high, n_mid, n_low))
+    print('【扫描统计】')
+    print('  高置信（可直接核验）：%d 条' % n_high)
+    print('  中置信（需人工确认）：%d 条' % n_mid)
+    print('  低置信（线索参考）：%d 条' % n_low)
     return 0

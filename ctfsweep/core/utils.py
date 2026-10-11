@@ -17,6 +17,25 @@ def level_of(score):
     return '高' if score >= 0.85 else ('中' if score >= 0.55 else '低')
 
 
+def kw_boundary_ok(text, i, kw):
+    """关键词命中位置边界检查（str 文本）：区分独立词与词内误报。
+
+    返回 False 的两种噪音形态：
+      1) 关键字后紧跟 ASCII 字母：FolderValueFlags、MsCtfMonitor
+      2) 关键字处于标识符内部（前一位是字母/数字/下划线）且后一位不是 '{'：
+         create_pdo_flag、msctf_31bf
+    真实线索（flag{ / flag1 / flag2 / \\flag3 / the flag is）不受影响。
+    """
+    nxt = text[i + len(kw): i + len(kw) + 1]
+    if nxt and nxt.isascii() and nxt.isalpha():
+        return False
+    if nxt != '{':
+        prv = text[i - 1: i] if i else ''
+        if prv and prv.isascii() and (prv.isalnum() or prv == '_'):
+            return False
+    return True
+
+
 def try_hex(tok):
     try:
         return bytes.fromhex(tok.decode('ascii'))

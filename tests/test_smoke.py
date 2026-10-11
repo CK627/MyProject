@@ -12,7 +12,7 @@
     不得回退为 _describe -t options（prefix-needed 门禁会拦截，不敲 "-" 就补不出选项）
   * t1.pcap：明文 flag / hex 解码 / DNS base64 外带 / JWT / 环境变量回显 / --min-score 过滤
   * t2.pcapng：pcapng 封装 + -f/--file 参数
-  * t3.evtx：UTF-16 明文 + 花括号片段 + 启发式拼接
+  * t3.evtx：UTF-16 明文 + 花括号片段 + 启发式拼接 + 噪音闸门（dll 后缀 / GUID / 乱码区剔除）
   * t4.pcap --extract：文件雕刻 + zip 内容扫描 + 落盘
   * 目录模式
 """
@@ -131,6 +131,16 @@ def main():
         check('flag{evtx-smoke-ok}' in out, 'evtx UTF-16 明文 flag')
         check('krjl424' in out and 'zlmqu458xktq}' in out, '花括号片段探测')
         check('flag{krjl424zlmqu458xktq}' in out, '启发式拼接建议')
+        check('dll55e3' not in out, '噪音闸门：文件名后缀拼贴（.dll55e3}）已剔除')
+        check('3050f3' not in out, '噪音闸门：GUID 花括号（{3050f3）已剔除')
+        check('v8ozb' not in out, '噪音闸门：密集乱码 token（{v8ozb）已剔除')
+        check('FolderValueFlags' not in out, '噪音闸门：词内误报（FolderValueFlags）已剔除')
+        check('create_pdo_flag' not in out, '噪音闸门：标识符内部（create_pdo_flag）已剔除')
+        check('msctf' not in out, '噪音闸门：标识符内部（msctf_）已剔除')
+        check('【中置信（需人工确认）】' in out, '报告分级：中置信小标题（换行分区）')
+        check('【扫描统计】' in out and '高置信（可直接核验）：' in out, '统计：换行分区输出')
+        check('统计: 高置信' not in out, '旧版单行统计已移除')
+        check('片段池（按文件标注来源）' in out and '←' in out, '全局片段池：按行标注来源')
 
         print('== t4.pcap --extract ==')
         exdir = os.path.join(tmp, 'extract')
