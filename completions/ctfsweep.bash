@@ -1,5 +1,7 @@
 # ctfsweep 补全（bash）：source 本文件，或放入 /etc/bash_completion.d/。
 # 兼容 bash 3.2（macOS 自带版本）。
+# 行为与 zsh 版对齐：TAB 直接列出全部选项（不必先敲 "-"）；
+# 子命令专属参数（update --check / uninstall -y）与选项值补全亦已支持。
 _ctfsweep() {
     local cur prev opts subcmds
     COMPREPLY=()
@@ -8,11 +10,28 @@ _ctfsweep() {
     opts="-f --file -k --keywords --min-score --no-decode --depth --limit --extract --extract-dir --pwd-file --config --version -h --help"
     subcmds="update install uninstall config help"
 
+    # 子命令专属参数（ctfsweep update ... / ctfsweep uninstall ...）
+    if [ "$COMP_CWORD" -ge 2 ]; then
+        case "${COMP_WORDS[1]}" in
+            update)
+                COMPREPLY=( $(compgen -W "--check" -- "$cur") )
+                return 0
+                ;;
+            uninstall)
+                COMPREPLY=( $(compgen -W "-y --yes" -- "$cur") )
+                return 0
+                ;;
+            install|config|help)
+                return 0
+                ;;
+        esac
+    fi
+
     if [ "$COMP_CWORD" -eq 1 ]; then
         if [[ "$cur" == -* ]]; then
             COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
         else
-            COMPREPLY=( $(compgen -W "$subcmds" -- "$cur") $(compgen -f -- "$cur") )
+            COMPREPLY=( $(compgen -W "$subcmds" -- "$cur") $(compgen -W "$opts" -- "$cur") $(compgen -f -- "$cur") )
         fi
         return 0
     fi
@@ -29,11 +48,19 @@ _ctfsweep() {
             COMPREPLY=( $(compgen -f -- "$cur") )
             return 0
             ;;
+        --depth)
+            COMPREPLY=( $(compgen -W "1 2 3 4 5" -- "$cur") )
+            return 0
+            ;;
+        --min-score)
+            COMPREPLY=( $(compgen -W "0.40 0.55 0.85 0.95" -- "$cur") )
+            return 0
+            ;;
     esac
     if [[ "$cur" == -* ]]; then
         COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
     else
-        COMPREPLY=( $(compgen -f -- "$cur") )
+        COMPREPLY=( $(compgen -W "$opts" -- "$cur") $(compgen -f -- "$cur") )
     fi
 }
 complete -o filenames -F _ctfsweep ctfsweep

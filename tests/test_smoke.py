@@ -8,6 +8,8 @@
   * CLI：--version / --help / 无参数 / 路径不存在
   * VERSION 文件与包版本一致性
   * shell 脚本体检：$VAR 后不得紧跟全角字符（bash 变量名解析坑）
+  * 补全体检：zsh 选项列表必须用 _describe -O（-t options 会被 prefix-needed 门禁挡掉，
+    导致不敲 "-" 就补不出 --选项）
   * t1.pcap：明文 flag / hex 解码 / DNS base64 外带 / JWT / 环境变量回显 / --min-score 过滤
   * t2.pcapng：pcapng 封装 + -f/--file 参数
   * t3.evtx：UTF-16 明文 + 花括号片段 + 启发式拼接
@@ -62,6 +64,22 @@ def check_shell_scripts():
     check(not bad, 'shell 变量名体检（%s）' % (', '.join(bad) if bad else '全部通过'))
 
 
+def check_completions():
+    """补全静态体检（防回退）：
+
+    zsh 的 _describe -t options 受 prefix-needed 样式约束，默认「光标不以 - 开头就不列出选项」；
+    本项目要求「不敲 - 也能 TAB 出 --选项」，必须用 _describe -O（源码级绕过该门禁）。
+    """
+    zsh = open(os.path.join(ROOT, 'completions', 'ctfsweep.zsh'), encoding='utf-8').read()
+    code = '\n'.join(l for l in zsh.splitlines() if not l.lstrip().startswith('#'))
+    check('_describe -O' in code, 'zsh 补全：选项列表使用 _describe -O（不敲 - 也能列出）')
+    check('_describe -t options' not in code, 'zsh 补全：未回退为 -t options（会被 prefix-needed 拦截）')
+    check('--extract' in code and '--min-score' in code, 'zsh 补全：含主要选项')
+    check('--check' in code, 'zsh 补全：update --check 在场')
+    bash = open(os.path.join(ROOT, 'completions', 'ctfsweep.bash'), encoding='utf-8').read()
+    check('--extract' in bash and '--check' in bash, 'bash 补全：含主要选项与 --check')
+
+
 def main():
     tmp = tempfile.mkdtemp(prefix='ctfsweep-smoke-')
     try:
@@ -85,6 +103,9 @@ def main():
 
         print('== shell 脚本体检 ==')
         check_shell_scripts()
+
+        print('== 补全体检 ==')
+        check_completions()
 
         print('== t1.pcap：多载体 flag ==')
         rc, out = run_cli([os.path.join(tmp, 't1.pcap')])

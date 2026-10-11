@@ -272,11 +272,20 @@ NO_DECODE=false                # true 关闭自动解码
 （幂等，重复安装不会写重；补全本体在 `~/.devtools/ctfsweep/completions/`），重开终端后即生效：
 
 ```bash
-ctf -f capture.pcap   # 短命令（安装脚本会加 alias ctf='ctfsweep'）
-ctfs<TAB>             # 补全命令名 → ctfsweep（ctf<TAB> 会同时列出系统自带的 ctf_insert）
-ctfsweep --ex<TAB>    # 补全选项（--extract / --extract-dir ...）
-ctfsweep -f <TAB>     # 补全文件路径
+ctfs<TAB>              # 补全命令名 → ctfsweep（ctf<TAB> 会同时列出系统自带的 ctf_insert）
+ctf <TAB>              # 子命令 + 全部选项 + 文件（不敲 "-" 也能直接看到 --extract 等）
+ctf --<TAB>            # 列出全部长选项；ctf -<TAB> 连 -f / -k / -h 一起列出
+ctf --ex<TAB>          # 按前缀补全（--extract / --extract-dir ...）
+ctf -f <TAB>           # 补全文件路径（--extract-dir <TAB> 补全目录）
+ctf --min-score <TAB>  # 补全取值（0.40 / 0.55 / 0.85 / 0.95）
+ctf update <TAB>       # → --check；ctf uninstall <TAB> → -y / --yes
 ```
+
+说明：
+
+- **不敲 `-` 也能看到选项**：zsh 的 `_describe -t options` 有默认门禁（prefix-needed，
+  光标不以 `-` 开头就不列出选项），本项目改用 `_describe -O` 绕过，TAB 直接列出 `--xxx`；bash 版行为一致。
+- 已输入过的选项不会重复列出（`-f` 与 `--file` 视为同一个）。
 
 > 手动接线：zsh 直接 `source ~/.devtools/ctfsweep/completions/ctfsweep.zsh`（需已启用 compinit）；
 > bash source 同目录下的 `ctfsweep.bash` 即可。
