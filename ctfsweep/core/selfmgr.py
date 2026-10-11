@@ -1,0 +1,295 @@
+# -*- coding: utf-8 -*-
+"""自管理子命令：update（检查并更新）/ install / uninstall，以及安装方式探测（供 config 使用）。
+
+设计说明：
+  · 判断依据是「当前跑的是哪份代码」——devtools 安装版（<root>/lib/ctfsweep）
+    还是源码仓库（<root>/ctfsweep + <root>/installer）；
+  · update 用「载荷指纹」（对安装产物文件的集合哈希）判断是否与最新快照一致：
+    版本号相同但内容被改动 / 组件缺失（损坏安装）同样能检测并修复；
+  · 下载顺序与安装脚本一致：先镜像（CTFSWEEP_MIRROR 可换源、none = 只走 GitHub），
+    拿不到再回退 GitHub；
+  · 网络访问走 urllib（遵守 http_proxy 等环境变量），保持零第三方依赖。
+"""
+import hashlib
+import os
+import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
+import urllib.request
+
+from .. import __version__
+
+MIRROR_DEFAULT = 'http://101.132.165.98/dist/ctfsweep'
+GITHUB_TARBALL = 'https://github.com/CK627/MyProject/archive/refs/heads/CtfSweep.tar.gz'
+
+# 安装产物清单（不含的文件/目录不参与指纹；与 installer/install-from-source.sh 的部署一致）
+_PAYLOAD_FILES = ('bin/ctfsweep', 'config/ctfsweep.conf',
+                  'completions/ctfsweep.zsh', 'completions/ctfsweep.bash',
+                  'VERSION')
+_SKIP_NAMES = ('.DS_Store',)
+_SKIP_DIRS = ('__pycache__',)
+
+
+def self_info():
+    """探测运行方式，返回 (mode, root, devtools)。
+
+    mode:
+      'installed' —— devtools 安装版；root 为安装目录（如 ~/.devtools/ctfsweep），
+                     devtools 为其父目录（如 ~/.devtools）
+      'repo'      —— 源码仓库；root 为仓库根
+      'unknown'   —— 其他（如 pip 安装）
+    """
+    core_dir = os.path.dirname(os.path.abspath(__file__))   # .../ctfsweep/core
+    pkg_dir = os.path.dirname(core_dir)                     # .../ctfsweep
+    container = os.path.dirname(pkg_dir)                    # .../lib 或 仓库根
+    if os.path.basename(container) == 'lib':
+        root = os.path.normpath(os.path.join(container, os.pardir))
+        if (os.path.isfile(os.path.join(root, 'VERSION'))
+                and os.path.isfile(os.path.join(root, 'uninstall'))):
+            return 'installed', root, os.path.dirname(root)
+    if os.path.isfile(os.path.join(container, 'installer', 'install-from-source.sh')):
+        return 'repo', container, None
+    return 'unknown', container, None
+
+
+def _read_version(root):
+    try:
+        with open(os.path.join(root, 'VERSION'), encoding='utf-8') as f:
+            return f.read().strip()
+    except OSError:
+        return ''
+
+
+def _walk_files(base):
+    out = []
+    for root, dirs, files in os.walk(base):
+        dirs[:] = sorted(d for d in dirs if d not in _SKIP_DIRS)
+        for fn in sorted(files):
+            if fn in _SKIP_NAMES or fn.endswith('.pyc'):
+                continue
+            out.append(os.path.join(root, fn))
+    return out
+
+
+def _payload_items(root, pkg_rel):
+    """收集载荷清单：键统一为「安装空间」里的相对路径（lib/ctfsweep/… / bin/ctfsweep / …）。
+
+    root + pkg_rel：快照为 (快照根, 'ctfsweep')；安装版为 (安装根, 'lib/ctfsweep')。
+    """
+    items = {}
+    pkg = os.path.join(root, pkg_rel)
+    if os.path.isdir(pkg):
+        for fp in _walk_files(pkg):
+            rel = os.path.relpath(fp, pkg).replace(os.sep, '/')
+            items['lib/ctfsweep/' + rel] = fp
+    for rel in _PAYLOAD_FILES:
+        fp = os.path.join(root, rel)
+        if os.path.isfile(fp):
+            items[rel] = fp
+    # 卸载脚本也纳入比对：快照里在 installer/uninstall.sh，安装版里是 <root>/uninstall
+    for cand in (os.path.join(root, 'installer', 'uninstall.sh'),
+                 os.path.join(root, 'uninstall')):
+        if os.path.isfile(cand):
+            items['uninstall'] = cand
+            break
+    return items
+
+
+def _file_md5(path):
+    h = hashlib.md5()
+    with open(path, 'rb') as f:
+        for chunk in iter(lambda: f.read(1 << 16), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def payload_digest(items):
+    """对载荷清单算聚合指纹（键排序后逐项摘要）。任一文件增减/改动都会改变指纹。"""
+    h = hashlib.md5()
+    for key in sorted(items):
+        h.update(key.encode('utf-8'))
+        h.update(b'\0')
+        h.update(_file_md5(items[key]).encode('ascii'))
+        h.update(b'\n')
+    return h.hexdigest()
+
+
+def _download(url, out, timeout):
+    if url.startswith('file://'):
+        req = url
+    else:
+        req = urllib.request.Request(
+            url, headers={'User-Agent': 'ctfsweep-update/%s' % __version__})
+    with urllib.request.urlopen(req, timeout=timeout) as resp, open(out, 'wb') as f:
+        shutil.copyfileobj(resp, f)
+    if not os.path.getsize(out):
+        raise IOError('下载内容为空')
+
+
+def _fetch_snapshot(mirror, workdir):
+    """下载并解压源码快照；成功返回快照根目录（顶层 MyProject-<分支>），失败返回 None。"""
+    tgz = os.path.join(workdir, 'ctfsweep-src.tar.gz')
+    urls = []
+    if mirror and mirror != 'none':
+        urls.append((mirror.rstrip('/') + '/ctfsweep-src.tar.gz', 15))
+    urls.append((GITHUB_TARBALL, 60))
+    ok = False
+    for url, timeout in urls:
+        try:
+            print('  下载: %s' % url)
+            _download(url, tgz, timeout)
+            ok = True
+            break
+        except Exception as ex:
+            print('  失败: %s' % ex)
+    if not ok:
+        return None
+    dest = os.path.join(workdir, 'src')
+    os.makedirs(dest, exist_ok=True)
+    with tarfile.open(tgz, 'r:gz') as tf:
+        try:
+            tf.extractall(dest, filter='data')   # Python >= 3.11.4 支持 filter 参数
+        except TypeError:
+            tf.extractall(dest)
+    for name in sorted(os.listdir(dest)):
+        cand = os.path.join(dest, name)
+        if os.path.isfile(os.path.join(cand, 'installer', 'install-from-source.sh')):
+            return cand
+    return None
+
+
+def cmd_update(argv):
+    """ctfsweep update [--check]：检查并更新到最新快照（指纹判定，含损坏修复）。"""
+    check_only = False
+    for a in argv:
+        if a == '--check':
+            check_only = True
+        else:
+            print('未知参数: %s（用法: ctfsweep update [--check]）' % a)
+            return 2
+    if os.name == 'nt':
+        print('ctfsweep update 目前仅支持 macOS / Linux。')
+        return 1
+
+    mode, root, devtools = self_info()
+    if mode == 'repo':
+        print('提示: 当前从源码仓库运行（未安装），无需 update。')
+        print('  更新源码: git pull')
+        print('  安装到本机: ./installer/install.sh')
+        return 0
+    if mode != 'installed':
+        print('无法识别安装方式（可能不是 devtools 布局安装）。')
+        print('请重新运行一键安装，或在源码目录运行 ./installer/install.sh')
+        return 1
+
+    mirror = os.environ.get('CTFSWEEP_MIRROR', MIRROR_DEFAULT)
+    cur_ver = _read_version(root)
+    print('ctfsweep %s — 检查更新' % __version__)
+
+    workdir = tempfile.mkdtemp(prefix='ctfsweep-update-')
+    try:
+        snap = _fetch_snapshot(mirror, workdir)
+        if not snap:
+            print('错误: 无法获取最新快照（镜像与 GitHub 都不可用）。')
+            print('  可换源重试: CTFSWEEP_MIRROR=https://你的镜像 ctfsweep update')
+            return 1
+
+        snap_ver = _read_version(snap)
+        snap_digest = payload_digest(_payload_items(snap, 'ctfsweep'))
+        cur_digest = payload_digest(_payload_items(root, 'lib/ctfsweep'))
+
+        if snap_digest == cur_digest:
+            print('已是最新（v%s，build %s）' % (snap_ver or '?', snap_digest[:8]))
+            return 0
+
+        print('发现更新: v%s (build %s) → v%s (build %s)'
+              % (cur_ver or '?', cur_digest[:8], snap_ver or '?', snap_digest[:8]))
+        if check_only:
+            print('（--check：仅检查，未执行升级）')
+            return 0
+
+        if not os.access(devtools, os.W_OK):
+            print('错误: 无权限写入 %s' % devtools)
+            print('  系统级安装请用 sudo 重跑: sudo "%s" update'
+                  % os.path.join(root, 'bin', 'ctfsweep'))
+            return 1
+
+        installer = os.path.join(snap, 'installer', 'install-from-source.sh')
+        env = dict(os.environ)
+        env['CTFSWEEP_DEVROOT'] = devtools          # 保持与当前安装相同的层级
+        env['CTFSWEEP_BOOTSTRAP'] = '1'             # 抑制指向临时目录的 sudo 提示
+        rc = subprocess.call(['bash', installer, 'install'], env=env)
+        if rc != 0:
+            print('更新失败（安装步骤退出码 %d）' % rc)
+            return rc
+        print('更新完成: v%s → v%s（build %s）' % (cur_ver or '?', snap_ver or '?', snap_digest[:8]))
+        return 0
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
+def cmd_install(argv):
+    """ctfsweep install：从源码仓库安装到 devtools（主要在仓库内使用）。"""
+    if argv:
+        print('未知参数: %s（用法: ctfsweep install）' % argv[0])
+        return 2
+    if os.name == 'nt':
+        print('ctfsweep install 目前仅支持 macOS / Linux。')
+        print('Windows 下直接运行 bin\\ctfsweep.bat，或使用 python -m ctfsweep。')
+        return 1
+    mode, root, _devtools = self_info()
+    if mode == 'repo':
+        installer = os.path.join(root, 'installer', 'install-from-source.sh')
+        print('从源码仓库安装到 devtools...')
+        return subprocess.call(['bash', installer, 'install'])
+    if mode == 'installed':
+        print('当前已是安装版（%s），无需 install。' % root)
+        print('  更新到最新版: ctfsweep update')
+        print('  重装: 先 ctfsweep uninstall，再重新运行一键安装')
+        return 0
+    print('无法识别当前布局；请在源码仓库内运行本命令。')
+    return 1
+
+
+def cmd_uninstall(argv):
+    """ctfsweep uninstall [-y]：卸载（等价于 installer/uninstall.sh，带确认）。"""
+    assume_yes = False
+    for a in argv:
+        if a in ('-y', '--yes'):
+            assume_yes = True
+        else:
+            print('未知参数: %s（用法: ctfsweep uninstall [-y]）' % a)
+            return 2
+    if os.name == 'nt':
+        print('ctfsweep uninstall 目前仅支持 macOS / Linux。')
+        return 1
+
+    mode, root, _devtools = self_info()
+    if mode == 'installed':
+        script = os.path.join(root, 'uninstall')
+    elif mode == 'repo':
+        script = os.path.join(root, 'installer', 'uninstall.sh')
+    else:
+        print('无法识别当前布局，找不到卸载脚本。')
+        return 1
+    if not os.path.isfile(script):
+        print('卸载脚本不存在: %s' % script)
+        return 1
+
+    if not assume_yes:
+        if not sys.stdin.isatty():
+            print('检测到非交互环境，请加 -y 跳过确认: ctfsweep uninstall -y')
+            return 1
+        try:
+            ans = input('确定要卸载 ctfsweep 吗？(y/n): ')
+        except EOFError:
+            ans = ''
+        if ans.strip().lower() not in ('y', 'yes'):
+            print('已取消')
+            return 0
+
+    print('ctfsweep 卸载程序')
+    print('')
+    return subprocess.call(['bash', script])

@@ -80,11 +80,11 @@ Windows 下无需安装：运行 `bin\ctfsweep.bat <文件或目录>`（任意�
 ## 卸载
 
 ```bash
-./installer/uninstall.sh            # 用户级一键清理
-sudo ./installer/uninstall.sh       # 连同系统级目录一起清理
+ctfsweep uninstall            # 推荐：带确认提示（-y 跳过）
+./installer/uninstall.sh      # 等价脚本（无确认，直接执行）
 
-# 或直接使用安装目录内的副本：
-sudo /Library/devtools/ctfsweep/uninstall
+sudo ./installer/uninstall.sh               # 连同系统级目录一起清理
+sudo /Library/devtools/ctfsweep/uninstall   # 或安装目录内的副本
 ```
 
 卸载会删除安装目录（含 bin / lib / config / completions / uninstall）与用户数据目录，
@@ -154,6 +154,7 @@ sudo /Library/devtools/ctfsweep/uninstall
 
 - ⚡ **零第三方依赖**：任意 Python 3.8+，无需 pip install 任何东西
 - 📁 目录递归扫描；260MB 注册表全量 10 秒内、常规抓包亚秒级
+- 🔁 自助管理：`ctfsweep update`（镜像优先、指纹校验、损坏自修复）/ `install` / `uninstall` / `config`
 - 🧰 完整工程配套：CLI 包装器、一键/源码安装脚本、shell 补全、配置文件、冒烟测试、CI
 
 ## 使用方法
@@ -197,6 +198,19 @@ ctfsweep Security.evtx -k flag1,flag2,flag3
 | `--config F` | 指定配置文件（默认读取 `~/.config/ctfsweep/ctfsweep.conf`） |
 | `--version` | 显示版本 |
 | `-h, --help` | 显示帮助 |
+
+### 子命令（管理）
+
+| 子命令 | 说明 |
+|--------|------|
+| `ctfsweep update [--check]` | 检查并更新到最新版（镜像优先 → GitHub 回退；`--check` 只检查不安装）。用**载荷指纹**判定——版本没变但文件缺失/被改动也能检测并修复 |
+| `ctfsweep install` | 在源码仓库内运行：把当前源码安装到 devtools |
+| `ctfsweep uninstall [-y]` | 卸载（`-y` 跳过确认） |
+| `ctfsweep config` | 显示运行模式、安装位置与生效配置 |
+| `ctfsweep help` | 显示帮助 |
+
+> 子命令名（update / install / uninstall / config / help）优先于文件路径解析——若要扫描恰好同名的文件，
+> 请用 `-f 文件名` 或 `./文件名`。
 
 ### 典型场景
 
@@ -267,6 +281,14 @@ ctfsweep -f <TAB>     # 补全文件路径
 > 手动接线：zsh 直接 `source ~/.devtools/ctfsweep/completions/ctfsweep.zsh`（需已启用 compinit）；
 > bash source 同目录下的 `ctfsweep.bash` 即可。
 
+### 更新后无需手动 source
+
+安装时补全脚本里会定义一个 `ctfsweep` 包装函数（`.zshrc` / `.bashrc` 只负责 source 它）。
+函数在**父 shell** 中执行，所以 `ctfsweep update` / `ctfsweep install` / `ctfsweep uninstall`
+跑完后会立刻刷新——不需要手动 `source ~/.zshrc`，也不需要重开终端。
+
+> 例外：**首次安装**时函数还没定义（rc 正在被写入），第一次仍需重开终端或 `source ~/.zshrc`。
+
 ## 项目结构
 
 ```
@@ -279,7 +301,7 @@ CtfSweep/
 ├── ctfsweep/                      # Python 包（核心实现）
 │   ├── __init__.py                # 版本号
 │   ├── __main__.py                # python -m ctfsweep 入口
-│   ├── cli.py                     # 命令行解析 / 配置加载 / 批量扫描与汇总
+│   ├── cli.py                     # 命令行解析 / 子命令分发 / 配置加载 / 批量扫描与汇总
 │   └── core/
 │       ├── utils.py               # 共享正则、编码尝试、置信度分级
 │       ├── capture.py             # pcap/pcapng 解析 + 四层解析（TCP/UDP/DNS）
@@ -288,7 +310,8 @@ CtfSweep/
 │       ├── http.py                # 请求序列 / POST 字段 / JWT / 事务配对
 │       ├── extract.py             # 文件雕刻、口令池、zip 弱口令与假加密绕过
 │       ├── scanner.py             # 抓包扫描与原始文件扫描的编排
-│       └── report.py              # 置信度报告渲染
+│       ├── report.py              # 置信度报告渲染
+│       └── selfmgr.py             # 自管理子命令：update / install / uninstall（镜像 + 指纹校验）
 ├── bin/
 │   ├── ctfsweep                   # 启动器（macOS / Linux，支持软链，定位仓库根）
 │   └── ctfsweep.bat               # 启动器（Windows）
@@ -312,7 +335,8 @@ CtfSweep/
 ## 开发与测试
 
 ```bash
-# 一键冒烟：compileall 语法门 + 单元冒烟 + shell 语法 + 启动器 + 安装/卸载循环 + 引导模式（离线模拟）
+# 一键冒烟：compileall 语法门 + 单元冒烟 + shell 语法 + 启动器 + 安装/卸载循环
+#           + 引导模式（离线模拟）+ 自管理子命令（config / update / uninstall，离线）
 bash tests/smoke.sh
 
 # 单独跑单元冒烟
@@ -358,6 +382,11 @@ CI（`.github/workflows/ci.yml`）在 ubuntu 上以 Python **3.8 / 3.11 / 3.13**
 与 jtool / ptool 统一为 devtools 布局：默认用户级 `~/.devtools/ctfsweep/`；`sudo` 安装则
 系统级 `/Library/devtools/ctfsweep/`。补全等用户数据同规放在 `~/.devtools/ctfsweep/`
 （与 ptool 的 `~/.devtools/ptool/` 一致）。
+
+**Q: 怎么更新已安装的版本？**
+`ctfsweep update` 从镜像（拿不到回退 GitHub）拉取最新快照并按**内容指纹**比对：一致就
+提示「已是最新」；不一致就整装升级（文件缺失、被改动也会被检测并自动修复）。只检查不
+安装用 `ctfsweep update --check`；换源用 `CTFSWEEP_MIRROR=<url>`（`none` = 只走 GitHub）。
 
 **Q: 会不会污染我的目录？**
 只有 `--extract` 会写文件，默认写到 `<抓包名>_extracted/`（可用 `--extract-dir` 改）；

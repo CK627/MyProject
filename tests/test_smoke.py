@@ -52,7 +52,8 @@ def check_shell_scripts():
     for root, dirs, files in os.walk(ROOT):
         dirs[:] = [d for d in dirs if d not in ('.git', '__pycache__')]
         for f in sorted(files):
-            if not (f.endswith('.sh') or f == 'ctfsweep'):
+            if not (f.endswith('.sh') or f.endswith('.zsh') or f.endswith('.bash')
+                    or f == 'ctfsweep'):
                 continue
             p = os.path.join(root, f)
             for i, line in enumerate(open(p, encoding='utf-8', errors='replace'), 1):
@@ -78,6 +79,7 @@ def main():
         check(rc == 1 and '用法' in out, '无参数时打印帮助并返回 1')
         rc, out = run_cli(['--help'])
         check(rc == 0 and '置信度模型' in out, '--help 返回 0')
+        check('update' in out and 'uninstall' in out, '--help 含管理子命令')
         rc, out = run_cli(['/no/such/file.pcap'])
         check(rc == 2, '路径不存在时返回 2')
 

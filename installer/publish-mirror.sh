@@ -6,7 +6,7 @@
 #   ./installer/publish-mirror.sh --force     跳过「工作区必须干净」检查
 #   MIRROR_HOST=ck ./installer/publish-mirror.sh
 #
-# 镜像布局（installer/install.sh 的引导模式按这个布局读）:
+# 镜像布局（installer/install.sh 引导模式 与 ctfsweep update 都按这个布局读）:
 #   <root>/ctfsweep/install.sh                 一键安装脚本（macOS / Linux）
 #   <root>/ctfsweep/ctfsweep-src.tar.gz        源码快照（顶层目录 MyProject-<branch>，与 GitHub archive 一致）
 set -euo pipefail

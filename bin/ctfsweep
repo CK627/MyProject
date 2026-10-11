@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ctfsweep 启动器（macOS / Linux）
-# 解析软链接定位自身目录，再交给 python3 -m ctfsweep 执行。
+# 解析软链接定位自身目录，再交给 python3 执行（-c 引导，避免 cwd 遮蔽安装版）。
 # 兼容两种布局：
 #   仓库检出   <root>/bin/ctfsweep + <root>/ctfsweep/        → PYTHONPATH=<root>
 #   devtools   <root>/bin/ctfsweep + <root>/lib/ctfsweep/    → PYTHONPATH=<root>/lib
@@ -25,4 +25,12 @@ if ! command -v python3 >/dev/null 2>&1; then
     exit 127
 fi
 
-exec env PYTHONPATH="$pyroot${PYTHONPATH:+:$PYTHONPATH}" python3 -B -m ctfsweep "$@"
+# 用 -c 而不是 -m：-m / -c 都会把 cwd 放进 sys.path[0]，在源码目录里调用
+# 安装版时，cwd 里的 ctfsweep/ 包会把 PYTHONPATH 指向的安装版遮蔽掉。
+# 这里先把 cwd 从 sys.path 移除，保证「装的是哪份就跑哪份」。
+exec env PYTHONPATH="$pyroot${PYTHONPATH:+:$PYTHONPATH}" python3 -B -c '
+import sys
+if sys.path and sys.path[0] in ("", "."):
+    del sys.path[0]
+from ctfsweep.cli import main
+sys.exit(main())' "$@"

@@ -146,7 +146,8 @@ if [ "$(id -u)" = "0" ] && [ -n "${SUDO_USER:-}" ]; then
 fi
 
 echo "完成。重开终端后运行 'ctfsweep --help'（或短命令 'ctf --help'）开始使用。"
-# 引导模式（install.sh 下载快照后调用）不提示系统级安装——临时目录马上会被清理，指过去也没用
+# 引导 / 更新模式（从临时快照安装：install.sh 自举、ctfsweep update）不提示系统级安装
+# ——临时目录马上会被清理，指过去也没用
 if [ "$(id -u)" != "0" ] && [ -z "${CTFSWEEP_DEVROOT:-}" ] && [ "${CTFSWEEP_BOOTSTRAP:-0}" != "1" ]; then
     echo "提示: 如需系统级安装（/Library/devtools，多用户共享），运行: sudo $0"
 fi

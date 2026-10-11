@@ -7,6 +7,7 @@ from . import __version__
 from .core.capture import PCAP_MAGICS, PCAPNG_MAGIC
 from .core.decode import assemble_suggestion
 from .core.extract import PWD_POOL, _pk, precollect_pwds
+from .core import selfmgr
 from .core.report import report
 from .core.scanner import scan_capture, scan_rawfile
 
@@ -16,6 +17,13 @@ HELP = """ctfsweep — CTF 流量 / 日志 / 注册表 快速扫描器（零依�
   ctfsweep <文件或目录> [选项]           # 已安装（PATH 中）
   python3 -m ctfsweep <文件或目录> ...   # 免安装，项目目录内直接跑
   ./bin/ctfsweep <文件或目录> ...        # 仓库启动器（macOS / Linux）
+
+管理子命令:
+  ctfsweep update [--check]   检查并更新到最新版（镜像优先，回退 GitHub；--check 只检查）
+  ctfsweep install            从源码仓库安装到 devtools
+  ctfsweep uninstall [-y]     卸载（-y 跳过确认）
+  ctfsweep config             显示配置与安装信息
+  ctfsweep help               显示本帮助
 
 支持输入: pcap / pcapng（抓包）、evtx（事件日志）、.reg / 任意文本
 
@@ -74,8 +82,67 @@ def _default_conf_path():
     return p if os.path.isfile(p) else None
 
 
+def _cmd_config():
+    """ctfsweep config：显示安装信息与生效配置。"""
+    mode, root, _devtools = selfmgr.self_info()
+    print('ctfsweep %s' % __version__)
+    if mode == 'installed':
+        tier = '系统级' if root.startswith(('/Library/devtools', '/usr/local/devtools')) else '用户级'
+        print('运行模式: 已安装（%s，devtools 布局）' % tier)
+    elif mode == 'repo':
+        print('运行模式: 源码仓库（未安装）')
+    else:
+        print('运行模式: 未识别（可能不是 devtools 布局安装）')
+    print('程序目录: %s' % root)
+    if mode == 'installed':
+        udir = os.path.join(os.path.expanduser('~'), '.devtools', 'ctfsweep')
+        print('用户数据: %s（补全副本等）' % udir)
+
+    env_conf = os.environ.get('CTFSWEEP_CONF')
+    conv = os.path.join(os.path.expanduser('~'), '.config', 'ctfsweep', 'ctfsweep.conf')
+    if env_conf:
+        print('配置文件: %s（来自 CTFSWEEP_CONF）' % env_conf)
+        conf_path = env_conf
+    elif os.path.isfile(conv):
+        print('配置文件: %s' % conv)
+        conf_path = conv
+    else:
+        print('配置文件: %s（不存在，使用内置默认值）' % conv)
+        conf_path = None
+    conf = _load_conf(conf_path) if conf_path else {}
+
+    kws = ['flag', 'ctf'] + [k.strip() for k in conf.get('KEYWORDS', '').split(',') if k.strip()]
+    print('生效配置:')
+    print('  KEYWORDS  = %s' % ','.join(kws))
+
+    def _show(key, default):
+        v = conf.get(key, '').strip()
+        print('  %-9s = %s' % (key, v if v else default + '（默认）'))
+
+    _show('MIN_SCORE', '0.40')
+    _show('DEPTH', '3')
+    _show('LIMIT', '50')
+    _show('NO_DECODE', 'false')
+    mirror = os.environ.get('CTFSWEEP_MIRROR', selfmgr.MIRROR_DEFAULT)
+    print('镜像源: %s（CTFSWEEP_MIRROR 可覆盖；none = 只走 GitHub）' % mirror)
+    return 0
+
+
 def main():
     args = sys.argv[1:]
+    # 管理子命令（update / install / uninstall / config / help）
+    if args and args[0] in ('update', 'install', 'uninstall', 'config', 'help'):
+        sub, rest = args[0], args[1:]
+        if sub == 'help':
+            print(HELP)
+            return 0
+        if sub == 'config':
+            return _cmd_config()
+        if sub == 'update':
+            return selfmgr.cmd_update(rest)
+        if sub == 'install':
+            return selfmgr.cmd_install(rest)
+        return selfmgr.cmd_uninstall(rest)
     if not args:
         print(HELP)
         return 1
