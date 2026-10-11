@@ -116,14 +116,32 @@ def payload_digest(items):
     return h.hexdigest()
 
 
-def _download(url, out, timeout):
-    if url.startswith('file://'):
-        req = url
+def _download(url, out, connect_timeout, max_time):
+    """下载 url 到 out。
+
+    优先 curl：与安装脚本行为一致——只认环境变量代理（不会误用 macOS 系统代理），
+    且自带 CA 证书（不受本机 Python 证书配置影响），能同时绕开两个真实环境坑。
+    没有 curl 时回退 urllib（经 ProxyHandler 用「环境变量代理」，同样不碰系统代理）。
+    """
+    curl = shutil.which('curl')
+    if curl:
+        proc = subprocess.run(
+            [curl, '-fsSL', '--connect-timeout', str(connect_timeout),
+             '--max-time', str(max_time), '-o', out, url],
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        if proc.returncode != 0:
+            msg = proc.stderr.decode('utf-8', 'replace').strip().splitlines()
+            raise IOError(msg[-1] if msg else ('curl 退出码 %d' % proc.returncode))
     else:
-        req = urllib.request.Request(
-            url, headers={'User-Agent': 'ctfsweep-update/%s' % __version__})
-    with urllib.request.urlopen(req, timeout=timeout) as resp, open(out, 'wb') as f:
-        shutil.copyfileobj(resp, f)
+        if url.startswith('file://'):
+            req = url
+        else:
+            req = urllib.request.Request(
+                url, headers={'User-Agent': 'ctfsweep-update/%s' % __version__})
+        opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler(urllib.request.getproxies_environment()))
+        with opener.open(req, timeout=max_time) as resp, open(out, 'wb') as f:
+            shutil.copyfileobj(resp, f)
     if not os.path.getsize(out):
         raise IOError('下载内容为空')
 
@@ -133,13 +151,13 @@ def _fetch_snapshot(mirror, workdir):
     tgz = os.path.join(workdir, 'ctfsweep-src.tar.gz')
     urls = []
     if mirror and mirror != 'none':
-        urls.append((mirror.rstrip('/') + '/ctfsweep-src.tar.gz', 15))
-    urls.append((GITHUB_TARBALL, 60))
+        urls.append((mirror.rstrip('/') + '/ctfsweep-src.tar.gz', 6, 30))
+    urls.append((GITHUB_TARBALL, 10, 180))
     ok = False
-    for url, timeout in urls:
+    for url, ct, mt in urls:
         try:
             print('  下载: %s' % url)
-            _download(url, tgz, timeout)
+            _download(url, tgz, ct, mt)
             ok = True
             break
         except Exception as ex:
