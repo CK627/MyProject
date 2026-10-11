@@ -6,7 +6,7 @@
 #   ctf <TAB>             → 子命令 + 全部选项 + 文件（不敲 "-" 也能看到 --选项）
 #   ctf -<TAB> / --<TAB>  → 全部选项；同义短/长选项合并为一行显示（如 "-f --file"）
 #   ctf -f<TAB>           → 直接补全 -f（短形式仍可按前缀补全；--f<TAB> → --file）
-#   ctf -f <TAB>          → 补全文件；--extract-dir <TAB> → 补全目录
+#   ctf -f <TAB>          → 补全文件；-F <TAB> → 补全文件夹；--extract-dir <TAB> → 补全目录
 #   ctf --min-score <TAB> → 0.40 / 0.55 / 0.85 / 0.95
 #   ctf update <TAB>      → --check；ctf uninstall <TAB> → -y / --yes
 #   已输入过的选项不会重复列出（-f 与 --file 视为同一个）
@@ -26,6 +26,7 @@ _ctfsweep_opts_long=(
   '--extract:从流量中提取文件（ZIP/图片/PDF/GZ 等）'
   '--extract-dir:提取输出目录'
   '--file:指定要扫描的文件'
+  '--folder:指定要扫描的文件夹（整个项目目录）'
   '--help:显示帮助'
   '--keywords:追加关键词（逗号分隔）'
   '--limit:每个文件最多输出条数'
@@ -38,6 +39,7 @@ _ctfsweep_opts_long=(
 # 同义短/长配对（格式 "短 长:描述"）：列表里合并显示为 "-f --file"；
 # 单横线输入（如 -f）时按短形式提供补全
 _ctfsweep_opts_pairs=(
+  '-F --folder:指定要扫描的文件夹（整个项目目录）'
   '-f --file:指定要扫描的文件'
   '-h --help:显示帮助'
   '-k --keywords:追加关键词（逗号分隔）'
@@ -81,6 +83,10 @@ _ctfsweep() {
       _files
       return 0
       ;;
+    -F|--folder)
+      _files -/
+      return 0
+      ;;
     --extract-dir)
       _files -/
       return 0
@@ -107,6 +113,7 @@ _ctfsweep() {
   for (( i = 2; i < CURRENT; i++ )); do
     case "${words[i]}" in
       -f) used_str+='--file ' ;;
+      -F) used_str+='--folder ' ;;
       -k) used_str+='--keywords ' ;;
       -h) used_str+='--help ' ;;
       -*) used_str+="${${words[i]}%%=*} " ;;

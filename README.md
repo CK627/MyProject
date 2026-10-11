@@ -177,6 +177,9 @@ ctfsweep capture.pcap --extract
 # 批量扫描整个目录（含 evtx / reg / 文本）
 ctfsweep ./logs/
 
+# 用 -F 指定文件夹（与位置参数传目录等价，语义更直观；适合"整个项目=一个文件夹"的日志包）
+ctf -F ./logs/
+
 # 事件日志搜索特定关键词
 ctfsweep Security.evtx -k flag1,flag2,flag3
 ```
@@ -185,8 +188,9 @@ ctfsweep Security.evtx -k flag1,flag2,flag3
 
 | 选项 | 说明 |
 |------|------|
-| `<文件或目录>` | 必填（或用 `-f` 指定）。支持单个文件或目录递归 |
+| `<文件或目录>` | 必填（或用 `-f` / `-F` 指定）。支持单个文件或目录递归 |
 | `-f, --file F` | 指定要扫描的文件（等同位置参数，两种写法都行） |
+| `-F, --folder D` | 指定要扫描的文件夹（递归扫描其中全部文件，适合"整个项目就是一个文件夹"的日志包） |
 | `-k, --keywords` | 追加关键词（逗号分隔），默认 `flag,ctf` |
 | `--min-score N` | 只显示置信度 ≥ N 的结果（默认 0.40，设 0 显示全部） |
 | `--no-decode` | 关闭 hex / base64 自动解码 |
@@ -278,6 +282,7 @@ ctf -<TAB> / --<TAB>   # 全部选项；同义短/长合并为一行显示（如
 ctf --ex<TAB>          # 按前缀补全（--extract / --extract-dir ...）
 ctf -f<TAB>            # 补全短选项 → -f（--f<TAB> 同理 → --file）
 ctf -f <TAB>           # 补全文件路径（--extract-dir <TAB> 补全目录）
+ctf -F <TAB>           # 补全文件夹路径（-F/--folder；目录递归扫描整个项目）
 ctf --min-score <TAB>  # 补全取值（0.40 / 0.55 / 0.85 / 0.95）
 ctf update <TAB>       # → --check；ctf uninstall <TAB> → -y / --yes
 ```

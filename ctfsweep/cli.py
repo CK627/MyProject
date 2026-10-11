@@ -29,6 +29,7 @@ HELP = """ctfsweep — CTF 流量 / 日志 / 注册表 快速扫描器（零依�
 
 选项:
   -f, --file F      指定要扫描的文件（等同位置参数，两种写法都行）
+  -F, --folder D    指定要扫描的文件夹（递归扫描其中全部文件，适合整个项目目录）
   -k, --keywords    额外关键词(逗号分隔)，默认仅 flag,ctf
   --min-score N     只显示置信度 >= N 的结果（默认 0.40，设 0 显示全部）
   --no-decode       关闭 hex / base64 自动解码
@@ -183,6 +184,9 @@ def main():
     while i < len(args):
         a = args[i]
         if a in ('-f', '--file') and i + 1 < len(args):
+            path = args[i + 1]
+            i += 2
+        elif a in ('-F', '--folder') and i + 1 < len(args):
             path = args[i + 1]
             i += 2
         elif a in ('-k', '--keywords') and i + 1 < len(args):

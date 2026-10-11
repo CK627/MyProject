@@ -7,7 +7,7 @@ _ctfsweep() {
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
-    opts="-f --file -k --keywords --min-score --no-decode --depth --limit --extract --extract-dir --pwd-file --config --version -h --help"
+    opts="-f --file -F --folder -k --keywords --min-score --no-decode --depth --limit --extract --extract-dir --pwd-file --config --version -h --help"
     subcmds="update install uninstall config help"
 
     # 子命令专属参数（ctfsweep update ... / ctfsweep uninstall ...）
@@ -46,6 +46,10 @@ _ctfsweep() {
             ;;
         -f|--file|--pwd-file|--config)
             COMPREPLY=( $(compgen -f -- "$cur") )
+            return 0
+            ;;
+        -F|--folder)
+            COMPREPLY=( $(compgen -d -- "$cur") )
             return 0
             ;;
         --depth)

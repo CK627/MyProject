@@ -76,10 +76,11 @@ def check_completions():
     check('compadd -l -d' in code, 'zsh 补全：选项经 compadd -l -d 添加（一屏一行显示串）')
     check('_describe -t options' not in code, 'zsh 补全：未回退为 -t options（会被 prefix-needed 拦截）')
     check('-f --file' in code and '-k --keywords' in code, 'zsh 补全：配对选项以 "-f --file" 合并显示')
+    check('-F --folder' in code and '--folder:' in code, 'zsh 补全：含 -F --folder（指定文件夹）')
     check('--extract' in code and '--min-score' in code, 'zsh 补全：含主要选项')
     check('--check' in code, 'zsh 补全：update --check 在场')
     bash = open(os.path.join(ROOT, 'completions', 'ctfsweep.bash'), encoding='utf-8').read()
-    check('--extract' in bash and '--check' in bash, 'bash 补全：含主要选项与 --check')
+    check('--extract' in bash and '--check' in bash and '--folder' in bash, 'bash 补全：含主要选项与 --check')
 
 
 def main():
@@ -142,6 +143,10 @@ def main():
         print('== 目录模式 ==')
         rc, out = run_cli([tmp])
         check(rc == 0, '目录扫描整体返回 0')
+        rc, out = run_cli(['-F', tmp])
+        check(rc == 0, '-F 指定文件夹')
+        rc, out = run_cli(['--folder', tmp])
+        check(rc == 0, '--folder 长选项等价')
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
