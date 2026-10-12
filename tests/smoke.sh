@@ -91,13 +91,20 @@ fi
 # ------------------------------- 3) 生成的 shim（瘦转发到 jtool）
 echo "== 生成的 shim（含空格路径） =="
 FAKE_HOME="$TMP/home"
-if HOME="$FAKE_HOME" bash -c 'source "$1/module/common.sh"; do_create_shims "$2"' \
-        _ "$TOOL_DIR" "$TOOL_DIR/config/jtool.conf" >/dev/null 2>&1; then
+# shim 现在写在安装目录里（属 root），所以这里既要一个临时安装目录，也要 sudo 桩：
+# 真跑 sudo 会在无人值守的 CI 里挂住等密码。
+SHIM_INSTALL="$TMP/shim-install"
+mkdir -p "$SHIM_INSTALL"
+if HOME="$FAKE_HOME" bash -c '
+        sudo() { "$@"; }
+        source "$1/module/common.sh"
+        do_create_shims "$2" "$3"
+    ' _ "$TOOL_DIR" "$SHIM_INSTALL" "$TOOL_DIR/config/jtool.conf" >/dev/null 2>&1; then
     pass "do_create_shims 生成成功"
 else
     fail "do_create_shims 失败"
 fi
-SHIM="$FAKE_HOME/.devtools/jtool/shims/java"
+SHIM="$SHIM_INSTALL/shims/java"
 if [ -x "$SHIM" ]; then
     shim_out="$("$SHIM" -version 2>&1)"; shim_rc=$?
     case "$shim_out" in
@@ -189,28 +196,41 @@ echo "== 卸载：rc 不残留、空目录收干净 =="
 mkdir -p "$TMP/rc-test/home"
 printf 'export EDITOR=vim\n' > "$TMP/rc-test/home/.bashrc"
 RC0="$(cat "$TMP/rc-test/home/.bashrc")"
-HOME="$TMP/rc-test/home" PATH="$TMP/stub:$PATH" bash -c '
+# 安装过程中的状态必须在 do_uninstall 之前采下来——卸载会把安装目录整个删掉，
+# 事后再断言「shim 在安装目录里」永远为假。
+STATE="$(HOME="$TMP/rc-test/home" PATH="$TMP/stub:$PATH" bash -c '
     sudo() { "$@"; }
     source "$1/module/common.sh"
     get_install_dir() { echo "$HOME/fake-install"; }
     do_install "$2" >/dev/null 2>&1
+    [ -f "$HOME/fake-install/shims/java" ]           && echo SHIM_IN_INSTALL
+    [ -f "$HOME/fake-install/completions/jtool.zsh" ] && echo COMP_IN_INSTALL
+    [ -e "$HOME/.devtools" ]                         && echo DEVTOOLS_CREATED
     do_uninstall -y >/dev/null 2>&1
-' _ "$TOOL_DIR" "$TOOL_DIR"
+' _ "$TOOL_DIR" "$TOOL_DIR" 2>&1)"
 RC1="$(cat "$TMP/rc-test/home/.bashrc")"
 if [ "$RC1" = "$RC0" ]; then
     pass "卸载后 .bashrc 与安装前逐字节一致（无残留空行）"
 else
     fail "卸载后 .bashrc 有残留，末尾为: $(printf '%s' "$RC1" | tail -2)"
 fi
-if [ -d "$TMP/rc-test/home/.devtools" ]; then
-    fail "卸载后 ~/.devtools 未清空"
-else
-    pass "卸载后 ~/.devtools 已清空"
-fi
+case "$STATE" in
+    *DEVTOOLS_CREATED*) fail "~/.devtools 被创建了（2.2.18 起所有产物都在安装目录里）" ;;
+    *)                  pass "全程未创建 ~/.devtools" ;;
+esac
+# shim / 补全必须落在安装目录里，否则 PATH 上那两条指向的就是空目录
+case "$STATE" in
+    *SHIM_IN_INSTALL*) pass "shim 生成在安装目录内" ;;
+    *)                 fail "安装目录内没有 shims/java" ;;
+esac
+case "$STATE" in
+    *COMP_IN_INSTALL*) pass "补全生成在安装目录内" ;;
+    *)                 fail "安装目录内没有 completions/jtool.zsh" ;;
+esac
 if [ -d "$TMP/rc-test/home/fake-install" ]; then
     fail "卸载后安装目录未删除"
 else
-    pass "卸载后安装目录已删除"
+    pass "卸载后安装目录已删除（shim/补全随之清除）"
 fi
 
 echo

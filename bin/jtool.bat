@@ -459,26 +459,21 @@ if !errorlevel! neq 0 (
     exit /b 1
 )
 
-set "REPO_DIR=%USERPROFILE%\.devtools\jtool\repo"
-set "FRESH_CLONE=0"
+REM Clone into a temp dir and delete it when done. Keeping a clone under
+REM %USERPROFILE%\.devtools was the only thing that ever created that dotfolder
+REM on Windows, and this git path is merely the fallback for when curl+tar are
+REM missing -- the incremental fetch it bought is not worth a hidden directory
+REM the user has to know about (and uninstall has to remember to clean).
+set "REPO_DIR=%TEMP%\jtool-repo"
+rmdir /s /q "!REPO_DIR!" 2>nul
 
-if not exist "!REPO_DIR!\.git" (
-    echo First update, cloning repo...
-    git clone --branch jtool --single-branch --depth 1 https://github.com/CK627/MyProject.git "!REPO_DIR!"
-    if !errorlevel! neq 0 ( echo Clone failed & exit /b 1 )
-    set "FRESH_CLONE=1"
-)
+echo First update, cloning repo...
+git clone --branch jtool --single-branch --depth 1 https://github.com/CK627/MyProject.git "!REPO_DIR!"
+if !errorlevel! neq 0 ( echo Clone failed & goto :git_fail )
 
 set "REMOTE_VERSION="
-if "!FRESH_CLONE!"=="1" (
-    for /f "usebackq tokens=*" %%v in ("!REPO_DIR!\VERSION") do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
-) else (
-    echo Checking for updates...
-    git -C "!REPO_DIR!" fetch origin jtool 2>nul
-    if !errorlevel! neq 0 ( echo Fetch failed, check network & exit /b 1 )
-    for /f "usebackq tokens=*" %%v in (`git -C "!REPO_DIR!" show origin/jtool:VERSION 2^>nul`) do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
-)
-if "!REMOTE_VERSION!"=="" ( echo Error: cannot get version & exit /b 1 )
+for /f "usebackq tokens=*" %%v in ("!REPO_DIR!\VERSION") do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
+if "!REMOTE_VERSION!"=="" ( echo Error: cannot get version & goto :git_fail )
 
 set "LOCAL_VERSION="
 if exist "%CONFIG_FILE%" (
@@ -491,22 +486,16 @@ if defined LOCAL_VERSION set "LOCAL_VERSION=!LOCAL_VERSION: =!"
 
 if "!LOCAL_VERSION!"=="!REMOTE_VERSION!" (
     echo Already up to date ^(v!LOCAL_VERSION!^)
-    exit /b 0
+    goto :git_done
 )
 
 echo New version: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
-
-if "!FRESH_CLONE!"=="0" (
-    git -C "!REPO_DIR!" checkout jtool 2>nul
-    git -C "!REPO_DIR!" pull origin jtool
-    if !errorlevel! neq 0 ( echo Pull failed & exit /b 1 )
-)
 
 copy /y "!REPO_DIR!\bin\jtool.bat" "%BIN_DIR%\" >nul
 if !errorlevel! neq 0 (
     echo Error: cannot write %BIN_DIR%
     echo Please run as administrator
-    exit /b 1
+    goto :git_fail
 )
 if exist "!REPO_DIR!\installer\windows\install.bat" (
     copy /y "!REPO_DIR!\installer\windows\install.bat" "%MODULE_DIR%\install.bat" >nul
@@ -522,6 +511,14 @@ move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
 
 echo Update complete!
 echo   Version: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
+goto :git_done
+
+:git_fail
+rmdir /s /q "!REPO_DIR!" 2>nul
+exit /b 1
+
+:git_done
+rmdir /s /q "!REPO_DIR!" 2>nul
 exit /b 0
 
 REM ============================================
@@ -558,11 +555,13 @@ REM PATH can never outrank Oracle's machine-level javapath. module\install.bat
 REM only exists after install.bat copied it there, so its presence is what tells
 REM the two layouts apart -- INSTALL_MODULE cannot, it falls back to the repo
 REM path and is therefore always defined.
-REM Repo layout keeps the per-user dir so a checkout stays usable without admin.
-set "SHIMS_DIR=%USERPROFILE%\.devtools\jtool\shims"
+REM Both layouts now put the shims in %PROJECT_DIR%\shims -- installed, that IS
+REM {app}\shims; in a checkout it keeps the generated scripts next to the code
+REM (gitignored) so nothing lands in a hidden home directory any more. The
+REM difference is only the PATH scope: installed = machine, repo = user.
+set "SHIMS_DIR=%PROJECT_DIR%\shims"
 set "SHIMS_SCOPE=user"
 if exist "%PROJECT_DIR%\module\install.bat" (
-    set "SHIMS_DIR=%PROJECT_DIR%\shims"
     set "SHIMS_SCOPE=machine"
 )
 
@@ -611,8 +610,11 @@ if "!SHIMS_SCOPE!"=="machine" (
 
 REM Repo layout: no installer involved, so place the dir on the user PATH here.
 REM This cannot outrank a machine-level java.exe, which is why the installed
-REM layout uses %INSTALL_DIR%\shims instead of this directory.
-powershell -NoProfile -Command "$d = Join-Path $env:USERPROFILE '.devtools\jtool\shims'; $p = [Environment]::GetEnvironmentVariable('Path','User'); $parts = @($p -split ';' | Where-Object { $_ -and ($_ -ne $d) }); [Environment]::SetEnvironmentVariable('Path', ($d + ';' + ($parts -join ';')).TrimEnd(';'), 'User'); Write-Output 'shims moved to front of user PATH'"
+REM layout uses %INSTALL_DIR%\shims on the machine PATH instead.
+REM The legacy %USERPROFILE%\.devtools\jtool\shims entry is removed in the same
+REM pass: machines that ran an older release still carry it, and it now points
+REM at a directory nothing recreates.
+powershell -NoProfile -Command "$d='!SHIMS_DIR!'; $old=Join-Path $env:USERPROFILE '.devtools\jtool\shims'; function N($s){ $s.Trim().TrimEnd('\').ToUpperInvariant() }; $p=[Environment]::GetEnvironmentVariable('Path','User'); $parts=@($p -split ';' | Where-Object { $_ -and (N $_) -ne (N $old) -and (N $_) -ne (N $d) }); [Environment]::SetEnvironmentVariable('Path', ($d + ';' + ($parts -join ';')).TrimEnd(';'), 'User'); Write-Output 'shims placed on the user PATH'"
 exit /b 0
 
 REM ============================================

@@ -82,8 +82,7 @@ cd /path/to/jtool
 
 在 `installer\windows\` 下右键 `uninstall.bat`，选择 **以管理员身份运行**。
 
-> 卸载会删除安装目录（含配置文件与 Windows 的 `shims\`）、`~/.devtools/jtool/` 下的
-> shim / 补全脚本 / repo 缓存，并清理 PATH 中由 jtool 写入的项：
+> 卸载会删除安装目录（含配置文件、`shims/`、`completions/`），并清理 PATH 中由 jtool 写入的项：
 > Windows 上是机器级的 `{app}\bin` 与 `{app}\shims` 两条，macOS / Linux 上是 shell 配置里
 > 的 PATH 行与补全 source 行（不触碰其他配置）。
 > 确认后会立即执行，请提前备份自定义配置。
@@ -194,7 +193,7 @@ jtool run 21 <TAB>   # .java 文件
 > 例外：**首次安装**时函数还没被定义（`.zshrc` 正在被写入），所以第一次仍需
 > 重开终端或 `source ~/.zshrc`。之后的每次 update 都是自动的。
 
-补全脚本位于 `~/.devtools/jtool/completions/`，由 `jtool install` / `jtool update` 自动刷新。
+补全脚本位于安装目录的 `completions/` 下（见下方「跨平台支持」表格），由 `jtool install` / `jtool update` 自动刷新。
 版本列表是扫描 `JAVA_BASE_DIR` 下的 JDK 目录、再按目录名推出得到的，**不会执行 java**，
 所以按 `<TAB>` 没有延迟。目录名推不出版本号的（如 Homebrew 的 `openjdk.jdk`）不会出现在补全里，
 但 `jtool use <真实版本>` 照旧可用——解析那边会退回去读 `java -version`。
@@ -203,13 +202,17 @@ jtool run 21 <TAB>   # .java 文件
 
 | 系统 | 主脚本 | 安装路径 | 配置文件 | shim 目录 | 入口 |
 |------|--------|----------|----------|-----------|------|
-| macOS | `jtool` | `/Library/devtools/jtool/` | `/Library/devtools/jtool/config/jtool.conf` | `~/.devtools/jtool/shims` | `installer/` |
-| Linux | `jtool` | `/usr/local/devtools/jtool/` | `/usr/local/devtools/jtool/config/jtool.conf` | `~/.devtools/jtool/shims` | `installer/` |
+| macOS | `jtool` | `/Library/devtools/jtool/` | `/Library/devtools/jtool/config/jtool.conf` | `/Library/devtools/jtool/shims` | `installer/` |
+| Linux | `jtool` | `/usr/local/devtools/jtool/` | `/usr/local/devtools/jtool/config/jtool.conf` | `/usr/local/devtools/jtool/shims` | `installer/` |
 | Windows | `jtool.bat` | `C:\Program Files\devtools\jtool\` | `C:\Program Files\devtools\jtool\config\jtool.conf` | `C:\Program Files\devtools\jtool\shims` | `installer/windows/` |
 
-macOS / Linux 会在 `~/.devtools/jtool/shims` 下生成 `java` / `javac` / `jar` / `jshell` /
+macOS / Linux 会在安装目录的 `shims/` 下生成 `java` / `javac` / `jar` / `jshell` /
 `javadoc` / `javap` 包装脚本，它们按当前默认版本转发调用。Windows 的 shim 生成在安装目录下的
 `shims\`，由安装程序**前置**到**机器级** PATH 上（不是用户级）。
+
+> **2.2.19 起，shim 与补全也收进安装目录**（此前 macOS / Linux 把它们放在 `~/.devtools/jtool/`）。
+> 装完之后系统上只有 `<安装目录>` 一处，卸载就是删一个目录；`~/.devtools` 不再创建。
+> 从旧版升级时，指向老路径的 rc 行与老目录会在 `jtool install` / `jtool update` / 卸载时自动清掉。
 
 > **为什么必须是机器级、且必须排在最前**：Windows 的生效 PATH 是「机器级 `Path` + `;` +
 > 用户级 `Path`」，机器级整体在前——用户级目录排得再靠前也压不过任何一个机器级目录。
@@ -226,7 +229,7 @@ macOS / Linux 会在 `~/.devtools/jtool/shims` 下生成 `java` / `javac` / `jar
 > 程序。代价是 `jtool use` 与 `jtool scan` 需要在管理员权限的 CMD 里运行，否则会提示
 > `cannot write ...\config\jtool.conf`。
 
-`jtool update` 使用的仓库缓存在 `~/.devtools/jtool/repo`。
+`jtool update` 在 curl + tar 不可用时会退回 git：仓库克隆到临时目录，复制完即删，不留缓存。
 
 ### 扫描的 Java 安装路径
 

@@ -37,9 +37,17 @@ fi
 /bin/chmod 666 "$CONF" 2>/dev/null
 
 # ---------------------------------------------------------------
-# 2) 用户级配置（shims / 补全 / shell rc）
-#    shims 与补全都写到 ~/.devtools/$TOOL，shell rc 也要改用户自己的，
-#    所以必须以登录用户身份执行，否则会全落到 /var/root。
+# 2) 生成 shims / 补全
+#    它们写在 $INSTALL 里（属 root），postinstall 本身就是 root，直接生成。
+# ---------------------------------------------------------------
+if ! /bin/bash "$INSTALL/lib/$TOOL.sh" setup --files-only; then
+    /bin/echo "$TOOL: 生成 shims / 补全失败，请手动执行: sudo $TOOL setup --files-only"
+fi
+
+# ---------------------------------------------------------------
+# 3) shell 配置（PATH + 补全）
+#    rc 文件属于登录用户，必须以他的身份写，否则会全落到 /var/root。
+#    这一步和上一步必须分开：一个要 root，一个要登录用户，没有单一身份能同时做。
 # ---------------------------------------------------------------
 TARGET="$(/usr/bin/stat -f%Su /dev/console 2>/dev/null)"
 case "$TARGET" in
@@ -47,12 +55,12 @@ case "$TARGET" in
 esac
 
 if [ -n "$TARGET" ] && /usr/bin/id -u "$TARGET" >/dev/null 2>&1; then
-    if ! /usr/bin/sudo -u "$TARGET" -H /bin/bash "$INSTALL/lib/$TOOL.sh" setup; then
-        /bin/echo "$TOOL: 用户级配置失败，请手动执行: $TOOL setup"
+    if ! /usr/bin/sudo -u "$TARGET" -H /bin/bash "$INSTALL/lib/$TOOL.sh" setup --shell-only; then
+        /bin/echo "$TOOL: 写入 shell 配置失败，请手动执行: $TOOL setup --shell-only"
     fi
 else
-    /bin/echo "$TOOL: 未检测到登录用户，已跳过 shims / 补全 / shell 配置"
-    /bin/echo "       首次登录后请执行: $TOOL setup"
+    /bin/echo "$TOOL: 未检测到登录用户，已跳过 shell 配置"
+    /bin/echo "       首次登录后请执行: $TOOL setup --shell-only"
 fi
 
 # 无论用户级步骤是否成功都返回 0：系统文件此时已经就位，

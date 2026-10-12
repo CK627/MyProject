@@ -105,7 +105,7 @@ jtool - 统一 Java 版本管理工具
   jtool scan                          扫描 Java 路径，更新配置
   jtool config                        显示配置
   jtool install                       完整安装（从源码目录）
-  jtool setup                         只做用户级配置（shims/补全/shell）
+  jtool setup                         生成 shims/补全 并写入 shell 配置
   jtool uninstall [-y]                卸载（-y 跳过确认）
   jtool update                        检查并更新 jtool 到最新版本
   jtool shim                          重建 shim 脚本
@@ -262,10 +262,19 @@ case "$1" in
         ;;
     shim)
         install_dir=$(get_install_dir) || exit 1
-        do_create_shims "$install_dir/config/jtool.conf"
+        do_create_shims "$install_dir" "$CONFIG_FILE"
         exit $?
         ;;
-    setup)    do_setup_user "$PROJECT_DIR" "$CONFIG_FILE"; exit $? ;;
+    setup)
+        # --files-only / --shell-only 供 pkg 的 postinstall 拆开用：产物要 root 写
+        # （安装目录属 root），shell rc 要登录用户写，一个身份做不完两件事。
+        shift
+        case "${1:-}" in
+            --files-only) do_setup_files "$PROJECT_DIR" "$CONFIG_FILE"; exit $? ;;
+            --shell-only) do_setup_shell "$PROJECT_DIR"; exit $? ;;
+            *)            do_setup_user  "$PROJECT_DIR" "$CONFIG_FILE"; exit $? ;;
+        esac
+        ;;
     uninstall) shift; do_uninstall "$@"; exit $? ;;
 esac
 
