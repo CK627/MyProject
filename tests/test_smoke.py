@@ -24,6 +24,7 @@
   * t8-b64.pcap：HTML 载荷页内嵌 base64 的 ZIP（saveAs 页）自动解码提取
   * t9-dns.pcap：DNS 真实解析（长查询外带）/ HTML·CSS·文件名反误报
   * t10-ftp.pcap：FTP 会话（非 flag 证据）/ 二进制关键词字节巧合闸门 / 文本关键词正例
+  * -q/--brief 精简输出：控制台只留分档块 + 缓存落盘（1/2/3.txt + <名>_cache.txt）/ 同名不覆盖
   * 目录模式
 """
 import json
@@ -89,11 +90,13 @@ def check_completions():
     check('_describe -t options' not in code, 'zsh 补全：未回退为 -t options（会被 prefix-needed 拦截）')
     check('-f --file' in code and '-k --keywords' in code, 'zsh 补全：配对选项以 "-f --file" 合并显示')
     check('-F --folder' in code and '--folder:' in code, 'zsh 补全：含 -F --folder（指定文件夹）')
+    check('-q --brief' in code, 'zsh 补全：含 -q --brief（精简输出）')
     check('--extract' in code and '--min-score' in code, 'zsh 补全：含主要选项')
     check('update:更新指引' in code and 'install:已弃用' in code, 'zsh 补全：update/install 新语义文案在场')
     check('train' in code and '--judge' in code, 'zsh 补全：含 train 子命令与 --judge')
     bash = open(os.path.join(ROOT, 'completions', 'ctfsweep.bash'), encoding='utf-8').read()
     check('--extract' in bash and '--folder' in bash, 'bash 补全：含主要选项')
+    check('--brief' in bash, 'bash 补全：含 --brief（精简输出）')
     check('train' in bash and '--judge' in bash, 'bash 补全：含 train 与 --judge')
 
 
@@ -356,6 +359,9 @@ def main():
         check('update' in out and 'train' in out, '--help 含管理子命令（含 train）')
         rc, out = run_cli(['/no/such/file.pcap'])
         check(rc == 2, '路径不存在时返回 2')
+        rc, out = run_cli(['config'])
+        check(rc == 0 and '精简缓存:' in out,
+              'config：报出 -q 精简缓存占用与可删路径（唯一清理入口）')
 
         print('== shell 脚本体检 ==')
         check_shell_scripts()
@@ -466,6 +472,49 @@ def main():
         check('【证据汇总】（未发现 flag 形状候选' in out, '汇总：非 flag 文件明确提示无 flag 候选')
         check('[FTP成功凭据] dj / dj' in out, '汇总：证据按类型标注（非 flag 类）')
         check('【flag 候选汇总】' not in out, '汇总：非 flag 文件不出 flag 候选组')
+
+        print('== t10-ftp.pcap：-q/--brief 精简输出 ==')
+        rc, out = run_cli([os.path.join(tmp, 't10-ftp.pcap'), '-q'])
+        check('【扫描统计】' in out and '高置信（可直接核验），具体信息：' in out,
+              '精简块：标题与高置信行')
+        check('1.txt' in out and 'dj / dj' in out, '高置信行：明细文件路径 + 内联值')
+        check('2.txt' in out and '3.txt' in out and 't10-ftp_cache.txt' in out,
+              '中/低档与完整缓存路径')
+        check('[FTP会话]' not in out and '格式:' not in out,
+              '控制台不再输出详细报告（只留分档块）')
+        croot = os.path.join(tmp, 'cache')
+        cdirs = [d for d in (os.listdir(croot) if os.path.isdir(croot) else [])
+                 if d.startswith('t10-ftp-')]
+        check(len(cdirs) == 1, '缓存目录按「文件名-路径哈希」命名')
+        cdir = os.path.join(croot, cdirs[0]) if cdirs else os.path.join(croot, '不存在')
+        check(all(os.path.isfile(os.path.join(cdir, n)) for n in ('1.txt', '2.txt', '3.txt')),
+              '1/2/3.txt 已落盘')
+        f1 = os.path.join(cdir, '1.txt')
+        if os.path.isfile(f1):
+            with open(f1, encoding='utf-8') as fh:
+                t1t = fh.read()
+            check('条数: 1' in t1t and 'FTP成功凭据' in t1t and 'dj / dj' in t1t,
+                  '1.txt：文件头 + 完整明细行')
+        fc = os.path.join(cdir, 't10-ftp_cache.txt')
+        check(os.path.isfile(fc), '完整报告缓存已落盘')
+        if os.path.isfile(fc):
+            with open(fc, encoding='utf-8') as fh:
+                t2t = fh.read()
+            check('[FTP会话]' in t2t and '【扫描统计】' in t2t,
+                  '缓存含完整详细输出（会话 + 统计区）')
+
+        # 同名不同目录必须各自成缓存目录（规格原样按文件名会互相覆盖）。
+        # CLI 只接一个路径，多文件只在**目录扫描**下发生——这正是撞名的真实场景。
+        coll = os.path.join(tmp, 'coll')
+        with open(os.path.join(tmp, 't10-ftp.pcap'), 'rb') as src:
+            blob = src.read()
+        for sub in ('proj1', 'proj2'):
+            os.makedirs(os.path.join(coll, sub), exist_ok=True)
+            with open(os.path.join(coll, sub, 'same.pcap'), 'wb') as dst:
+                dst.write(blob)
+        run_cli([coll, '-q'])
+        same = [d for d in os.listdir(croot) if d.startswith('same-')]
+        check(len(same) == 2, '同名不同目录（目录扫描）：缓存各自独立（按完整路径散列）')
 
         print('== 判断核（judge）==')
         check_judge(tmp)

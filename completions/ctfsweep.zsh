@@ -8,6 +8,7 @@
 #   ctf -f<TAB>           → 直接补全 -f（短形式仍可按前缀补全；--f<TAB> → --file）
 #   ctf -f <TAB>          → 补全文件；-F <TAB> → 补全文件夹；--extract-dir <TAB> → 补全目录
 #   ctf --min-score <TAB> → 0.40 / 0.55 / 0.85 / 0.95
+#   ctf -q               → 精简输出（控制台只打汇总块，明细在数据目录 cache/）
 #   ctf uninstall <TAB>   → -y / --yes
 #   ctf train <TAB>       → --data / --epochs / --model-out
 #   已输入过的选项不会重复列出（-f 与 --file 视为同一个）
@@ -25,6 +26,7 @@ _ctfsweep_subcmds=(
 )
 
 _ctfsweep_opts_long=(
+  '--brief:精简输出（明细写缓存文件）'
   '--config:指定配置文件'
   '--depth:解码链最大深度'
   '--extract:从流量中提取文件（ZIP/图片/PDF/GZ 等）'
@@ -48,6 +50,7 @@ _ctfsweep_opts_pairs=(
   '-f --file:指定要扫描的文件'
   '-h --help:显示帮助'
   '-k --keywords:追加关键词（逗号分隔）'
+  '-q --brief:精简输出（明细写缓存文件）'
 )
 
 _ctfsweep_opts_uninstall=(
@@ -170,6 +173,7 @@ _ctfsweep() {
       -f) used_str+='--file ' ;;
       -F) used_str+='--folder ' ;;
       -k) used_str+='--keywords ' ;;
+      -q) used_str+='--brief ' ;;
       -h) used_str+='--help ' ;;
       -*) used_str+="${${words[i]}%%=*} " ;;
     esac

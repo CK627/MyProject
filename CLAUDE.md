@@ -174,6 +174,13 @@ MetaJudge 按 `MODULE_WEIGHTS`（ad 0.95 / memory 0.90 / config 0.85 … scanner
   `-f 文件名` 或 `./文件名`。
 - **行尾契约**（`.gitattributes`）：`*.bat` 用 CRLF、`*.sh` 用 LF——改这些文件别让编辑器
   自动转换，否则 Windows 版启动器会解析错位。
+- **`-q/--brief` 是开关式灰度**：默认输出必须逐字节不变（14 个 golden 里 13 个是默认模式，
+  开着它就是回归）。它靠 `redirect_stdout` **逐文件**捕获详细输出写进
+  `<数据目录>/cache/<文件名>-<路径哈希6位>/`（`1/2/3.txt` 分档明细 + `<名>_cache.txt`
+  完整报告），目录名带**完整路径**短哈希是为了同名不同目录不互相覆盖（目录扫描时才撞）。
+  `tests/test_golden.py::normalize()` 会把该哈希归一化掉，否则基线随 `$TMPDIR` 漂移。
+  该缓存**只增不减**（用户数据目录内的文件永不自动删除），清理入口只有
+  `ctfsweep config` 里那行「精简缓存: <路径>（N 个文件，X MB）」——改缓存布局时同步它。
 
 ## lab/ 与 models/
 

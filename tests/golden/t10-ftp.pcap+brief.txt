@@ -1,0 +1,5 @@
+【扫描统计】
+高置信（可直接核验），具体信息：<TMP>/data/cache/<名>-<哈希>/1.txt dj / dj
+中置信（需人工确认），具体信息：<TMP>/data/cache/<名>-<哈希>/2.txt
+低置信（线索参考），具体信息：<TMP>/data/cache/<名>-<哈希>/3.txt
+扫描结果（缓存），具体信息：<TMP>/data/cache/<名>-<哈希>/t10-ftp_cache.txt

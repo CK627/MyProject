@@ -19,6 +19,7 @@
 它是重构期间手工跑的护栏，`bash tests/smoke.sh` 仍是 CI 的唯一门禁。
 """
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -57,6 +58,7 @@ def cases():
         ('t8-b64.pcap', [p('t8-b64.pcap')]),
         ('t9-dns.pcap', [p('t9-dns.pcap')]),
         ('t10-ftp.pcap', [p('t10-ftp.pcap')]),
+        ('t10-ftp.pcap+brief', [p('t10-ftp.pcap'), '-q']),
         ('t4.pcap+extract', [p('t4.pcap'), '--extract',
                              '--extract-dir', os.path.join(EXOUT, 't4')]),
         ('t7-tls.pcap+extract', [p('t7-tls.pcap'), '--extract',
@@ -66,8 +68,11 @@ def cases():
 
 
 def normalize(text):
-    """只抹掉环境路径，其余原样保留。"""
-    return text.replace(BASE, '<TMP>').replace(ROOT, '<ROOT>')
+    """只抹掉环境相关的部分，其余原样保留。"""
+    text = text.replace(BASE, '<TMP>').replace(ROOT, '<ROOT>')
+    # -q/--brief 的缓存目录名带「完整路径的短哈希」（同名不同目录不互相覆盖），
+    # 而 BASE 本身随 $TMPDIR 变 → 哈希也变。归一化掉哈希，否则基线不可复现。
+    return re.sub(r'/[^/\s]+-[0-9a-f]{6}/', '/<名>-<哈希>/', text)
 
 
 def run_case(argv):

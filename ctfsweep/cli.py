@@ -5,8 +5,11 @@
 - 文件类型匹配 → 模块调度 → 结构化输出 → 综合评分
 - 保留旧版扫描器作为基础能力（流量/原始文件），新增取证模块通过 Router 分派
 """
+import hashlib
+import io
 import os
 import sys
+from contextlib import ExitStack, redirect_stdout
 
 from . import __version__
 from .core.capture import CaptureContext, PCAP_MAGICS, PCAPNG_MAGIC
@@ -17,7 +20,7 @@ from .core import selfmgr
 from .core.router import Router, Finding, ScanOptions
 from .core.meta_judge import MetaJudge
 from .core.report import report
-from .core.utils import BAND_HIGH, BAND_MID, FLAG_RE
+from .core.utils import BAND_HIGH, BAND_MID, FLAG_RE, level_of
 
 HELP = """ctfsweep — CTF 流量 / 日志 / 注册表 快速扫描器（零依赖，Python 3.8+）
 
@@ -51,6 +54,9 @@ HELP = """ctfsweep — CTF 流量 / 日志 / 注册表 快速扫描器（零依�
   --no-decode       关闭 hex / base64 自动解码
   --depth N         解码链最大深度（默认 3，即 hex/base64 可反复套娃）
   --limit N         每个文件最多输出条数（默认 50，按置信度排序后截取）
+  -q, --brief       精简输出：控制台只打「分档统计块」（高/中/低 + 缓存文件路径），
+                    完整报告与各档明细写入 <数据目录>/cache/<文件名>-<哈希>/：
+                    1.txt（高）/ 2.txt（中）/ 3.txt（低）/ <文件名>_cache.txt（完整输出）
   --extract         从流量中提取文件（ZIP/PNG/JPG/GIF/PDF/GZ/RAR/7Z/PE/OLE2/ELF，
                     以及 HTML 载荷页内嵌的 base64 文件），
                     保存到 "<抓包名>_extracted/" 并自动解压/扫描其内容；
@@ -114,6 +120,19 @@ def _default_conf_path():
     return p if os.path.isfile(p) else None
 
 
+def _dir_usage(path):
+    """统计目录下的文件数与总字节数（不存在的目录返回 (0, 0)）。"""
+    files = total = 0
+    for dirpath, _dirs, names in os.walk(path):
+        for n in names:
+            try:
+                total += os.path.getsize(os.path.join(dirpath, n))
+                files += 1
+            except OSError:
+                pass
+    return files, total
+
+
 def _cmd_config():
     """ctfsweep config：显示运行信息与生效配置。"""
     mode, root, _devtools = selfmgr.self_info()
@@ -131,6 +150,16 @@ def _cmd_config():
     print('训练配置: %s（项目内；%s）' % (tc_path, '已就绪' if os.path.isfile(tc_path)
                                         else '不存在，首次训练时自动生成'))
     print('扫描缓存: %s（候选池 pending.jsonl / 数据集 dataset.jsonl）' % judge.user_dir())
+
+    # -q/--brief 的缓存只增不减（用户数据目录内的文件永不自动删除），
+    # 这里把占用与可删路径一并报出来，作为唯一的清理入口。
+    croot = brief_cache_root()
+    if os.path.isdir(croot):
+        cnum, csize = _dir_usage(croot)
+        print('精简缓存: %s（%d 个文件，%.1f MB；-q 生成，确认不需要后可整体删除）'
+              % (croot, cnum, csize / 1048576.0))
+    else:
+        print('精简缓存: %s（尚未使用；-q/--brief 会把明细写在这里）' % croot)
 
     env_conf = os.environ.get('CTFSWEEP_CONF')
     conv = os.path.join(os.path.expanduser('~'), '.devtools', 'ctfsweep', 'ctfsweep.conf')
@@ -369,6 +398,93 @@ def _cmd_learning(args):
     )
 
 
+# ---------------------------------------------------------------- 精简输出（-q / --brief）
+# 控制台只打「分档统计块」；完整报告与各档明细写入 <数据目录>/cache/<文件名>-<哈希>/：
+#   1.txt / 2.txt / 3.txt     高/中/低置信候选明细（分数 | 级别 | 类型 | 值 | 位置）
+#   <文件名>_cache.txt        该文件的完整扫描输出（与详细模式控制台所见一致）
+#
+# 数据根跟随 CTFSWEEP_DATA_DIR（`judge.user_dir()` 的父目录），测试隔离天然生效。
+_BRIEF_LEVELS = (('高', '1.txt'), ('中', '2.txt'), ('低', '3.txt'))
+_BRIEF_TITLES = {'高': '高置信（可直接核验）',
+                 '中': '中置信（需人工确认）',
+                 '低': '低置信（线索参考）'}
+
+
+def brief_cache_root():
+    """精简输出缓存根目录（跟随 CTFSWEEP_DATA_DIR，便于测试与多环境隔离）。"""
+    return os.path.join(os.path.dirname(judge.user_dir()), 'cache')
+
+
+def brief_cache_dir(fp):
+    """该文件的缓存子目录：`<缓存根>/<文件名>-<路径哈希6位>/`。
+
+    目录名带**完整路径**的短哈希，而不是只用文件名：`a/capture.pcap` 与
+    `b/capture.pcap`（以及 `capture.pcap` 与 `capture.pcapng`）各自成目录、
+    不会互相覆盖；同一文件重复扫描仍写回自己那一份。
+    """
+    base = os.path.basename(fp)
+    stem = os.path.splitext(base)[0] or base
+    digest = hashlib.sha1(os.path.realpath(fp).encode('utf-8', 'replace')).hexdigest()[:6]
+    return os.path.join(brief_cache_root(), '%s-%s' % (stem, digest))
+
+
+def _brief_text(f):
+    v = f.val if isinstance(f.val, str) else f.val.decode('utf-8', 'replace')
+    return ' '.join(v.split())
+
+
+def brief_emit(fp, fname, run_buf, findings, written, multi=False):
+    """写出 1/2/3.txt 与 <名>_cache.txt，并打印该文件的分档统计块。"""
+    stem = os.path.splitext(fname)[0] or fname
+    cdir = brief_cache_dir(fp)
+    tiers = {'高': [], '中': [], '低': []}
+    for f in findings:
+        tiers[level_of(f.confidence)].append(f)
+    for lv in tiers:
+        tiers[lv].sort(key=lambda it: -it.confidence)
+    try:
+        os.makedirs(cdir, exist_ok=True)
+        for lv, fn in _BRIEF_LEVELS:
+            with open(os.path.join(cdir, fn), 'w', encoding='utf-8') as fh:
+                fh.write('# 来源: %s\n' % fp)
+                fh.write('# 级别: %s  条数: %d\n\n' % (_BRIEF_TITLES[lv], len(tiers[lv])))
+                for f in tiers[lv]:
+                    fh.write('[%.2f %s] %s: %s   @%s\n'
+                             % (f.confidence, lv, f.kind, _brief_text(f)[:300], f.loc))
+        cache_path = os.path.join(cdir, stem + '_cache.txt')
+        with open(cache_path, 'w', encoding='utf-8') as fh:
+            fh.write(run_buf.getvalue())
+    except Exception as ex:
+        print('[精简输出] 缓存写入失败: %r' % ex)
+        return
+    written.append(cache_path)
+    if multi:
+        print('[文件] %s' % fname)
+    print('【扫描统计】')
+    for lv, fn in _BRIEF_LEVELS:
+        line = '%s，具体信息：%s' % (_BRIEF_TITLES[lv], os.path.join(cdir, fn))
+        if lv == '高' and tiers['高']:
+            line += ' ' + '/'.join(_brief_text(f)[:60] for f in tiers['高'][:10])[:240]
+        print(line)
+    print('扫描结果（缓存），具体信息：%s' % cache_path)
+
+
+def brief_append_tail(tail_text, written, files_total):
+    """把运行汇总区（留存区/元判断核/汇总统计）追加到各缓存文件尾部。"""
+    if not tail_text.strip() or not written:
+        return
+    for p in written:
+        try:
+            with open(p, 'a', encoding='utf-8') as fh:
+                if not tail_text.startswith('\n'):
+                    fh.write('\n')
+                if files_total > 1:
+                    fh.write('# ↓↓↓ 本次运行汇总（共 %d 个文件，含跨文件统计）↓↓↓\n' % files_total)
+                fh.write(tail_text)
+        except Exception:
+            pass
+
+
 def main():
     args = sys.argv[1:]
     # 管理子命令（update / install / uninstall / config / train / label / auto-label / mark / learning / gen-data / help）
@@ -434,6 +550,7 @@ def main():
     min_score = _conf_float('MIN_SCORE', 0.40)
     do_extract, extract_dir = False, None
     do_judge = False
+    brief = False
     i = 0
     while i < len(args):
         a = args[i]
@@ -477,6 +594,9 @@ def main():
         elif a == '--min-score' and i + 1 < len(args):
             min_score = float(args[i + 1])
             i += 2
+        elif a in ('-q', '--brief'):
+            brief = True
+            i += 1
         elif a in ('-h', '--help'):
             print(HELP)
             return 0
@@ -536,8 +656,14 @@ def main():
     # 旧版判断核（保留兼容）
     judge_net = judge_net  # 前面已加载
 
+    brief_written = []                              # 精简输出：本次运行已写出的缓存报告
+    _brief_stack = ExitStack() if brief else None   # 精简输出：逐文件捕获 stdout（详细输出只进缓存）
+
     for fp in targets:
         fname = os.path.basename(fp)
+        if brief:
+            _brief_buf = io.StringIO()
+            _brief_stack.enter_context(redirect_stdout(_brief_buf))
         print('=' * 78)
         print('[文件] %s (%.1f KB)' % (fname, os.path.getsize(fp) / 1024))
         try:
@@ -681,6 +807,20 @@ def main():
                     }
                     judge.save_pending(candidate)
 
+        if brief:
+            # 本文件详细输出捕获完毕 → 写缓存文件 + 打「分档统计块」（控制台只留结论）
+            _brief_stack.close()
+            brief_emit(fp, fname, _brief_buf, stream_findings, brief_written,
+                       multi=len(targets) > 1)
+            _brief_stack = ExitStack()
+    if brief:
+        _brief_stack.close()   # 兜底：最后一轮若走 continue，上面的关闭不会执行
+
+    _brief_tail = None
+    if brief:
+        _brief_tail = io.StringIO()
+        _brief_stack.enter_context(redirect_stdout(_brief_tail))
+
     # =========================================================================
     # 5c. 留存区：记录本次扫描（供答案回填与 learning 复核）
     # =========================================================================
@@ -752,4 +892,8 @@ def main():
     print('  高（≥%s）：%d 条' % (BAND_HIGH, n_high))
     print('  中（%s–%s）：%d 条' % (BAND_MID, BAND_HIGH, n_mid))
     print('  低（<%s）：%d 条' % (BAND_MID, n_low))
+
+    if brief:
+        _brief_stack.close()
+        brief_append_tail(_brief_tail.getvalue(), brief_written, len(targets))
     return 0

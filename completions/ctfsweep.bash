@@ -7,7 +7,7 @@ _ctfsweep() {
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
-    opts="-f --file -F --folder -k --keywords --min-score --no-decode --depth --limit --extract --extract-dir --pwd-file --judge --config --version -h --help"
+    opts="-f --file -F --folder -k --keywords --min-score --no-decode --depth --limit --extract --extract-dir --pwd-file --judge -q --brief --config --version -h --help"
     subcmds="update install uninstall config train label learning help"
 
     # 子命令专属参数（ctfsweep uninstall ... / ctfsweep train ...）
