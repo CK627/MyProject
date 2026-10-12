@@ -385,8 +385,9 @@ move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
 exit /b 0
 
 REM ============================================
-REM 非交互扫描（安装包静默安装时调用）
-REM 复用 :do_scan_inner —— 检测不到就落到默认值，不会像 :do_scan 那样 set /p 询问
+REM Non-interactive scan (called by the silent installer)
+REM Reuses :do_scan_inner -- falls back to the default when nothing is found,
+REM instead of prompting with set /p the way :do_scan does.
 REM ============================================
 :do_scan_silent
 call :do_scan_inner
@@ -395,7 +396,7 @@ call :write_version
 exit /b 0
 
 REM ============================================
-REM 查看配置
+REM Show config
 REM ============================================
 :do_config
 echo Config file: %CONFIG_FILE%
@@ -408,7 +409,7 @@ if exist "%CONFIG_FILE%" (
 exit /b 0
 
 REM ============================================
-REM 帮助
+REM Help
 REM ============================================
 :do_help
 echo ptool installer (Windows)

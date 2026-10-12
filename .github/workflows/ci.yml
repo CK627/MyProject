@@ -39,14 +39,14 @@ jobs:
           echo "-- severity=warning（仅提示；存量告警收敛后可改为阻塞）"
           shellcheck --shell=bash --severity=warning "${files[@]}" || true
 
-  # 行尾契约：.bat / .ps1 在工作树与 git archive 导出里都必须是 CRLF
-  # （GitHub 服务端生成的归档不执行该转换，所以 Windows 的 ptool update
-  #   在复制后自行归一化，见 bin/ptool.bat 的 :to_crlf）
-  line-endings:
-    name: line endings
+  # 文件契约：行尾 + 编码。两条都只能靠机器守，人工 review 看不出来。
+  contract:
+    name: file contracts
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # CRLF：GitHub 服务端生成的归档不执行 .gitattributes 的 eol=crlf，
+      # 所以 Windows 的 ptool update 在复制后自行归一化（见 bin/ptool.bat 的 :to_crlf）。
       - name: .bat / .ps1 必须是 CRLF
         run: |
           set -uo pipefail
@@ -66,6 +66,27 @@ jobs:
           git archive HEAD | tar -x -C "$tmp" || exit 1
           while IFS= read -r f; do check "$f" "archive:${f#"$tmp"/}"; done \
             < <(find "$tmp" -type f \( -name '*.bat' -o -name '*.ps1' \))
+          exit "$fail"
+
+      # 纯 ASCII：cmd 用**调用方**的 codepage 解码被 call 的批处理文件，文件头那句
+      # `chcp 65001` 救不了已经进缓冲的那一段。实测在 936 的 cmd 里
+      # `call ptool.bat update`，中文 REM 会被错位解码后当命令执行
+      # （'（管理员：后者要求' is not recognized ...）；错位还可能拼出 & | > 之类，
+      # 那就不是噪音而是真的执行。所以 .bat 里连注释都必须英文。
+      # .ps1 不受此限：PowerShell 自己管编码，且它从不被 cmd `call`。
+      - name: .bat 必须是纯 ASCII
+        run: |
+          set -uo pipefail
+          fail=0
+          while IFS= read -r f; do
+            if LC_ALL=C grep -qP '[\x80-\xFF]' "$f"; then
+              echo "  FAIL - $f（含非 ASCII 字节）"
+              LC_ALL=C grep -nP '[\x80-\xFF]' "$f" | head -5
+              fail=1
+            else
+              echo "  ok   - $f"
+            fi
+          done < <(git ls-files '*.bat')
           exit "$fail"
 
   # Windows 侧冒烟：cmd 的行为只能在 Windows 上验

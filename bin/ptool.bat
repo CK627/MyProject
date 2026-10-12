@@ -70,8 +70,10 @@ REM Run a tool
 set "tool=%~1"
 set "version=%~2"
 
-REM 版本号总是数字开头；若第二个参数缺失、或以 - / 开头（是参数不是版本号），
-REM 则用默认版本。shim 转发 `python -V` 就是「工具 + 参数、无版本号」的形式。
+REM A version always starts with a digit; a missing second argument, or one
+REM starting with - or /, is an argument rather than a version, so fall back
+REM to the default version. A shim forwarding `python -V` is exactly this
+REM shape: tool plus argument, no version.
 if "!version!"=="" goto :use_default_version
 set "_vfirst=!version:~0,1!"
 if "!_vfirst!"=="-" goto :use_default_version
@@ -325,10 +327,11 @@ REM ============================================
 REM update
 REM ============================================
 :cmd_update
-REM 写安装目录需要管理员权限，非管理员时自动请求提权（弹 UAC）
-REM 用 fltmc 而不是 net session 判断管理员：后者要求 Server 服务在运行，
-REM 服务被停用的机器上管理员也会被判成非管理员，于是提权后的实例又去提权、
-REM 反复弹窗。fltmc 只要求提权，标准 Windows 都自带。
+REM Writing the install dir needs admin, so request elevation (UAC) when not
+REM admin. Admin is probed with fltmc, not `net session`: the latter needs the
+REM Server service running, so on a machine where it is disabled even an
+REM administrator reads as non-admin and the elevated copy re-elevates in a
+REM loop. fltmc only needs the token to be elevated and ships with Windows.
 fltmc >nul 2>&1
 if !errorlevel! neq 0 (
     echo update needs admin, requesting elevation...
