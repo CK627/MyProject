@@ -417,6 +417,68 @@ def check_dedup_and_text_gate():
     check(not looks_like_text(''), '闸门：空串不算文本（调用方需自行放行空值）')
 
 
+def check_archives_content(tmp):
+    """解开压缩包后必须报出**里面是什么**（纯离线）。
+
+    回归目标：`SU_Artifact_Online.zip`（密码 password，1 KB）此前只报一句
+    「ZIP 解压成功（密码: password）」+ 建议「检查解压出的文件内容」——包内是
+    3369 字节的**卢恩字母替换密码**文本，报告一个字都没说。陌生题里"解开了但不说
+    里面是什么"等于没解。
+    """
+    import os
+    import zipfile
+    from ctfsweep.core.archives import analyze
+
+    zpath = os.path.join(tmp, 'rune.zip')
+    runes = ('ᛗᚹᚱᛨᛚᛈᛇᚠᛒᛒᚺᚱᚨᛨᛇᛉᛗᚹᚱᛒᛨᛟᚠᛖᛨᚠᛨᛇᚠᛈᛨᛗᛟᚱᛈᛗᛣᚬᚬᚲᚺᛜᚱᛨᛣᚱᚠᛒᛖᛨᛉᛃᚨᛥᛨᛈᛉᛨᛗᚠᛃᛃᚱᛒ') * 3
+    with zipfile.ZipFile(zpath, 'w', zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr('something mysterious.txt', runes)
+    res = analyze(zpath)
+    kinds = [f.kind for f in res.findings]
+    ev = ' | '.join(f.evidence for f in res.findings)
+    check('压缩包内容' in kinds, '压缩包：必须报出成员清单（不再是"解开了什么都不说"）')
+    check('something mysterious.txt' in ev, '压缩包：成员名出现在清单里')
+    check('卢恩字母' in ev, '压缩包：认出卢恩字母（给出替换密码方向）')
+    check(any('ᛗ' in f.evidence for f in res.findings), '压缩包：文本成员给出正文摘录')
+
+    # flag 成员的 flag 必须抽出来（模块 docstring 承诺的"最终文件扫描"）
+    fpath = os.path.join(tmp, 'flaggy.zip')
+    with zipfile.ZipFile(fpath, 'w', zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr('a/note.txt', 'nothing here\n')
+        zf.writestr('a/b/deep.txt', 'the answer is flag{zip_member_scan_ok}\n')
+    res2 = analyze(fpath)
+    flags = [f for f in res2.findings if f.kind == '压缩包中的 flag']
+    check(flags and 'flag{zip_member_scan_ok}' in flags[0].evidence,
+          '压缩包：成员里的 flag 被抽出（含子目录）')
+    check(flags[0].confidence == 0.97, '压缩包：成员 flag 置信度 0.97（可直接提交）')
+
+    # 递归解压出来的**容器内部零件**不算成员——否则 12 个列表名额与 6 个摘录名额
+    # 会被 `byteorder`（6 B）/`version`（2 B）这类文件吃光（实测 SU_theif 的 .pth）
+    npath = os.path.join(tmp, 'nested.zip')
+    inner = os.path.join(tmp, 'inner.zip')
+    with zipfile.ZipFile(inner, 'w', zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr('model/byteorder', 'little')
+        zf.writestr('model/version', '3')
+    with zipfile.ZipFile(npath, 'w', zipfile.ZIP_DEFLATED) as zf:
+        zf.write(inner, 'model.pth')
+        zf.writestr('README.md', '# README\n这是题面说明\n')
+    res3 = analyze(npath)
+    ev3 = ' | '.join(f.evidence for f in res3.findings)
+    check('model/byteorder' not in ev3 and 'model/version' not in ev3,
+          '压缩包：容器的内部零件不占成员名额（.pth 解出的 model/ 被折叠）')
+    check('README.md' in ev3, '压缩包：折叠内部零件后，真正的题面成员仍列出')
+
+    # bzImage 不能被 MZ 头判成 PE——kernel pwn 题被判成"Windows 可执行文件"会带偏方向
+    from ctfsweep.core.archives import _text_of
+    bz = b'MZ' + b'\x00' * 0x200 + b'HdrS' + b'\x00' * 32
+    check('Linux 内核' in (_text_of(bz)[1] or ''),
+          '压缩包：bzImage 认成 Linux 内核镜像，不是 PE (Windows)')
+    check(_text_of(b'MZ' + b'\x00' * 64)[1] == 'PE (Windows)',
+          '压缩包：真 PE 头仍认成 PE (Windows)')
+    check(_text_of('中文文本\n'.encode('utf-8'))[0] == '中文文本\n',
+          '压缩包：UTF-8 文本判定为文本')
+
+
 def check_logs_wmi_gate():
     """WMI/WQL 查询行不得被判成 SQL 注入（纯离线）。
 
@@ -815,6 +877,9 @@ def main():
 
         print('== 日志攻击检测的 WMI 闸门 ==')
         check_logs_wmi_gate()
+
+        print('== 压缩包解压产物的扫描 ==')
+        check_archives_content(tmp)
 
         print('== 重复结论去重 / 文本闸门 ==')
         check_dedup_and_text_gate()
