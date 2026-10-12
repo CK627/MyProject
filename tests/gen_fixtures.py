@@ -430,6 +430,29 @@ def build_t11():
     return pcap_file(frames)
 
 
+def build_t12():
+    """t12-web.pcap：HTTP 攻击载荷（百分号编码的 SQLi / 路径穿越）。
+
+    对应 山东.pcapng 实测：106 条请求里有几十条是 sqlmap 载荷，全部百分号编码
+    （`%20AND%209418%3D3822%20UNION%20ALL%20SELECT`）。旧实现对原始 URI 匹配，
+    一条都报不出来——整份额文件零 finding。
+    """
+    C, S = '10.9.9.30', '10.9.9.40'
+    frames, cseq = [], 1
+    reqs = [
+        b'GET /index.php?id=1%20AND%209418%3D3822%20UNION%20ALL%20SELECT%201%2C2'
+        b' HTTP/1.1\r\nHost: t.local\r\n\r\n',
+        b'GET /download?f=..%2F..%2F..%2Fetc%2Fpasswd HTTP/1.1\r\nHost: t.local\r\n\r\n',
+        b'GET /index.php?id=1 HTTP/1.1\r\nHost: t.local\r\n\r\n',   # 常规请求：不得报攻击
+    ]
+    resp = b'HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok'
+    for r in reqs:
+        frames.append(eth_ipv4(tcp(52000, 80, cseq, r), 6, src=C, dst=S))
+        cseq += len(r)
+        frames.append(eth_ipv4(tcp(80, 52000, 1, resp), 6, src=S, dst=C))
+    return pcap_file(frames)
+
+
 def generate(outdir):
     os.makedirs(outdir, exist_ok=True)
     files = {
@@ -444,6 +467,7 @@ def generate(outdir):
         't9-dns.pcap': build_t9(),
         't10-ftp.pcap': build_t10(),
         't11-smtp.pcap': build_t11(),
+        't12-web.pcap': build_t12(),
     }
     for name in sorted(files):
         with open(os.path.join(outdir, name), 'wb') as f:

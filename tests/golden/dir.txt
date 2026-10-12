@@ -54,6 +54,26 @@
   【中置信（需人工确认）】
     [0.55 中] 邮件会话: 4 条 SMTP 会话，目标 4 个服务器；客户端自报名 10.0.0.19, 10.0.0.30, 10.0.0.45；3 条正文被 STARTTLS 加密   @SMTP 10.9.9.50:25, 10.9.9.51:25, 10.9.9.52:25, 10.9.9.53:25
 ==============================================================================
+[文件] t12-web.pcap (0.8 KB)
+  格式: pcap  链路类型: Ethernet   数据包: 6 个
+  【主机表】IP ↔ MAC / 主机名（ARP+Ethernet+DHCP+NBNS）：
+    10.9.9.30       02:00:00:00:00:02
+    10.9.9.40       02:00:00:00:00:02
+  [Web攻击载荷] 2 类（共 2 条请求，URI 已百分号解码）：
+    SQL注入（UNION SELECT） ×1  例: /index.php?id=1 AND 9418=3822 UNION ALL SELECT 1,2
+    路径穿越 / 本地文件包含 ×1  例: /download?f=../../../etc/passwd
+  [HTTP请求序列] 共 3 条（按时间）：
+      1. GET /index.php?id=1%20AND%209418%3D3822%20UNION%20ALL%20SELECT%201%2C2   @06/15/2025 15:06:40
+      2. GET /download?f=..%2F..%2F..%2Fetc%2Fpasswd   @06/15/2025 15:06:40
+      3. GET /index.php?id=1   @06/15/2025 15:06:40
+  [HTTP事务摘要] 请求 → 响应正文（RCE回显/接口返回/短文本，直接可读）：
+    GET /index.php?id=1%20AND%209418%3D3822%20UNION%20ALL%20SELECT%201%2C2  →  [200] ok
+  【高置信（可直接核验）】
+    [0.85 高] Web攻击载荷: SQL注入（UNION SELECT） ×1；例: /index.php?id=1 AND 9418=3822 UNION ALL SELECT 1,2   @HTTP 请求
+    [0.85 高] Web攻击载荷: 路径穿越 / 本地文件包含 ×1；例: /download?f=../../../etc/passwd   @HTTP 请求
+  【低置信（线索参考）】
+    [0.42 低] 短文本响应: GET /index.php?id=1%20AND%209418%3D3822%20UNION%20ALL%20SELECT%201%2C2 => ok   @10.9.9.30:52000 -> 10.9.9.40:80
+==============================================================================
 [文件] t2.pcapng (0.2 KB)
   格式: pcapng  链路类型: Ethernet   数据包: 1 个
   【主机表】IP ↔ MAC / 主机名（ARP+Ethernet+DHCP+NBNS）：
@@ -160,16 +180,16 @@
     [0.45 低] DNS查询: Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFy.exfil.tunnel-domain.com   @10.9.9.10 -> 10.9.9.20（超长标签（编码外带/隧道特征））
     [0.42 低] DNS查询（常规域名，已折叠）: 1 个：adsh.wagbridge.taobao.alimama.com.gds.alibabadns.com   @共 1 条 UDP/53 查询
 
-[留存区] 已记录本次扫描（19 条候选）：<TMP>/work
+[留存区] 已记录本次扫描（21 条候选）：<TMP>/work
   已知答案可回填: ctfsweep mark "<TMP>/work" <真实flag>
 
 ==============================================================================
 
 【元判断核综合评分】
-总发现项: 30
-  高置信（>=0.85）: 15
+总发现项: 33
+  高置信（>=0.85）: 17
   中置信（0.55-0.85）: 8
-  低置信（<0.55）: 7
+  低置信（<0.55）: 8
 
 【前 10 项发现】
   1. [高 0.97] 明文flag
@@ -229,6 +249,8 @@
 【证据汇总】（非 flag 类，按题目要求核实）
   * [FTP成功凭据] dj / dj   (来自 t10-ftp.pcap)
   * [邮件投递信封] billing@example.net → victim@corp.example；主题: New Invoice 59175   (来自 t11-smtp.pcap)
+  * [Web攻击载荷] SQL注入（UNION SELECT） ×1；例: /index.php?id=1 AND 9418=3822 UNION ALL SELECT 1,2   (来自 t12-web.pcap)
+  * [Web攻击载荷] 路径穿越 / 本地文件包含 ×1；例: /download?f=../../../etc/passwd   (来自 t12-web.pcap)
   * [Kerberos票据] AS-REP（可 AS-REP Roasting） | svc_sql | etype RC4-HMAC | cipher 48B | RC4：hashcat -m 18200/13100 可离线爆破（首选）   (来自 t5-ad.pcap)
   * [Kerberos票据] $krb5asrep$23$svc_sql@CORP.LOCAL:0b30557a9fc4e90e33587da2c7ec1136$5b80a5caef14395e83a8cdf2173c6186abd0f51a3f6489aed3f81d42678cb1d6   (来自 t5-ad.pcap)
   * [NetNTLM] NetNTLMv2 响应（hashcat -m 5600）：kanna.seto@corp   (来自 t5-ad.pcap)
@@ -237,5 +259,5 @@
   * [交互会话记录] 命令序列: whoami; ipconfig; net user   (来自 t7-tls.pcap)
   * [系统版本] 10.0.19041.1   (来自 t7-tls.pcap)
 【扫描统计】
-  线路报告（抓包/原始文件）：高 14 条 / 中 9 条 / 低 10 条
-  模块报告（类型块）：高 15 条 / 中 8 条 / 低 7 条
+  线路报告（抓包/原始文件）：高 16 条 / 中 9 条 / 低 11 条
+  模块报告（类型块）：高 17 条 / 中 8 条 / 低 8 条

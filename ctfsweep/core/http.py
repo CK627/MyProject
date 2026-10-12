@@ -74,16 +74,65 @@ def http_body_decode(body):
     return cur, notes
 
 
+# ---------------------------------------------------------------- Web 攻击载荷
+# ⚠️ 必须**先百分号解码**再匹配：真实流量里的 SQLi 载荷是
+# `id=1%20AND%209418%3D3822%20UNION%20ALL%20SELECT`（sqlmap 的标准编码），
+# 直接对原始 URI 匹配会一条不漏地全部错过——实测 山东.pcapng 的 106 条请求里
+# 有 5 条是攻击载荷（UNION SELECT / 布尔盲注 / XSS），修复前零输出。
+_WEB_ATTACKS = (
+    # `union [all] select` 中间允许注释/关键字噪音（union/**/all/**/select）
+    (re.compile(r'\bunion\b[\s/*!+-]*(?:all\b[\s/*!+-]*)?\bselect\b'), 'SQL注入（UNION SELECT）'),
+    (re.compile(r"(?:\band\b|\bor\b)\s*[('\"]?\s*\d+\s*=\s*\d+"), 'SQL注入（布尔盲注）'),
+    # exp( 单独出现太常见（表达式接口/JS），必须跟着 select 才算报错注入
+    (re.compile(r'\b(?:sleep|benchmark|extractvalue|updatexml|load_file)\s*\('
+                r'|\bexp\s*\([^)]{0,40}\bselect\b|\bfloor\s*\(\s*rand\s*\('),
+     'SQL注入（时间/报错盲注函数）'),
+    (re.compile(r'\binformation_schema\b|@@version|\bwaitfor\s+delay\b|\bconcat_ws\s*\('),
+     'SQL注入（库表探测）'),
+    (re.compile(r'<\s*script\b|\bon(?:error|load|mouseover)\s*=|\bjavascript\s*:|\balert\s*\('),
+     'XSS 跨站脚本载荷'),
+    (re.compile(r'(?:\.\./){2,}|/etc/passwd|/proc/self/environ|php://(?:filter|input)|data://text'),
+     '路径穿越 / 本地文件包含'),
+    (re.compile(r'(?:^|[;&|])\s*(?:cat|whoami|id|uname|wget|curl|nc)\s+[/\-\w]|cmd\.exe|powershell\s+-'),
+     '命令注入'),
+    (re.compile(r'=\s*(?:system|exec|shell_exec|passthru|popen|eval|assert|preg_replace)\s*\('),
+     'Webshell 参数执行'),
+)
+
+
+def web_attack_reason(uri):
+    """URI（原始，未解码）是否含攻击载荷；返回中文原因，None = 常规请求。"""
+    try:
+        text = unquote_plus(uri, errors='replace')
+    except Exception:
+        text = uri
+    low = text.lower()
+    for pat, reason in _WEB_ATTACKS:
+        if pat.search(low):
+            return reason
+    return None
+
+
 def http_summary(blob, ts0, http_reqs, form_fields):
-    """从 TCP 流中提取 HTTP 请求行与 POST 表单字段（服务目录扫描次序/登录凭证/上传路径类题目）"""
+    """从 TCP 流中提取 HTTP 请求行与 POST 表单字段（服务目录扫描次序/登录凭证/上传路径类题目）。
+
+    返回 [(攻击原因, 解码后的 URI)]（无攻击载荷时为空列表），供调用方汇总上报。
+    """
+    hits = []
     window = blob[:2 * 1024 * 1024]
     matches = list(HTTP_REQ_RE.finditer(window))
     if not matches:
-        return
+        return hits
     for mi, m in enumerate(matches):
         method = m.group(1).decode()
         uri = m.group(2).decode('latin-1')
         http_reqs.append((ts0, method, uri))
+        reason = web_attack_reason(uri)
+        if reason:
+            try:
+                hits.append((reason, unquote_plus(uri, errors='replace')))
+            except Exception:
+                hits.append((reason, uri))
         if method != 'POST':
             continue
         seg_end = matches[mi + 1].start() if mi + 1 < len(matches) else min(len(window), m.end() + 20000)
@@ -120,6 +169,7 @@ def http_summary(blob, ts0, http_reqs, form_fields):
                 pass
         if kvs:
             form_fields.append((uri, kvs))
+    return hits
 
 
 def jwt_summary(tok):

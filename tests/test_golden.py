@@ -60,6 +60,7 @@ def cases():
         ('t10-ftp.pcap', [p('t10-ftp.pcap')]),
         ('t10-ftp.pcap+brief', [p('t10-ftp.pcap'), '-q']),
         ('t11-smtp.pcap', [p('t11-smtp.pcap')]),
+        ('t12-web.pcap', [p('t12-web.pcap')]),
         ('t4.pcap+extract', [p('t4.pcap'), '--extract',
                              '--extract-dir', os.path.join(EXOUT, 't4')]),
         ('t7-tls.pcap+extract', [p('t7-tls.pcap'), '--extract',

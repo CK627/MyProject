@@ -612,6 +612,20 @@ def main():
         check('[0.85 高] 邮件投递信封' in out, '信封进高置信（可直接核验）')
         check('[0.55 中] 邮件会话' in out, '会话形态进中置信（高于 MIN_SCORE，不被静默滤掉）')
 
+        print('== t12-web.pcap：HTTP 攻击载荷（百分号编码）==')
+        rc, out = run_cli([os.path.join(tmp, 't12-web.pcap')])
+        # 山东.pcapng 实测：106 条请求里几十条是 sqlmap 载荷，全部百分号编码
+        # （`%20AND%209418%3D3822%20UNION%20ALL%20SELECT`）。对原始 URI 匹配一条都报不出，
+        # 整份文件零 finding——而"被注入了什么"正是那道题的核心。
+        check('SQL注入（UNION SELECT） ×1' in out, 'SQLi：百分号解码后才匹配（UNION ALL SELECT）')
+        check('例: /index.php?id=1 AND 9418=3822 UNION ALL SELECT 1,2' in out,
+              'SQLi：报告里给出**解码后**的可读载荷')
+        check('路径穿越 / 本地文件包含 ×1' in out, '路径穿越：..%2F..%2F..%2Fetc%2Fpasswd 命中')
+        check('[0.85 高] Web攻击载荷' in out, '攻击载荷进高置信（可直接核验）')
+        # 三种请求里只有两条是攻击：常规的 `?id=1` 若被算进去，"类数"会变成 3
+        check('  [Web攻击载荷] 2 类（共 2 条请求' in out,
+              '常规请求（?id=1）不被误报为攻击载荷')
+
         print('== 判断核（judge）==')
         check_judge(tmp)
 

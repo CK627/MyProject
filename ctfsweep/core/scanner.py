@@ -96,7 +96,7 @@ def scan_capture(data, keywords, do_decode, depth, extract=None, ctx=None):
     # 解析结果来自 ctx（tcp_streams / udp_payloads / unknown_pkts 已在里面建好）；
     # 这里仍按包序重放 l4 以产出 findings，顺序与原先逐包交错时完全一致
     tcp_streams, udp_payloads = ctx.tcp_streams, ctx.udp_payloads
-    http_reqs, form_fields = [], []
+    http_reqs, form_fields, web_hits = [], [], []
     unknown_pkts = ctx.unknown_pkts
     for num, lt, pkt, ts, r in ctx.l4:
         if not r:
@@ -160,7 +160,7 @@ def scan_capture(data, keywords, do_decode, depth, extract=None, ctx=None):
             collect_pwds_from_blob(blob)          # 采集候选口令（供加密压缩包尝试）
         loc = '%s:%d -> %s:%d (会话拼接 %dB)' % (dirkey[0], dirkey[1], dirkey[2], dirkey[3], len(blob))
         scan_blob(blob, keywords, do_decode, depth, findings, seen, loc)
-        http_summary(blob, segs[0][1], http_reqs, form_fields)
+        web_hits += http_summary(blob, segs[0][1], http_reqs, form_fields)
         if len(blob) <= 3 * 1024 * 1024:
             for m in JWT_RE.finditer(blob):              # JWT 令牌（伪造身份/认证题）
                 desc = jwt_summary(m.group(0))
@@ -308,6 +308,21 @@ def scan_capture(data, keywords, do_decode, depth, extract=None, ctx=None):
                 os.rmdir(extract['outdir'])
             except OSError:
                 pass
+
+    # Web 攻击载荷：按**攻击类型**聚合成一条，不按请求条数刷屏——sqlmap 一次扫描
+    # 就是几百条载荷，逐条列出会让真正要看的东西（用了哪些手法、打了哪个参数）淹掉。
+    if web_hits:
+        by_reason = {}
+        for reason, uri in web_hits:
+            by_reason.setdefault(reason, [])
+            if uri not in by_reason[reason]:
+                by_reason[reason].append(uri)
+        print('  [Web攻击载荷] %d 类（共 %d 条请求，URI 已百分号解码）：'
+              % (len(by_reason), len(web_hits)))
+        for reason, uris in sorted(by_reason.items(), key=lambda kv: -len(kv[1])):
+            print('    %s ×%d  例: %s' % (reason, len(uris), uris[0][:150]))
+            add((0.85, 'Web攻击载荷', b'', '%s ×%d；例: %s' % (reason, len(uris), uris[0][:200]),
+                 'HTTP 请求'), findings, seen)
 
     if http_reqs:
         print('  [HTTP请求序列] 共 %d 条（按时间）：' % len(http_reqs))
