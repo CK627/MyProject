@@ -419,10 +419,20 @@ def scan_ad(tcp_streams, udp_payloads, add):
                      .encode('utf-8', 'replace'), loc))
                 add((0.85, 'NetNTLM', b'', h.encode('utf-8', 'replace'), loc + ' [hashcat]'))
             else:
-                add((0.55, '域账号', b'',
-                     ('NTLM 认证：%s\\%s（主机 %s，未捕获 challenge）'
-                      % (inf.get('domain', ''), user, inf.get('host', '')))
-                     .encode('utf-8', 'replace'), loc))
+                # ⚠️ Type-3 的账号字段常为空（匿名/机器认证/被截断），拼出来就是
+                # `NTLM 认证：\（主机 WIN7-1，未捕获 challenge）`——一个反斜杠两边全空，
+                # 零信息量还占【前 10 项发现】一席（实测 A.pcapng）。有账号才写账号，
+                # 没有就只报"这台主机发生了 NTLM 认证"；两者都空则整条丢弃。
+                dom, host = inf.get('domain', ''), inf.get('host', '')
+                who = ('%s\\%s' % (dom, user)).strip('\\')
+                if who:
+                    text = 'NTLM 认证：%s（主机 %s，未捕获 challenge）' % (who, host or '未知')
+                elif host:
+                    text = 'NTLM 认证（账号字段为空，未捕获 challenge）：主机 %s' % host
+                else:
+                    text = ''
+                if text:
+                    add((0.55, '域账号', b'', text.encode('utf-8', 'replace'), loc))
 
     # --- 3) LDAP simple bind 明文口令
     for dirkey, blob in streams:

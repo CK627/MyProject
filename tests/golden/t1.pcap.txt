@@ -50,7 +50,7 @@
      模块: scanner
      证据: flag{dns-smoke-ok}
 
-  4. [中 0.81] DGA 域名: zmxhz3tkbnmtc21va2utb2t9.exfil.smoke
+  4. [中 0.76] DGA 域名: zmxhz3tkbnmtc21va2utb2t9.exfil.smoke
      模块: dns
      证据: DGA 分数: 0.70, 查询次数: 1
      建议: 该域名可能是 DGA（域名生成算法）生成的，检查是否为恶意域名
@@ -67,13 +67,13 @@
      模块: scanner
      证据: WEBUI_SK=Advanced_System_for_Text
 
-  8. [低 0.50] DNS查询
-     模块: scanner
-     证据: ZmxhZ3tkbnMtc21va2Utb2t9.exfil.smoke
-
-  9. [低 0.50] 关键词
+  8. [低 0.50] 关键词
      模块: scanner
      证据: zk5OTk5OTk5fQ.smoke-signature plain: flag{plain-smoke-ok} hex: 666c61677b6833782d736d6f6b652d6f6b7d PWD=/AstrBot WEBUI_SK=Advanced_System_for_Text
+
+  9. [低 0.45] DNS查询
+     模块: scanner
+     证据: ZmxhZ3tkbnMtc21va2Utb2t9.exfil.smoke
 
 ==============================================================================
 【flag 候选汇总】（可直接核验/提交）

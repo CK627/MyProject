@@ -553,6 +553,126 @@ def _client_hello(sni=None, hs_type=1):
     return b'\x16\x03\x01' + struct.pack('>H', len(hs)) + hs
 
 
+def check_kw_boundary_gate():
+    """关键词必须是独立词，不能是词内子串（纯离线）。
+
+    回归目标：`A.pcapng` 的一段 SocksiPy 代理脚本 hex 解码出 Python 源码，
+    里面 `flags = args[:-1]` / `def recvfrom(self, bufsize, flags=0)` 让裸子串
+    判定 `k in low` 命中关键词 `flag`，于是【前 10 项发现】的第 3–5 席全是
+    `hex` 线索（证据是 Python 源码片段），真正的 Kerberos 票据被挤下去。
+    同一个裸子串判定还让 DGA 随机串里的 `c2`、URL 编码里的 `%2C2` 白拿 +0.05。
+    """
+    from ctfsweep.core.decode import decode_chain
+    from ctfsweep.core.meta_judge import MetaJudge
+    from ctfsweep.core.utils import decode_score, kw_hit_bounded
+
+    # (a) 词内子串不算命中；独立词 / flag{ 形态算命中
+    cases = [
+        ('def recvfrom(self, bufsize, flags=0)', 'flag', False),
+        ('FolderValueFlags=1', 'flag', False),
+        ('create_pdo_flag', 'flag', False),
+        ('the flag is here', 'flag', True),
+        ('payload flag{abc}', 'flag', True),
+        ('payload flag{abc}', 'flag{', True),
+        ('prefix2c2suffix', 'c2', False),      # URL 编码 %2c2 / 随机串
+        ('beacon to c2 now', 'c2', True),
+        ('keyboard layout', 'key', False),
+        ('the key is here', 'key', True),
+        # `key` 落在标识符内部（`api_key`）不算——但 `api_key` 自身在
+        # HIGH_PRIORITY_KEYWORDS 里，所以该场景仍然命中，只是走另一条关键词
+        ('api_key = x', 'key', False),
+        ('api_key = x', 'api_key', True),
+    ]
+    bad = ['%r/%s' % (t, k) for t, k, want in cases
+           if kw_hit_bounded(t, [k]) != want]
+    check(not bad, '关键词边界：词内子串不算命中%s'
+          % ('（异常：%s）' % ','.join(bad[:3]) if bad else ''))
+
+    # (b) 解码链：Python 源码的 hex 产物不再被当成线索（曾产出 3 条 hex）
+    src = (b'return _BaseSocket.recvfrom(self, bufsize, flags) '
+           b'if not self._proxyconn: self.bind(("", 0))')
+    hits, seen = [], set()
+    decode_chain(src.hex().encode(), ['flag', 'ctf', 'key'], 3, hits, seen)
+    check(not hits, '解码链：源码里的 flags 不再产出 hex 线索')
+
+    # (c) 解码链正例：真 flag{...} 必须照旧命中
+    hits, seen = [], set()
+    decode_chain(b'the flag{abc123} is here'.hex().encode(),
+                 ['flag', 'ctf', 'key'], 3, hits, seen)
+    check(len(hits) == 1 and hits[0][1] == 'hex', '解码链：真 flag 仍被解出')
+
+    # (d) 解码打分：`flags` 不给关键词档（0.70），落回 0.60
+    check(decode_score(b'def f(self, flags=0): pass', ['flag']) == 0.60,
+          '解码打分：词内的 flags 不算关键词命中')
+
+    # (e) 元判断核：证据里的词内 `flags` 不再白拿 +0.05
+    def score_of(ev):
+        return MetaJudge([{'module': 'scanner', 'kind': 'hex', 'confidence': 0.60,
+                           'evidence': ev}]).score()[0]['score']
+    check(score_of('flags = args[:-1]') == 0.60,
+          '元判断核：证据含词内 flags 时不加成')
+    check(score_of('the flag{abc} is here') == 0.65,
+          '元判断核：证据含真 flag 时仍 +0.05')
+
+
+def _ntlm_type3(domain='', user='', host='', nt=b''):
+    """手工拼一条 NTLMSSP Type-3（认证）报文，供离线回归使用。
+
+    布局：签名(8) + 消息类型(4) + 六个安全缓冲区（各 8 字节：len/maxlen/offset），
+    缓冲区次序 LM(0)/NT(1)/Domain(2)/User(3)/Host(4)/SessionKey(5)，字段按
+    UTF-16LE 存放——真实报文就是这种编码（`ad._ntlm_field` 也正是这么取的）。
+    """
+    import struct
+    head = b'NTLMSSP\x00' + struct.pack('<I', 3)
+    fields = [b'', nt, domain.encode('utf-16-le'), user.encode('utf-16-le'),
+              host.encode('utf-16-le'), b'']
+    off, bufs, body = 12 + 6 * 8, b'', b''
+    for f in fields:
+        bufs += struct.pack('<HHI', len(f), len(f), off + len(body))
+        body += f
+    return head + bufs + body
+
+
+def check_ad_ntlm_empty_account():
+    """NTLM Type-3 账号字段为空时，不得产出"只有一个反斜杠"的线索（纯离线）。
+
+    回归目标：`A.pcapng` 的【前 10 项发现】里曾有一条
+    `域账号: NTLM 认证：\\（主机 WIN7-1，未捕获 challenge）`——匿名/机器认证的
+    Type-3 报文 domain 与 user 都是空串，`'%s\\%s'` 硬拼出来就只剩一个反斜杠，
+    对解题零引导价值，却照样占掉前十的一席。
+    """
+    from ctfsweep.core.ad import scan_ad
+
+    def evidence_for(domain='', user='', host=''):
+        """跑一遍 scan_ad，按渲染口径（val 走 utf-8）解码出「域账号」线索文本。"""
+        out = []
+        scan_ad({}, [(1, '10.0.0.5', 40000, '10.0.0.9', 445,
+                      _ntlm_type3(domain, user, host))],
+                lambda f: out.append(f))
+        return [f[3].decode('utf-8', 'replace') for f in out if f[1] == '域账号']
+
+    # 1) 全空 —— 旧版会吐出 `NTLM 认证：\（主机 ，...）`，现在整条丢弃
+    empty = evidence_for()
+    check(not empty, 'NTLM：domain/user/host 全空时不产出空壳线索')
+    check(not any('认证：\\（' in e for e in empty),
+          'NTLM：不出现"认证：\\（"这种孤立反斜杠')
+
+    # 2) 只有域没有账号 —— 不拼出 `CORP\`，退化成"域 CORP 上的认证"
+    dom = evidence_for(domain='CORP')
+    check(dom == ['NTLM 认证：CORP（主机 未知，未捕获 challenge）'],
+          'NTLM：只有域时不拼尾反斜杠')
+
+    # 3) 只有主机 —— 主机名本身仍是有效信息，必须留下
+    check(evidence_for(host='WIN7-1')
+          == ['NTLM 认证（账号字段为空，未捕获 challenge）：主机 WIN7-1'],
+          'NTLM：账号为空但主机名可用时仍输出主机')
+
+    # 4) 账号齐全 —— 正常形态逐字不变（域\账号）
+    check(evidence_for(domain='CORP', user='alice', host='PC1')
+          == ['NTLM 认证：CORP\\alice（主机 PC1，未捕获 challenge）'],
+          'NTLM：账号齐全时保持 域\\\\账号 形态')
+
+
 def check_tls_sni():
     """TLS SNI 提取：全 HTTPS 的题目里，C2/投递域名只存在于 SNI（纯离线）。
 
@@ -883,6 +1003,12 @@ def main():
 
         print('== 重复结论去重 / 文本闸门 ==')
         check_dedup_and_text_gate()
+
+        print('== 关键词边界（词内子串不算命中）==')
+        check_kw_boundary_gate()
+
+        print('== NTLM 空账号字段的闸门 ==')
+        check_ad_ntlm_empty_account()
 
         print('== TLS SNI 提取 ==')
         check_tls_sni()

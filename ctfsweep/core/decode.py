@@ -3,7 +3,7 @@
 import re
 
 from .utils import (B64_RUN, BRACE_CORE, FLAG_RE, HEX_RUN, decode_score,
-                    printable_ratio, try_b64, try_hex)
+                    kw_hit_bounded, printable_ratio, try_b64, try_hex)
 
 
 def decode_chain(blob, keywords, depth, out, seen):
@@ -16,8 +16,7 @@ def decode_chain(blob, keywords, depth, out, seen):
             dec = fn(tok)
             if not dec or len(dec) < 6 or printable_ratio(dec) < 0.8:
                 continue
-            low = dec.lower()
-            has_kw = any(k.encode() in low for k in keywords)
+            has_kw = kw_hit_bounded(dec, keywords)
             has_brace = b'{' in dec and b'}' in dec and BRACE_CORE.search(dec)
             if not (has_kw or has_brace or FLAG_RE.search(dec)):
                 continue

@@ -14,8 +14,8 @@ from .extract import (PWD_POOL, carve_base64_blobs, carve_files,
 from .http import build_http_transactions, http_summary, jwt_summary
 from .utils import (FLAG_RE, JWT_RE, SECRET_LINE_RE, SENSITIVE_NAME_RE,
                     decode_score, dns_lead_reason, kw_boundary_ok,
-                    printable_ratio, readable_window, try_b64, ts_str,
-                    under_known_infra)
+                    kw_hit_bounded, printable_ratio, readable_window, try_b64,
+                    ts_str, under_known_infra)
 
 
 def _is_tls_stream(blob):
@@ -191,7 +191,7 @@ def scan_capture(data, keywords, do_decode, depth, extract=None, ctx=None):
         for label in q.split(b'.'):
             if len(label) >= 12:
                 dec = try_b64(label)
-                if dec and printable_ratio(dec) > 0.8 and (b'{' in dec or any(k.encode() in dec.lower() for k in keywords)):
+                if dec and printable_ratio(dec) > 0.8 and (b'{' in dec or kw_hit_bounded(dec, keywords)):
                     add((decode_score(dec, keywords), 'base64', label, dec, 'DNS子域名 %s -> %s' % (src, dst)), findings, seen)
 
     if dns_routine:

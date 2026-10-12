@@ -117,7 +117,7 @@ MetaJudge 按 `MODULE_WEIGHTS`（ad 0.95 / memory 0.90 / config 0.85 … scanner
 
 ### 噪音闸门（改扫描逻辑时先看这里）
 
-判定标准是**"这条输出对解题有没有引导价值"**，不是"看起来像不像可疑"。已经落地的十四条：
+判定标准是**"这条输出对解题有没有引导价值"**，不是"看起来像不像可疑"。已经落地的十六条：
 
 - **二进制容器先抽字符串**（`core/logs.py::_extract_strings`）：`.evtx` 这类容器不能按字节
   当文本读——`\x60` 之类的字节巧合会被喂给攻击正则，刷出满屏「RCE（命令替换）」，
@@ -235,6 +235,27 @@ MetaJudge 按 `MODULE_WEIGHTS`（ad 0.95 / memory 0.90 / config 0.85 … scanner
     「PE (Windows)」——kernel pwn 题的关键附件被判成 Windows 可执行文件，方向就带偏了。
     真标志是偏移 `0x202` 的 `HdrS`。递归解压成功的证据只留**成员名**，
     不留 `/var/folders/...` 临时路径。
+- **账号字段为空时别硬拼分隔符**（`core/ad.py::scan_ad` 的 NTLM 分支）：NTLM Type-3
+  的 `domain`/`user` 常为空（匿名认证、机器账户、报文被截断），旧代码无条件
+  `'%s\\%s' % (domain, user)`，于是实测 `A.pcapng` 报出
+  `NTLM 认证：\（主机 WIN7-1，未捕获 challenge）`——**整条线索的价值就是一个孤立反斜杠**，
+  却照样占掉【前 10 项发现】一席。改成有账号才写 `域\账号`，没账号只报
+  "这台主机发生了 NTLM 认证"（主机名仍是有效信息），两者都空则整条丢弃。
+  ⚠️ 同文件 `_add_user()` 早有 `if u and u != '?'` 守卫，账号**列表**本来就是干净的——
+  漏的只是这条拼串，改的时候别把两处搞混。
+- **关键词必须是独立词，不能是词内子串**（`core/utils.py::kw_hit_bounded`）：解码链
+  （`decode_chain`）、解码打分（`decode_score`）、DNS 子域解码（`scanner.py`）与元判断核
+  的关键词加成，原来都写 `k.encode() in low` 这种**裸子串**判定。实测 `A.pcapng`：
+  一段 SocksiPy 代理脚本 hex 解码出 Python 源码，里面的 `flags = args[:-1]`、
+  `def recvfrom(self, bufsize, flags=0)` 让 `flags` 命中关键词 `flag`，于是产出 **3 条
+  `hex` 线索**（证据是 Python 源码片段，两条还是词中间截断的），再靠关键词加成顶到 0.65，
+  把【前 10 项发现】的第 3–5 席全占了。同一个判定还让 DGA 随机串里的 `c2`
+  （`...c21va2ut...`）、URL 编码里的 `%2C2` 白拿 +0.05。
+  判据与 `blobscan` 的 ASCII 通道共用 `kw_boundary_ok`；关键词自身以标点结尾
+  （`flag{`）时右边界由标点保证，只看左边界（`myflag{x}` 不算）。
+  ⚠️ 这条**会改分数**：`tests/golden/t1.pcap.txt` 两条与 `t12-web.pcap.txt` 一条各降 0.05
+  （全是 `c2` 的误命中），已随改动重录——重录前逐行核对过，不是"改测试让它过"。
+  `tests/test_smoke.py::check_kw_boundary_gate()` 端到端守着。
 
 ### 输入解析层
 

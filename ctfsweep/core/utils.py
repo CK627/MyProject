@@ -311,6 +311,54 @@ def kw_boundary_ok(text, i, kw):
     return True
 
 
+def _kw_span_ok(low, i, k):
+    """`low[i:i+len(k)]` 这个命中区间是否算**独立词**（左边界 + 右边界）。"""
+    if not k:
+        return False
+    if not k[-1].isalnum():
+        # 关键词自身以标点结尾（`flag{`）：右边界由标点本身保证，只看左边
+        prv = low[i - 1:i] if i else ''
+        return not (prv and prv.isascii() and (prv.isalnum() or prv == '_'))
+    return kw_boundary_ok(low, i, k)
+
+
+def kw_hit_bounded(data, keywords):
+    """bytes/str 版关键词判定：命中位置必须是**独立词**，不是词内子串。
+
+    解码链（`decode_chain`）、解码打分（`decode_score`）与元判断核的关键词加成
+    原来写的都是 `k.encode() in low` 这类**裸子串**判定，于是 Python 源码里的
+    `flags = args[:-1]`、`def recvfrom(self, bufsize, flags=0)` 会被当成关键词
+    `flag` 命中。实测 `A.pcapng`：一段 SocksiPy 代理脚本的 hex 解码产物因此
+    产出 3 条 `hex` 线索（证据是 Python 源码片段），被关键词加成顶到 0.65，
+    把【前 10 项发现】的第 3–5 席全占了——而真正要看的 Kerberos 票据被挤到下面。
+    词内误报的口径与 `blobscan` 的 ASCII 通道一致（同一个 `kw_boundary_ok`）。
+
+    传入 bytes 时两种解码都看：latin-1（1 字节 ↔ 1 字符，ASCII 关键词的命中位置
+    与原 `k.encode() in low` 完全一致）与 utf-8（还原用户用 `-k 密码` 这类
+    非 ASCII 关键词时的既有效果）。纯 ASCII 场景两者等价，不会重复命中。
+    """
+    if isinstance(data, bytes):
+        views = [data.decode('latin-1')]
+        try:
+            u = data.decode('utf-8')
+        except UnicodeDecodeError:
+            u = None
+        if u is not None and u != views[0]:
+            views.append(u)
+    else:
+        views = [data]
+    for text in views:
+        low = text.lower()
+        for kw in keywords:
+            k = kw.lower()
+            i = low.find(k)
+            while i >= 0:
+                if _kw_span_ok(low, i, k):
+                    return True
+                i = low.find(k, i + 1)
+    return False
+
+
 def try_hex(tok):
     try:
         return bytes.fromhex(tok.decode('ascii'))
@@ -337,8 +385,7 @@ def printable_ratio(b):
 def decode_score(dec, keywords):
     if FLAG_RE.search(dec):
         return 0.95
-    low = dec.lower()
-    has_kw = any(k.encode() in low for k in keywords)
+    has_kw = kw_hit_bounded(dec, keywords)
     has_brace = b'{' in dec and b'}' in dec and BRACE_CORE.search(dec)
     if has_kw and has_brace:
         return 0.70

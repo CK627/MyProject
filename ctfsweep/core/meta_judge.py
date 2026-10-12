@@ -33,7 +33,7 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
-from .utils import BAND_HIGH, BAND_MID, level_of
+from .utils import BAND_HIGH, BAND_MID, kw_hit_bounded, level_of
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +190,11 @@ class MetaJudge:
             # 5. 综合评分：加成封顶在 BONUS_CEILING，避免与已顶格的形态倒挂
             if confidence < BONUS_CEILING:
                 final_score = confidence + prior_bonus
-                if any(kw in kind.lower() or kw in evidence.lower() for kw in HIGH_PRIORITY_KEYWORDS):
+                # 关键词必须是**独立词**：裸子串判定会让 `flags = args[:-1]` 命中
+                # `flag`、hex 串里的 `c2` 命中 `c2`、`keyboard` 命中 `key`，
+                # 凭空 +0.05 把噪音顶进【前 10 项发现】（口径见 kw_hit_bounded）
+                if (kw_hit_bounded(kind, HIGH_PRIORITY_KEYWORDS)
+                        or kw_hit_bounded(evidence, HIGH_PRIORITY_KEYWORDS)):
                     final_score += KEYWORD_BONUS
                 final_score = min(final_score, BONUS_CEILING)
             else:

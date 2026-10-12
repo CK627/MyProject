@@ -41,7 +41,7 @@
      模块: scanner
      证据: 路径穿越 / 本地文件包含 ×1；例: /download?f=../../../etc/passwd
 
-  3. [低 0.47] 短文本响应
+  3. [低 0.42] 短文本响应
      模块: scanner
      证据: GET /index.php?id=1%20AND%209418%3D3822%20UNION%20ALL%20SELECT%201%2C2 => ok
 
