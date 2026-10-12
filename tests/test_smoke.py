@@ -15,7 +15,15 @@
   * t3.evtx：UTF-16 明文 + 花括号片段 + 启发式拼接 + 噪音闸门（dll 后缀 / GUID / 乱码区剔除）
   * t4.pcap --extract：文件雕刻 + zip 内容扫描 + 落盘
   * 判断核（judge）：微型数据集训练与分离、train 子命令（留一组评估）、--judge 打分与无模型兜底
+  * 元判断核（meta_judge）：综合分不低于模块自评（单调不降）/ 低权重模块不倒扣 /
+    分档口径与 utils.level_of 一致 / 畸形 confidence 不中断报告
+  * 管线边界：Finding↔5 元组往返后 report() 渲染逐字节不变（含 latin-1 token、str 型 val）
   * t5-ad.pcap：AD 域协议（Kerberos 票据 / NetNTLM 响应 / LDAP 明文绑定 / SPN）
+  * t6-hosts.pcap：主机表（ARP/Ethernet IP↔MAC + DHCP 主机名）
+  * t7-tls.pcap：TLS 流雕刻跳过 / JPEG 头判别 / HTML 反误报 / 真 Windows 会话正例
+  * t8-b64.pcap：HTML 载荷页内嵌 base64 的 ZIP（saveAs 页）自动解码提取
+  * t9-dns.pcap：DNS 真实解析（长查询外带）/ HTML·CSS·文件名反误报
+  * t10-ftp.pcap：FTP 会话（非 flag 证据）/ 二进制关键词字节巧合闸门 / 文本关键词正例
   * 目录模式
 """
 import json
@@ -82,10 +90,10 @@ def check_completions():
     check('-f --file' in code and '-k --keywords' in code, 'zsh 补全：配对选项以 "-f --file" 合并显示')
     check('-F --folder' in code and '--folder:' in code, 'zsh 补全：含 -F --folder（指定文件夹）')
     check('--extract' in code and '--min-score' in code, 'zsh 补全：含主要选项')
-    check('--check' in code, 'zsh 补全：update --check 在场')
+    check('update:更新指引' in code and 'install:已弃用' in code, 'zsh 补全：update/install 新语义文案在场')
     check('train' in code and '--judge' in code, 'zsh 补全：含 train 子命令与 --judge')
     bash = open(os.path.join(ROOT, 'completions', 'ctfsweep.bash'), encoding='utf-8').read()
-    check('--extract' in bash and '--check' in bash and '--folder' in bash, 'bash 补全：含主要选项与 --check')
+    check('--extract' in bash and '--folder' in bash, 'bash 补全：含主要选项')
     check('train' in bash and '--judge' in bash, 'bash 补全：含 train 与 --judge')
 
 
@@ -135,7 +143,7 @@ def check_judge(tmp):
 
     # 2) CLI train：留一组评估 + 保存
     ds = os.path.join(tmp, 'judge_ds.jsonl')
-    mdl = os.path.join(tmp, 'judge_model.json')
+    mdl = os.path.join(tmp, 'judge_model.ctfj')
     with open(ds, 'w', encoding='utf-8') as f:
         for r in rows:
             f.write(json.dumps(r, ensure_ascii=False) + '\n')
@@ -154,7 +162,7 @@ def check_judge(tmp):
     check('【判断核·重点候选】' in out, '--judge：重点候选区块')
 
     # 4) 无模型兜底：提示但扫描照常
-    os.environ['CTFSWEEP_JUDGE_MODEL'] = os.path.join(tmp, 'no_such_model.json')
+    os.environ['CTFSWEEP_JUDGE_MODEL'] = os.path.join(tmp, 'no_such_model.ctfj')
     try:
         rc, out = run_cli([os.path.join(tmp, 't2.pcapng'), '--judge'])
     finally:
@@ -162,9 +170,174 @@ def check_judge(tmp):
     check('未找到模型' in out and 'flag{pcapng-smoke-ok}' in out,
           '--judge 无模型：提示并正常扫描')
 
+    # 5) 留存区：扫描自动记录 + mark 回填
+    txt = os.path.join(tmp, 'marked_task.txt')
+    with open(txt, 'w', encoding='utf-8') as f:
+        f.write('the answer is flag{marked-task-ok} with some noise tail')
+    rc, out = run_cli([txt])
+    check('[留存区] 已记录本次扫描' in out, '留存区：扫描自动记录')
+    rc, out = run_cli(['mark', txt, 'flag{marked-task-ok}'])
+    check(rc == 0 and '回填' in out, 'mark：回填执行')
+    ds_path = judge.default_dataset_path()
+    rows = judge.load_rows(ds_path) if os.path.isfile(ds_path) else []
+    marked = [r for r in rows if r.get('verify_reason') == 'user_marked']
+    check(len(marked) >= 1 and any(r['label'] == 1.0 for r in marked), 'mark：正样本入集')
+    check(all(len(r['feats']) == len(judge.FEATURES) for r in marked), 'mark：特征维度正确')
+    rec = judge.find_retention_for(txt)
+    check(rec is not None and rec.get('status') == 'marked', '留存区：状态更新为 marked')
+    check(rec is not None and rec.get('answer') == 'flag{marked-task-ok}', '留存区：记录答案')
+
+
+def check_report_equivalence():
+    """CLI 边界的等价性：`report([f.to_tuple() for f in findings])` ≡ `report(原始元组)`。
+
+    即 `Finding.from_tuple()`/`to_tuple()` 往返不丢分、不解码。覆盖 report() 的
+    每一个 kind 分支，外加：非 UTF-8 的 bytes token、字符串型 val、pfunc 路径。
+    """
+    import io
+    from contextlib import redirect_stdout
+    from ctfsweep.core.report import report
+    from ctfsweep.core.router import Finding
+
+    cases = [
+        (0.97, '明文flag', b'flag{x}', b'flag{x}', 'loc01'),
+        (0.95, 'hex', b'666c6167', b'flag{h}', 'loc02'),
+        (0.93, 'base64', b'ZmxhZw==', b'flag{b}', 'loc03'),
+        (0.91, 'USB键盘输入', b'usb', b'abc', 'loc04'),
+        (0.88, 'DNS查询', b'dns', b'evil.com', 'loc05'),
+        (0.86, 'JWT', b'jwt', b'eyJhbGci', 'loc06'),
+        (0.84, 'Kerberos票据', b'krb', b'ticket', 'loc07'),
+        (0.82, 'NetNTLM', b'ntlm', b'resp', 'loc08'),
+        (0.80, 'LDAP口令', b'ldap', b'pwd', 'loc09'),
+        (0.78, '域账号', b'ad', b'user', 'loc10'),
+        (0.76, '命令回显', b'cmd', b'whoami', 'loc11'),
+        (0.74, '环境/配置', b'env', b'K=V', 'loc12'),
+        (0.72, '短文本响应', b'short', b'ok', 'loc13'),
+        (0.70, '片段-abc', b'frag', b'fragval', 'loc14'),
+        (0.68, '关键词[flag]', b'kw', b'kwval', 'loc15'),
+        # 非 UTF-8 token：report 的 tok 走 latin-1，提前用 utf-8 解会变样
+        (0.66, 'hex', b'\xff\xfe\x00\x01', b'raw\xff\xfe', 'loc16'),
+        # val 是 str（部分模块产出 str 而非 bytes）
+        (0.64, '明文flag', 'flag{str-val}', 'flag{str-val}', 'loc17'),
+    ]
+
+    def render(items, **kw):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            report(items, 20, 0.0, **kw)
+        return buf.getvalue()
+
+    # CLI 边界契约：`report([f.to_tuple() for f in findings])` 必须与被替换的原始元组
+    # 渲染逐字节一致——即 from_tuple/to_tuple 往返不丢分、不解码（含 latin-1 token 与
+    # str 型 val）。report() 本身只吃 5 元组，不再做 isinstance 分流。
+    check(render(cases) == render([Finding.from_tuple(t).to_tuple() for t in cases]),
+          'report()：经 Finding 往返的 5 元组渲染逐字节一致（CLI 边界）')
+    check(render(cases, pfunc=lambda t: 0.5)
+          == render([Finding.from_tuple(t).to_tuple() for t in cases], pfunc=lambda t: 0.5),
+          'report()：带 pfunc（判断核打分）时同样一致')
+
+    # to_tuple 必须原样回吐，不得解码
+    check(Finding.from_tuple(cases[15]).to_tuple() == cases[15],
+          'Finding.to_tuple()：原样回吐 5 元组（bytes 不解码）')
+
+    # to_meta_dict 是 MetaJudge 的输入契约：不 round、evidence 取 str(val)[:300]
+    d = Finding.from_tuple((0.975, '明文flag', b't', b'v', 'l')).to_meta_dict()
+    check(d == {'kind': '明文flag', 'confidence': 0.975,
+                'evidence': "b'v'", 'module': 'scanner'},
+          'Finding.to_meta_dict()：与 scanner 结构化输出同形（confidence 不 round）')
+
+
+def check_meta_judge():
+    """元判断核评分不变式（纯离线，不依赖夹具）。
+
+    回归目标：`final = confidence * module_weight` 时代，权重表全部 ≤0.95，
+    乘法只会降分——config 逐字命中的明文 flag（自评 0.97）会被压到 中 0.87。
+    """
+    from ctfsweep.core.meta_judge import MetaJudge, MODULE_WEIGHTS
+    from ctfsweep.core.utils import level_of
+
+    def scored(module, kind, conf, evidence=''):
+        f = {'module': module, 'kind': kind, 'confidence': conf, 'evidence': evidence}
+        return MetaJudge([f]).score()[0]
+
+    # (a) 不变式：综合分恒 >= 模块自评（规则与加成只加不减）
+    bands = (0.0, 0.2, 0.55, 0.61, 0.85, 0.9, 0.97, 1.0)
+    bad = []
+    for module in list(MODULE_WEIGHTS) + ['未知模块']:
+        for conf in bands:
+            got = scored(module, '不变式检查', conf)['score']
+            if got < round(conf, 2):
+                bad.append('%s@%.2f→%.2f' % (module, conf, got))
+    check(not bad, '元判断核：综合分不低于模块自评%s'
+          % ('（异常：%s）' % ','.join(bad[:3]) if bad else ''))
+
+    # archives 权重 0.60 低于中性点 0.65，加成须夹到 0（不倒扣）
+    got = scored('archives', '不变式检查', 0.60)
+    check(got['score'] == 0.60 and got['prior_bonus'] == 0.0,
+          '元判断核：低权重模块不加成也不倒扣（archives 0.60→0.60）')
+
+    # (b) 回归：明文 flag 曾因 0.97*0.85 掉到 中 0.87
+    got = scored('config', '配置中的 flag', 0.97, '配置: flag{router-test}')['score']
+    check(got >= 0.97, '元判断核：config 明文 flag 不再被降级（0.97→%.2f）' % got)
+
+    # (c) MODULE_RULES 只作下限，不得覆盖更高的模块自评
+    got = scored('ad', '域账号', 0.99)['score']
+    check(got >= 0.99, '元判断核：规则分不覆盖更高自评（ad 域账号 0.99→%.2f）' % got)
+
+    # (d) 分档口径与 utils.level_of 一致（0.86 在旧口径里算"中"）
+    mj = MetaJudge([{'module': 'scanner', 'kind': '分级检查',
+                     'confidence': 0.86, 'evidence': ''}])
+    mj.score()
+    summary = mj.get_summary()
+    check(summary['high'] == 1 and summary['medium'] == 0 and level_of(0.86) == '高',
+          '元判断核：分档口径与 level_of 一致（0.86 计高置信）')
+
+    # (e) 畸形 confidence 不得中断整份报告（cli 里 meta.score() 无 try/except）
+    got = scored('config', '畸形检查', None)['score']
+    check(isinstance(got, float), '元判断核：畸形 confidence 不炸（None→%.2f）' % got)
+
+
+def check_router_dispatch(tmp):
+    """文件类型模块必须真的被调度到（防"签名不匹配 → 静默空转"）。
+
+    `Router._dispatch()` 曾无条件给所有模块传 `ctx=`，而 `browser`/`config`/`db`/
+    `email`/`logs`/`memory`/`archives` 七个模块的 `analyze()` 都没有这个形参——
+    全部 `TypeError`，又被 `run_filetype()` 的 `except: pass` 吞掉。症状是这些格式的
+    `【模块名】` 块**永远为空，且不报任何错**。这里两头都守：形参匹配 + 端到端出块。
+    """
+    from ctfsweep.core.capture import CaptureContext
+    from ctfsweep.core.router import Router, _TYPE_MAP
+
+    p = os.path.join(tmp, 'dispatch.txt')
+    with open(p, 'w', encoding='utf-8') as f:
+        f.write('flag{router-dispatch}\n')
+    with open(p, 'rb') as f:
+        ctx = CaptureContext(f.read())
+
+    names = sorted({m for mods in _TYPE_MAP.values() for m in mods})
+    bad = []
+    for name in names:
+        try:
+            Router(p)._dispatch(name, ctx=ctx)
+        except TypeError as ex:
+            if 'unexpected keyword argument' in str(ex):
+                bad.append('%s(%s)' % (name, ex))
+    check(not bad, '文件类型模块可分派：%d 个签名匹配%s'
+          % (len(names), '' if not bad else '——不匹配 %s' % '、'.join(bad)))
+
+    rc, out = run_cli([p])
+    check(rc == 0 and '【路由匹配模块】config' in out, '.txt 路由到 config 模块')
+    check('【config】' in out and '配置中的 flag' in out,
+          '文件类型模块真的产出块（.txt → 【config】）')
+
 
 def main():
     tmp = tempfile.mkdtemp(prefix='ctfsweep-smoke-')
+    # 全程隔离：扫描缓存 / 留存区 / 模型 / 训练配置全部读写临时目录，
+    # 不污染真实 ~/.devtools/ctfsweep 与项目 models/（所有 run_cli 子进程继承此环境）
+    _prev_env = {k: os.environ.get(k) for k in ('CTFSWEEP_DATA_DIR', 'CTFSWEEP_MODELS_DIR')}
+    os.environ['CTFSWEEP_DATA_DIR'] = tmp
+    os.environ['CTFSWEEP_MODELS_DIR'] = tmp
     try:
         print('== 生成测试样例 ==')
         names = gen_fixtures.generate(tmp)
@@ -197,6 +370,7 @@ def main():
         check('flag{dns-smoke-ok}' in out, 'DNS 子域名 base64 外带')
         check('"username":"admin"' in out, 'JWT payload 解码')
         check('WEBUI_SK=Advanced_System_for_Text' in out, '环境变量回显')
+        check('【flag 候选汇总】（可直接核验/提交）' in out, '汇总：flag 形状候选单独成组')
         rc, out = run_cli([os.path.join(tmp, 't1.pcap'), '--min-score', '0.9'])
         check('flag{plain-smoke-ok}' in out and 'WEBUI_SK' not in out, '--min-score 过滤低置信')
 
@@ -218,7 +392,7 @@ def main():
         check('create_pdo_flag' not in out, '噪音闸门：标识符内部（create_pdo_flag）已剔除')
         check('msctf' not in out, '噪音闸门：标识符内部（msctf_）已剔除')
         check('【中置信（需人工确认）】' in out, '报告分级：中置信小标题（换行分区）')
-        check('【扫描统计】' in out and '高置信（可直接核验）：' in out, '统计：换行分区输出')
+        check('【扫描统计】' in out and '高（≥0.85）：' in out, '统计：换行分区输出')
         check('统计: 高置信' not in out, '旧版单行统计已移除')
         check('片段池（按文件标注来源）' in out and '←' in out, '全局片段池：按行标注来源')
 
@@ -240,8 +414,70 @@ def main():
         check('P@ssw0rd-AD-2026' in out, 'LDAP 明文绑定口令')
         check('MSSQLSvc/dc01.corp.local' in out, 'SPN（Kerberoasting 目标）')
 
+        print('== t6-hosts.pcap：主机表（ARP / DHCP）==')
+        rc, out = run_cli([os.path.join(tmp, 't6-hosts.pcap')])
+        check('【主机表】' in out, '主机表区块出现')
+        check('10.9.9.10' in out and '02:00:00:00:00:aa' in out, 'ARP/以太网解析 10.9.9.10 → MAC')
+        check('10.9.9.20' in out and '02:00:00:00:00:bb' in out, 'ARP 应答解析 10.9.9.20 → MAC')
+        check('SMOKE-PC' in out, 'DHCP 主机名（选项 12）')
+
+        print('== t7-tls.pcap：TLS 跳过 / JPEG 判别 / 反误报 ==')
+        exdir7 = os.path.join(tmp, 'extract7')
+        rc, out = run_cli([os.path.join(tmp, 't7-tls.pcap'), '--extract', '--extract-dir', exdir7])
+        check('跳过' in out and 'TLS' in out, 'TLS 加密流被跳过（密文不雕刻）')
+        check('</td></tr>' not in out, 'HTML 标记行不误报为命令')
+        check(out.count('[交互会话]') == 1, '仅真 Windows 会话被识别（HTML 页不误报）')
+        check('whoami' in out and 'ipconfig' in out, '真会话命令序列完整（正例）')
+        jpgs7 = [f for f in (os.listdir(exdir7) if os.path.isdir(exdir7) else []) if f.endswith('.jpg')]
+        check(len(jpgs7) == 1, '仅提取明文流真 JPEG（TLS 伪 JPEG 被挡）')
+        if jpgs7:
+            data7 = open(os.path.join(exdir7, jpgs7[0]), 'rb').read()
+            check(data7[:4] == b'\xff\xd8\xff\xe0' and data7[-2:] == b'\xff\xd9',
+                  'JPEG 头/尾完整（FFD8FFE0…FFD9）')
+
+        print('== t8-b64.pcap：页面内嵌 base64 载荷 ==')
+        exdir8 = os.path.join(tmp, 'extract8')
+        rc, out = run_cli([os.path.join(tmp, 't8-b64.pcap'), '--extract', '--extract-dir', exdir8])
+        check('base64 @' in out, 'base64 载荷段被识别')
+        check('flag{b64-embedded-ok}' in out, '解码出的 zip 内容被扫描（flag 命中）')
+        zips8 = [f for f in (os.listdir(exdir8) if os.path.isdir(exdir8) else []) if f.endswith('.zip')]
+        check(len(zips8) == 1, 'base64 解码的 zip 已落盘')
+        if zips8:
+            d8 = open(os.path.join(exdir8, zips8[0]), 'rb').read(4)
+            check(d8[:2] == b'PK', '落盘文件为有效 zip（PK 头）')
+
+        print('== t9-dns.pcap：DNS 真实解析 / 网页噪音闸门 ==')
+        rc, out = run_cli([os.path.join(tmp, 't9-dns.pcap')])
+        seg = out.split('【dns】', 1)[1].split('格式:', 1)[0] if '【dns】' in out else out
+        check('tunnel-domain.com' in seg, '真实 DNS 长查询被识别（外带嫌疑）')
+        check('wagbridge' not in seg, '良性长域名（多短标签拼接）不报外带')
+        check('ms17-010' not in out, 'HTTP 文件名串不被当"长域名"（旧误报已修）')
+        check('f2f2f2' not in out and 'fff9ec' not in out, 'CSS 颜色值不被当片段（旧误报已修）')
+
+        print('== t10-ftp.pcap：FTP 证据 / 二进制关键词闸门 ==')
+        rc, out = run_cli([os.path.join(tmp, 't10-ftp.pcap')])
+        check('[FTP会话]' in out and '成功凭据: dj / dj' in out, 'FTP 会话识别（凭据）')
+        check('FTP成功凭据: dj / dj' in out, '报告行改用类型标签（不再是"关键词[]"空标签）')
+        check('RETR 2.jpg' in out, 'FTP 命令序列（登录后）')
+        check('关键词[]' not in out, '空关键词标签不再出现')
+        check('关键词[flag]' not in out, '二进制流关键词字节巧合被剔除（flag）')
+        check(out.count('关键词[ctf]') == 2 and 'the ctf challenge' in out,
+              '二进制流的 ctf 巧合被剔除，真实文本关键词保留（正例×2）')
+        check('【证据汇总】（未发现 flag 形状候选' in out, '汇总：非 flag 文件明确提示无 flag 候选')
+        check('[FTP成功凭据] dj / dj' in out, '汇总：证据按类型标注（非 flag 类）')
+        check('【flag 候选汇总】' not in out, '汇总：非 flag 文件不出 flag 候选组')
+
         print('== 判断核（judge）==')
         check_judge(tmp)
+
+        print('== 元判断核（meta_judge）==')
+        check_meta_judge()
+
+        print('== 路由分派 ==')
+        check_router_dispatch(tmp)
+
+        print('== report 渲染等价（CLI 边界的 Finding↔5 元组往返）==')
+        check_report_equivalence()
 
         print('== 目录模式 ==')
         rc, out = run_cli([tmp])
@@ -251,6 +487,11 @@ def main():
         rc, out = run_cli(['--folder', tmp])
         check(rc == 0, '--folder 长选项等价')
     finally:
+        for k, v in _prev_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
         shutil.rmtree(tmp, ignore_errors=True)
 
     print()

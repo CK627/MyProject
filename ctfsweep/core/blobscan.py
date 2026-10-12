@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """字节块扫描原语：findings 去重入库（add）与单块多策略扫描（scan_blob）"""
 from .decode import decode_chain, fragments
-from .utils import FLAG_RE, kw_boundary_ok
+from .utils import FLAG_RE, kw_boundary_ok, text_like_window
 
 
 def add(finding, findings, seen):
@@ -55,11 +55,22 @@ def scan_blob(blob, keywords, do_decode, depth, findings, seen, loc):
                     i += len(kw)          # 词内误报（FolderValueFlags / create_pdo_flag 等）
                     cnt += 1
                     continue
+                if enc == 'ascii':
+                    # ascii 通道的 `text` 是 latin-1 解出来的，1 字节 ↔ 1 字符，
+                    # 所以 i 同时也是 blob 的下标，直接用原始字节做严格文本判定
+                    win = blob[max(0, i - 40): i + 110]
+                    if not text_like_window(win):
+                        i += len(kw)
+                        cnt += 1
+                        continue
                 raw_seg = text[max(0, i - 40): i + 110]
-                if sum(ch.isprintable() or ch in '\r\n\t' for ch in raw_seg) < len(raw_seg) * 0.7:
-                    i += len(kw)
-                    cnt += 1
-                    continue
+                if enc == 'utf-16':
+                    # utf-16 通道的 i 是解码后文本的下标，只能回到 raw_seg 上判
+                    ok_chars = sum(ch.isprintable() or ch in '\r\n\t' for ch in raw_seg)
+                    if ok_chars < len(raw_seg) * 0.7:
+                        i += len(kw)
+                        cnt += 1
+                        continue
                 seg = raw_seg.replace('\x00', '')
                 seg = ''.join(ch if ch.isprintable() or ch in '\r\n\t' else '.' for ch in seg)
                 seg = ' '.join(seg.split())

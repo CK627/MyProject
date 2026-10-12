@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # ctfsweep 从源码安装 / 卸载（macOS / Linux）—— devtools 布局（与 jtool / ptool 同规）
 #
+# 历史工具：源码直跑模式下推荐直接从项目运行（./bin/ctfsweep，或把 <项目>/bin 加入 PATH）。
+# 本脚本仅供临时部署 / 测试使用；常规使用不需要安装。
+#
 # 用法:
 #   ./installer/install-from-source.sh install     # 安装（默认用户级；sudo 运行则系统级）
 #   ./installer/install-from-source.sh uninstall   # 卸载（等价于 installer/uninstall.sh）

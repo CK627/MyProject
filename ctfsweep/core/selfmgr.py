@@ -1,14 +1,13 @@
 # -*- coding: utf-8 -*-
-"""自管理子命令：update（检查并更新）/ install / uninstall，以及安装方式探测（供 config 使用）。
+"""自管理子命令：update / install / uninstall 的指引与清理，及运行方式探测（供 config 使用）。
 
-设计说明：
-  · 判断依据是「当前跑的是哪份代码」——devtools 安装版（<root>/lib/ctfsweep）
-    还是源码仓库（<root>/ctfsweep + <root>/installer）；
-  · update 用「载荷指纹」（对安装产物文件的集合哈希）判断是否与最新快照一致：
-    版本号相同但内容被改动 / 组件缺失（损坏安装）同样能检测并修复；
-  · 下载顺序与安装脚本一致：先镜像（CTFSWEEP_MIRROR 可换源、none = 只走 GitHub），
-    拿不到再回退 GitHub；
-  · 网络访问走 urllib（遵守 http_proxy 等环境变量），保持零第三方依赖。
+设计说明（源码直跑模式，2026-10 调整）：
+  · 本项目采用「源码直跑」：功能完整存在于项目目录，不安装外部副本；
+    用户数据（数据集/模型/缓存）统一放 ~/.devtools/ctfsweep/；
+  · update / install 已改为指引输出（更新 = git pull；不再下载或安装外部副本）；
+  · uninstall 用于清理历史遗留的旧版安装残留（bin/lib/completions 等），
+    用户数据目录（~/.devtools/ctfsweep/ 下的数据集/模型/缓存）始终保留；
+  · self_info() 依旧探测运行布局（repo / installed / unknown），供 config 显示。
 """
 import hashlib
 import os
@@ -179,100 +178,42 @@ def _fetch_snapshot(mirror, workdir):
 
 
 def cmd_update(argv):
-    """ctfsweep update [--check]：检查并更新到最新快照（指纹判定，含损坏修复）。"""
-    check_only = False
+    """ctfsweep update：更新指引（源码直跑模式下不再从网络更新外部副本）。"""
     for a in argv:
-        if a == '--check':
-            check_only = True
-        else:
-            print('未知参数: %s（用法: ctfsweep update [--check]）' % a)
+        if a != '--check':
+            print('未知参数: %s（用法: ctfsweep update）' % a)
             return 2
-    if os.name == 'nt':
-        print('ctfsweep update 目前仅支持 macOS / Linux。')
-        return 1
 
-    mode, root, devtools = self_info()
+    mode, root, _devtools = self_info()
+    print('提示: 本项目采用「源码直跑」模式 —— 代码只存在于项目目录，不安装外部副本。')
     if mode == 'repo':
-        print('提示: 当前从源码仓库运行（未安装），无需 update。')
-        print('  更新源码: git pull')
-        print('  安装到本机: ./installer/install.sh')
-        return 0
-    if mode != 'installed':
-        print('无法识别安装方式（可能不是 devtools 布局安装）。')
-        print('请重新运行一键安装，或在源码目录运行 ./installer/install.sh')
-        return 1
-
-    mirror = os.environ.get('CTFSWEEP_MIRROR', MIRROR_DEFAULT)
-    cur_ver = _read_version(root)
-    print('ctfsweep %s — 检查更新' % __version__)
-
-    workdir = tempfile.mkdtemp(prefix='ctfsweep-update-')
-    try:
-        snap = _fetch_snapshot(mirror, workdir)
-        if not snap:
-            print('错误: 无法获取最新快照（镜像与 GitHub 都不可用）。')
-            print('  可换源重试: CTFSWEEP_MIRROR=https://你的镜像 ctfsweep update')
-            return 1
-
-        snap_ver = _read_version(snap)
-        snap_digest = payload_digest(_payload_items(snap, 'ctfsweep'))
-        cur_digest = payload_digest(_payload_items(root, 'lib/ctfsweep'))
-
-        if snap_digest == cur_digest:
-            print('已是最新（v%s，build %s）' % (snap_ver or '?', snap_digest[:8]))
-            return 0
-
-        print('发现更新: v%s (build %s) → v%s (build %s)'
-              % (cur_ver or '?', cur_digest[:8], snap_ver or '?', snap_digest[:8]))
-        if check_only:
-            print('（--check：仅检查，未执行升级）')
-            return 0
-
-        if not os.access(devtools, os.W_OK):
-            print('错误: 无权限写入 %s' % devtools)
-            print('  系统级安装请用 sudo 重跑: sudo "%s" update'
-                  % os.path.join(root, 'bin', 'ctfsweep'))
-            return 1
-
-        installer = os.path.join(snap, 'installer', 'install-from-source.sh')
-        env = dict(os.environ)
-        env['CTFSWEEP_DEVROOT'] = devtools          # 保持与当前安装相同的层级
-        env['CTFSWEEP_BOOTSTRAP'] = '1'             # 抑制指向临时目录的 sudo 提示
-        rc = subprocess.call(['bash', installer, 'install'], env=env)
-        if rc != 0:
-            print('更新失败（安装步骤退出码 %d）' % rc)
-            return rc
-        print('更新完成: v%s → v%s（build %s）' % (cur_ver or '?', snap_ver or '?', snap_digest[:8]))
-        return 0
-    finally:
-        shutil.rmtree(workdir, ignore_errors=True)
+        print('  更新源码: 在项目目录执行  git pull')
+        print('  项目目录: %s' % root)
+    else:
+        print('  检测到旧版 devtools 安装布局；建议运行  ctfsweep uninstall  清理旧副本'
+              '（用户数据会保留）。')
+    return 0
 
 
 def cmd_install(argv):
-    """ctfsweep install：从源码仓库安装到 devtools（主要在仓库内使用）。"""
+    """ctfsweep install：已弃用 —— 本工具改为「源码直跑」，不再安装外部副本。"""
     if argv:
         print('未知参数: %s（用法: ctfsweep install）' % argv[0])
         return 2
-    if os.name == 'nt':
-        print('ctfsweep install 目前仅支持 macOS / Linux。')
-        print('Windows 下直接运行 bin\\ctfsweep.bat，或使用 python -m ctfsweep。')
-        return 1
+    print('提示: install 已弃用 —— 本项目采用「源码直跑」模式，不做外部拓展。')
+    print('  · 代码只存在于项目目录（功能完整），不在 ~/.devtools 等外部位置安装副本；')
+    print('  · 用户数据（数据集/模型/缓存）统一放在 ~/.devtools/ctfsweep/；')
+    print('  · 命令行使用: 把项目的 bin 目录加入 PATH（见项目 README「快速开始」）。')
     mode, root, _devtools = self_info()
-    if mode == 'repo':
-        installer = os.path.join(root, 'installer', 'install-from-source.sh')
-        print('从源码仓库安装到 devtools...')
-        return subprocess.call(['bash', installer, 'install'])
-    if mode == 'installed':
-        print('当前已是安装版（%s），无需 install。' % root)
-        print('  更新到最新版: ctfsweep update')
-        print('  重装: 先 ctfsweep uninstall，再重新运行一键安装')
-        return 0
-    print('无法识别当前布局；请在源码仓库内运行本命令。')
-    return 1
+    if mode != 'repo':
+        print('  · 检测到旧版安装布局；可运行  ctfsweep uninstall  清理旧副本（数据保留）。')
+    else:
+        print('  · 当前已在源码仓库: %s' % root)
+    return 0
 
 
 def cmd_uninstall(argv):
-    """ctfsweep uninstall [-y]：卸载（等价于 installer/uninstall.sh，带确认）。"""
+    """ctfsweep uninstall [-y]：清理旧版安装残留（保留用户数据；-y 跳过确认）。"""
     assume_yes = False
     for a in argv:
         if a in ('-y', '--yes'):

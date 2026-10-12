@@ -10,7 +10,11 @@ PCAP_MAGICS = {
 }
 PCAPNG_MAGIC = b'\x0a\x0d\x0d\x0a'
 LINKNAMES = {0: 'NULL/Loopback', 1: 'Ethernet', 101: 'Raw-IP', 12: 'Raw-IP', 228: 'Raw-IP',
-             229: 'Raw-IP', 113: 'Linux-SLL', 276: 'Linux-SLL2'}
+             229: 'Raw-IP', 113: 'Linux-SLL', 276: 'Linux-SLL2',
+             # 无线 / 物联网 / USB 等特殊链路（无 IP 解析）
+             105: 'IEEE802.11(无线)', 127: 'Radiotap(无线)', 119: 'Prism(无线)',
+             192: 'PPI(无线)', 195: 'IEEE802.15.4(带FCS)',
+             220: 'USB-Linux(usbmon)', 249: 'USBPcap(USB抓包)'}
 
 
 def parse_pcap(data):
@@ -138,6 +142,109 @@ def l4_parse(linktype, pkt):
         sport, dport = struct.unpack('>HH', pkt[l4:l4 + 4])
         return ('udp', src, dst, sport, dport, pkt[l4 + 8:])
     return None
+
+
+def tcp_seq(linktype, pkt):
+    """TCP 序列号（流重组去重/定位用）；非 TCP 或解析失败返回 None"""
+    off = ip_offset(linktype, pkt)
+    if off is None or len(pkt) < off + 20 or pkt[off] >> 4 != 4:
+        return None
+    if pkt[off + 9] != 6:
+        return None
+    ihl = (pkt[off] & 0xF) * 4
+    l4 = off + ihl
+    if len(pkt) < l4 + 8:
+        return None
+    return struct.unpack('>I', pkt[l4 + 4:l4 + 8])[0]
+
+
+def merge_stream(segs):
+    """按 TCP seq 合并一个方向流的载荷（抗重传 / 重叠 / 乱序）。
+
+    segs: [(num, ts, payload[, seq]), ...]（包序）。
+    有 seq 时用"逐字节 last-wins"覆盖拼接：后到的重传/修正段覆盖先到的，
+    这样重传、异常分段（同 seq 的短段+长段）不会产生重复/错位字节；
+    未截获的中间空洞补 0x00。无 seq 数据时退化为按包序直接拼接（旧行为）。
+
+    典型场景：HTTP 下载 exe 的流里有重传/分段异常，直接拼接得到的文件
+    哈希与真实文件不符；本函数保证与 Wireshark 重组一致。
+    """
+    if not segs:
+        return b''
+    if len(segs[0]) < 4 or any(s[3] is None for s in segs):
+        return b''.join(s[2] for s in segs)
+    minseq = min(s[3] for s in segs)
+    maxend = max(s[3] + len(s[2]) for s in segs)
+    span = maxend - minseq
+    if span <= 0:
+        return b''
+    if span > 256 * 1024 * 1024:            # 防御：异常流（seq 跳变等）
+        span = 256 * 1024 * 1024
+    buf = bytearray(span)
+    for s in segs:                          # 包序 last-wins
+        payload, seq = s[2], s[3]
+        start = seq - minseq
+        if start >= span:
+            continue
+        end = min(start + len(payload), span)
+        buf[start:end] = payload[:end - start]
+    return bytes(buf)
+
+
+class CaptureContext:
+    """一次解析，多处复用。
+
+    背景：`cli.main()` 已经把整个文件读进内存，`scan_capture` 又解析一遍，
+    dns 模块再解析一遍，`merge_stream` 更是在同一份 tcp_streams 上被算了三次。
+    这里把"解析"与"分析"分开：解析结果只算一次并缓存，分析各跑各的。
+
+    ⚠️ **不合并分析语义**：`scan_capture` 的 DNS 循环产出 `DNS查询` 候选进分带报告，
+    `dns` 模块只统计查询、按域聚合、过良性后缀闸门产出 `【dns】` 块——
+    两者输出不同，都要保留，这里共享的只是解析结果。
+
+    ⚠️ `l4` **严格保持包序**：`scan_capture` 原先是在解析循环里逐包交错产出
+    findings 的，顺序一变，`report()` 的并列项顺序与元判断核的前 10 项就会变。
+    """
+
+    def __init__(self, data):
+        self.data = data             # 原始字节：流扫描模块据此免去二次读盘
+        loaded = load_packets(data)
+        self.fmt, self.pkts = loaded if loaded else (None, [])
+        self.l4 = []                 # [(包号, linktype, 包字节, 时间戳, 四层|None)]
+        self.tcp_streams = {}        # {(src,sport,dst,dport): [(num, ts, payload, seq)]}
+        self.udp_payloads = []       # [(num, src, sport, dst, dport, payload)]
+        self.unknown_pkts = []       # [(num, lt, pkt)] 非 IP 结构，兜底扫描用
+        self._blobs = None
+
+        for num, lt, pkt, ts in self.pkts:
+            r = l4_parse(lt, pkt)
+            self.l4.append((num, lt, pkt, ts, r))
+            if not r:
+                self.unknown_pkts.append((num, lt, pkt))
+                continue
+            proto, src, dst, sport, dport, payload = r
+            if not payload:
+                continue
+            if proto == 'tcp':
+                self.tcp_streams.setdefault((src, sport, dst, dport), []).append(
+                    (num, ts, payload, tcp_seq(lt, pkt)))
+            else:
+                self.udp_payloads.append((num, src, sport, dst, dport, payload))
+
+    @property
+    def is_capture(self):
+        return self.fmt is not None
+
+    def linktype_names(self, limit=4):
+        lts = sorted(set(lt for _n, lt, _p, _t in self.pkts))
+        return ', '.join(str(LINKNAMES.get(lt, lt)) for lt in lts[:limit])
+
+    def stream_blobs(self):
+        """[(方向键, 分段, 合并载荷)]——`merge_stream` 每个方向流只算一次。"""
+        if self._blobs is None:
+            self._blobs = [(k, segs, merge_stream(segs))
+                           for k, segs in self.tcp_streams.items()]
+        return self._blobs
 
 
 def dns_qname(payload):

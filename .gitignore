@@ -24,5 +24,7 @@ dist/
 # WorkBuddy 本地记忆/会话数据（本机专用，勿提交）
 .workbuddy/
 
-# 本机实验目录（含题库标注与判断核数据，不进库）
-lab/
+# 本机实验目录的数据产物（题库标注/判断核数据等，不进库；脚本代码进库）
+lab/*.jsonl
+lab/*.ctfj
+lab/output/

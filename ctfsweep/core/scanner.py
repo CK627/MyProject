@@ -6,24 +6,98 @@ import zipfile
 
 from .ad import print_ad_info, scan_ad
 from .blobscan import add, scan_blob
-from .capture import LINKNAMES, dns_qname, l4_parse, load_packets
+from .capture import CaptureContext, LINKNAMES, dns_qname
 from .decode import decode_chain, flagify, fragments
-from .extract import PWD_POOL, carve_files, collect_pwds_from_blob, extract_scan
+from .extract import (PWD_POOL, carve_base64_blobs, carve_files,
+                      collect_pwds_from_blob, extract_scan)
 from .http import build_http_transactions, http_summary, jwt_summary
 from .utils import (FLAG_RE, JWT_RE, SECRET_LINE_RE, SENSITIVE_NAME_RE,
                     decode_score, kw_boundary_ok, printable_ratio, try_b64, ts_str)
 
 
-def scan_capture(data, keywords, do_decode, depth, extract=None):
-    fmt, pkts = load_packets(data)
-    lts = sorted(set(lt for _n, lt, _p, _t in pkts))
-    lt_names = ', '.join(str(LINKNAMES.get(lt, lt)) for lt in lts[:4])
-    print('  格式: %s  链路类型: %s   数据包: %d 个' % (fmt, lt_names, len(pkts)))
+def _is_tls_stream(blob):
+    """判定方向流是否 TLS 加密（用于文件雕刻前跳过——密文中的文件签名必然是误报）。
+
+    - 流从 TLS 记录开始（0x14/0x15/0x16/0x17 + 版本 03 0x）→ 是；
+    - 否则在前 256KB 找结构合理的握手记录（16 03 0x + 长度 + 握手消息类型）。
+    """
+    if len(blob) < 6:
+        return False
+    if blob[0] in (0x14, 0x15, 0x16, 0x17) and blob[1] == 0x03 and blob[2] <= 4:
+        return True
+    window = blob[:262144]
+    for magic in (b'\x16\x03\x01', b'\x16\x03\x03'):
+        pos = window.find(magic)
+        while pos >= 0 and pos + 6 <= len(window):
+            rec_len = int.from_bytes(window[pos + 3:pos + 5], 'big')
+            msg_type = window[pos + 5]
+            if 32 <= rec_len <= 0x4400 and msg_type in (0x01, 0x02, 0x0b):
+                return True
+            pos = window.find(magic, pos + 3)
+    return False
+
+
+def analyze(filepath, ctx=None, opts=None):
+    """流扫描统一入口（Router 的 stream 阶段调用）。
+
+    - 抓包文件 → `scan_capture`（pcap/pcapng 解析 + 各协议线索）
+    - 其它文件 → `scan_rawfile`（原始字节扫描）
+
+    ⚠️ 这两个函数会**自行打印**过程信息（`格式:` / `【主机表】` / `【AD / 域渗透线索】` /
+    `[交互会话]` / `[提取]` / `[HTTP事务摘要]`），它们与分带报告交错，位置是报告契约的一部分，
+    不要搬到调用方。
+
+    返回的 `Finding` 携带原始候选（`tok`/`val`/`loc`），调用方用 `to_tuple()`
+    换回 5 元组 ABI（`report()` / `judge.predict_finding` 都按元组解包）。
+    """
+    from .router import AnalysisResult, Finding, ScanOptions
+
+    opts = opts or ScanOptions()
+    if ctx is None:
+        with open(filepath, 'rb') as f:
+            data = f.read()
+        from .capture import CaptureContext
+        ctx = CaptureContext(data)
+
+    result = AnalysisResult("scanner")
+    if ctx.is_capture:
+        findings = scan_capture(
+            ctx.data, opts.keywords, opts.decode, opts.depth,
+            extract=opts.extract, ctx=ctx)
+    else:
+        findings = scan_rawfile(
+            ctx.data, opts.keywords, opts.decode, opts.depth, opts.limit)
+    result.findings = [Finding.from_tuple(t, module="scanner") for t in findings]
+    return result
+
+
+def scan_capture(data, keywords, do_decode, depth, extract=None, ctx=None):
+    if ctx is None:
+        ctx = CaptureContext(data)
+    fmt, pkts = ctx.fmt, ctx.pkts
+    print('  格式: %s  链路类型: %s   数据包: %d 个'
+          % (fmt, ctx.linktype_names(), len(pkts)))
     findings, seen = [], set()
-    tcp_streams, udp_payloads = {}, []
+
+    # USB 键盘流量（USBPcap）：HID 逐键解码（CTF 常见题型，键入文本常直接是 flag）
+    try:
+        from .usb import decode_usb_keyboard, is_usbpcap
+        if is_usbpcap(pkts):
+            kb_text, n_rep = decode_usb_keyboard(pkts)
+            if kb_text:
+                loc = 'USB HID 键盘解码（%d 个报告）' % n_rep
+                print('  [USB键盘] 键入文本: %s' % kb_text[:200])
+                score = 0.97 if ('flag' in kb_text.lower() or 'ctf' in kb_text.lower()) else 0.75
+                add((score, 'USB键盘输入', b'', kb_text, loc), findings, seen)
+    except Exception as _ex:
+        print('  [USB] 键盘解码出错: %r' % _ex)
+
+    # 解析结果来自 ctx（tcp_streams / udp_payloads / unknown_pkts 已在里面建好）；
+    # 这里仍按包序重放 l4 以产出 findings，顺序与原先逐包交错时完全一致
+    tcp_streams, udp_payloads = ctx.tcp_streams, ctx.udp_payloads
     http_reqs, form_fields = [], []
-    for num, lt, pkt, ts in pkts:
-        r = l4_parse(lt, pkt)
+    unknown_pkts = ctx.unknown_pkts
+    for num, lt, pkt, ts, r in ctx.l4:
         if not r:
             continue
         proto, src, dst, sport, dport, payload = r
@@ -31,7 +105,6 @@ def scan_capture(data, keywords, do_decode, depth, extract=None):
             continue
         locp = '%s:%d->%s:%d 包#%d' % (src, sport, dst, dport, num)
         if proto == 'tcp':
-            tcp_streams.setdefault((src, sport, dst, dport), []).append((num, ts, payload))
             add_loc = locp
             for m in FLAG_RE.finditer(payload):
                 add((0.97, '明文flag', b'', m.group(0), add_loc), findings, seen)
@@ -59,8 +132,7 @@ def scan_capture(data, keywords, do_decode, depth, extract=None):
                 if dec and printable_ratio(dec) > 0.8 and (b'{' in dec or any(k.encode() in dec.lower() for k in keywords)):
                     add((decode_score(dec, keywords), 'base64', label, dec, 'DNS子域名 %s -> %s' % (src, dst)), findings, seen)
 
-    for dirkey, segs in tcp_streams.items():
-        blob = b''.join(p for _n, _t, p in segs)
+    for dirkey, segs, blob in ctx.stream_blobs():
         if len(blob) < 16:
             continue
         if extract:
@@ -92,6 +164,39 @@ def scan_capture(data, keywords, do_decode, depth, extract=None):
         loc = 'UDP %s:%d->%s:%d 包#%d' % (src, sport, dst, dport, num)
         scan_blob(payload, keywords, do_decode, depth, findings, seen, loc)
 
+    # 未支持链路类型兜底：原始字节扫描（无线 / 物联网 / USB 等无 IP 结构）
+    # ——此前这类包被直接跳过（"连过程都没有"）；现在按原始字节扫描 + 拼接扫描
+    if unknown_pkts:
+        unsup = sorted(set(lt for _n, lt, _p in unknown_pkts))
+        names = ', '.join(str(LINKNAMES.get(lt, '链路类型 %d' % lt)) for lt in unsup[:4])
+        print('  [兜底] %d/%d 个包为非 IP 链路（%s），按原始字节扫描：'
+              % (len(unknown_pkts), len(pkts), names))
+        budget, used, scanned = 4 * 1024 * 1024, 0, 0
+        for num, lt, pkt in unknown_pkts:
+            if not pkt:
+                continue
+            if used >= budget:
+                print('           （达到字节预算，其余 %d 个包跳过）'
+                      % (len(unknown_pkts) - scanned))
+                break
+            used += len(pkt)
+            scanned += 1
+            loc = '包#%d（%s）' % (num, LINKNAMES.get(lt, '链路类型 %d' % lt))
+            scan_blob(pkt, keywords, do_decode, depth, findings, seen, loc)
+        if len(unknown_pkts) > 1:                    # 跨包拼接（分段数据可能分散在多个包）
+            cat = b''.join(p for _n, _l, p in unknown_pkts)[:budget]
+            scan_blob(cat, keywords, do_decode, depth, findings, seen,
+                      '拼接（%d 个非 IP 包）' % len(unknown_pkts))
+
+    # 主机表：IP ↔ MAC（ARP/Ethernet）+ 主机名线索（DHCP/NBNS）
+    # 恶意流量分析经典三问（感染主机 IP/MAC/主机名）直接可答；CTF 也常问"攻击者 MAC"
+    try:
+        from .hosts import collect_hosts, print_hosts
+        _im, _mn, _inm = collect_hosts(pkts)
+        print_hosts(_im, _mn, _inm)
+    except Exception as _ex:
+        print('  [主机] 分析出错: %r' % _ex)
+
     # AD / 域协议（Kerberos / NTLMSSP / LDAP）：这类流量没有 flag 明文，
     # 靠字符串扫描必然零命中，这里解票据与凭据（hashcat 可直接用）
     try:
@@ -102,33 +207,82 @@ def scan_capture(data, keywords, do_decode, depth, extract=None):
     if ad_info:
         print_ad_info(ad_info)
 
+    # 交互会话提取（FTP 登录/爆破命令序列、反弹 shell/交互 shell 命令记录）
+    # 对应"入侵行为分析"类取证题：直接输出可回答"第 N 条命令/成功凭据/系统版本"
+    try:
+        from .session import analyze_sessions
+        for line in analyze_sessions(tcp_streams, lambda f: add(f, findings, seen)):
+            print(line)
+    except Exception as _ex:
+        print('  [会话] 分析出错: %r' % _ex)
+
     if extract:
         os.makedirs(extract['outdir'], exist_ok=True)
-        saved, idx, carved = set(), 0, 0
+        saved, idx, carved, tls_skipped = set(), 0, 0, 0
         pwds = list(PWD_POOL)
-        blobs = []
-        for dirkey, segs in tcp_streams.items():
-            blobs.append(('%s:%d->%s:%d' % dirkey, b''.join(p for _n, _t, p in segs)))
+        blobs = [('%s:%d->%s:%d' % dirkey, blob)
+                 for dirkey, _segs, blob in ctx.stream_blobs()]
         for num, src, sport, dst, dport, payload in udp_payloads:
             if 53 not in (sport, dport) and len(payload) >= 80:
                 blobs.append(('UDP %s:%d->%s:%d 包#%d' % (src, sport, dst, dport, num), payload))
         for tag, blob in blobs:
             if len(blob) < 80:
                 continue
-            for ext, off, seg in carve_files(blob):
-                if ext == '.zip':
-                    try:
-                        zipfile.ZipFile(io.BytesIO(seg)).namelist()
-                    except Exception:
+            # TLS 加密流：应用数据为密文，文件签名雕刻必然误报（如 FFD8FF 巧合出"大图"），
+            # 直接跳过（明文 HTTP over 443 的流不以 TLS 记录开头，不受影响）
+            if _is_tls_stream(blob):
+                tls_skipped += 1
+                continue
+            # HTTP 响应流：按"逐响应体"雕刻（Content-Length 精确切分 / chunked 自动解码）
+            # —— 避免响应连读、流尾填充字节混进文件（否则大小/哈希与真实文件不符）
+            variants = [(blob, '')]
+            if blob[:5] == b'HTTP/':
+                from .http import http_body_decode, parse_http_responses
+                vb = []
+                for i, (_code, _ct, rbody) in enumerate(parse_http_responses(blob, nocl_cap=None)):
+                    if len(rbody) < 80:
                         continue
-                idx += 1
-                if extract_scan(ext, seg, extract['outdir'], extract['stem'], idx,
-                                '%s (偏移 %d)' % (tag, off), keywords, do_decode, depth,
-                                findings, seen, saved, pwds):
-                    carved += 1
+                    vb.append((rbody, 'HTTP响应体%d' % (i + 1)))
+                    dec2, notes2 = http_body_decode(rbody)
+                    if notes2:
+                        vb.append((dec2, 'HTTP体%d[%s]' % (i + 1, '+'.join(notes2))))
+                if vb:
+                    variants = vb
+                he = blob.find(b'\r\n\r\n')
+                if he > 0:
+                    body_dec, notes = http_body_decode(blob[he + 4:])
+                    if notes:
+                        print('  [HTTP体] %s：%s 解码 %d → %d 字节'
+                              % ('+'.join(notes), tag.split(':')[0], len(blob) - he - 4, len(body_dec)))
+                        for m2 in FLAG_RE.finditer(body_dec[:4 * 1024 * 1024]):
+                            add((0.97, '明文flag', b'', m2.group(0),
+                                 '%s [HTTP体解码]' % tag), findings, seen)
+            for vblob, vtag in variants:
+                for ext, off, seg in carve_files(vblob):
+                    if ext == '.zip':
+                        try:
+                            zipfile.ZipFile(io.BytesIO(seg)).namelist()
+                        except Exception:
+                            continue
+                    idx += 1
+                    loc_tag = '%s%s (偏移 %d)' % (tag, (' ' + vtag) if vtag else '', off)
+                    if extract_scan(ext, seg, extract['outdir'], extract['stem'], idx,
+                                    loc_tag, keywords, do_decode, depth,
+                                    findings, seen, saved, pwds):
+                        carved += 1
+                # 页面内嵌 base64 载荷（HTML/JS "saveAs" 下载页藏 Word/EXE/ZIP）
+                for ext, off, seg in carve_base64_blobs(vblob):
+                    idx += 1
+                    loc_tag = '%s%s (base64 @%d)' % (tag, (' ' + vtag) if vtag else '', off)
+                    if extract_scan(ext, seg, extract['outdir'], extract['stem'], idx,
+                                    loc_tag, keywords, do_decode, depth,
+                                    findings, seen, saved, pwds):
+                        carved += 1
         if carved:
             print('  [提取] 共保存 %d 个文件 → %s' % (carved, extract['outdir']))
-        else:
+        if tls_skipped:
+            print('  [提取] 跳过 %d 个 TLS 加密流（密文不做文件雕刻，避免签名巧合误报）' % tls_skipped)
+        if not carved:
             try:
                 os.rmdir(extract['outdir'])
             except OSError:
@@ -168,6 +322,7 @@ def scan_capture(data, keywords, do_decode, depth, extract=None):
                 print('    ...（其余省略）')
                 break
             print('    %s %s  →  [%d] %s' % (method, uri[:80], code, ' '.join(txt.split())[:170]))
+
     return findings
 
 

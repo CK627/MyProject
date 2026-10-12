@@ -1,0 +1,52 @@
+==============================================================================
+[文件] t10-ftp.pcap (1.9 KB)
+  格式: pcap  链路类型: Ethernet   数据包: 13 个
+  【主机表】IP ↔ MAC / 主机名（ARP+Ethernet+DHCP+NBNS）：
+    10.9.9.30       02:00:00:00:00:02
+    10.9.9.40       02:00:00:00:00:02
+  [FTP会话] 10.9.9.30:51000 → 10.9.9.40:21 登录尝试 1 次: dj/dj
+    成功凭据: dj / dj
+    命令序列(4): PORT 10,9,9,30,199,40 → NLST → RETR 1.jpg → RETR 2.jpg
+  【高置信（可直接核验）】
+    [0.85 高] FTP成功凭据: dj / dj   @FTP 10.9.9.30:51000→10.9.9.40:21
+  【中置信（需人工确认）】
+    [0.80 中] FTP命令序列: PORT 10,9,9,30,199,40 → NLST → RETR 1.jpg → RETR 2.jpg   @FTP 10.9.9.30:51000→10.9.9.40:21（登录后）
+  【低置信（线索参考）】
+    [0.40 低] 关键词[ctf]: ...notes: the ctf challenge starts at noon second line mentions ctf again...   @10.9.9.30:51002 -> 10.9.9.40:8080 (会话拼接 73B)
+    [0.40 低] 关键词[ctf]: ...ge starts at noon second line mentions ctf again...   @10.9.9.30:51002 -> 10.9.9.40:8080 (会话拼接 73B)
+
+[留存区] 已记录本次扫描（2 条候选）：<TMP>/work/t10-ftp.pcap
+  已知答案可回填: ctfsweep mark "<TMP>/work/t10-ftp.pcap" <真实flag>
+
+==============================================================================
+
+【元判断核综合评分】
+总发现项: 4
+  高置信（>=0.85）: 1
+  中置信（0.55-0.85）: 1
+  低置信（<0.55）: 2
+
+【前 10 项发现】
+  1. [高 0.85] FTP成功凭据
+     模块: scanner
+     证据: dj / dj
+
+  2. [中 0.80] FTP命令序列
+     模块: scanner
+     证据: PORT 10,9,9,30,199,40 → NLST → RETR 1.jpg → RETR 2.jpg
+
+  3. [低 0.45] 关键词
+     模块: scanner
+     证据: b'notes: the ctf challenge starts at noon second line mentions ctf again'
+
+  4. [低 0.45] 关键词
+     模块: scanner
+     证据: b'ge starts at noon second line mentions ctf again'
+
+==============================================================================
+【证据汇总】（未发现 flag 形状候选；以下为 ≥0.85 的非 flag 证据）
+  * [FTP成功凭据] dj / dj   (来自 t10-ftp.pcap)
+【扫描统计】
+  高（≥0.85）：1 条
+  中（0.55–0.85）：1 条
+  低（<0.55）：2 条

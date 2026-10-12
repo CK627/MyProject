@@ -1,0 +1,29 @@
+==============================================================================
+[文件] t3.evtx (0.8 KB)
+  【高置信（可直接核验）】
+    [0.97 高] 明文flag: flag{evtx-smoke-ok}   @(原始字节)
+  【中置信（需人工确认）】
+    [0.60 中] 片段(前): {krjl424   @(原始字节)
+    [0.55 中] 片段(尾): zlmqu458xktq}   @(原始字节)
+  【低置信（线索参考）】
+    [0.45 低] 关键词[flag]: ...................cmd.exe /c echo flag{evtx-smoke-ok}........reg add HKLM\Software\Run /v flag1 /d "cmd.exe /c echo {krjl424...   @(原始字节)
+    [0.45 低] 关键词[flag]: ...ok}........reg add HKLM\Software\Run /v flag1 /d "cmd.exe /c echo {krjl424"........sc description flag3 "Service Key: zlmqu458xktq...   @(原始字节)
+    [0.45 低] 关键词[flag]: .../c echo {krjl424"........sc description flag3 "Service Key: zlmqu458xktq}"........㩃坜湩潤獷獜獹整㍭尲敳畴数睴搮汬㔵㍥䩽K嬀䠀䬀䔀夀开䌀䰀䄀匀匀䔀匀开刀伀伀吀尀䌀䰀匀䤀䐀尀笀㌀....   @(原始字节)
+  [拼接建议] 本文件检出 2 个片段（供人工确认）：
+    {krjl424 | zlmqu458xktq}
+    启发式拼接尝试（人工确认）：flag{krjl424zlmqu458xktq}
+
+[留存区] 已记录本次扫描（2 条候选）：<TMP>/work/t3.evtx
+  已知答案可回填: ctfsweep mark "<TMP>/work/t3.evtx" <真实flag>
+==============================================================================
+【全局片段拼接建议】（跨文件收集到 2 个片段，供人工确认）
+  片段池（按文件标注来源）：
+    {krjl424   ← t3.evtx
+    zlmqu458xktq}   ← t3.evtx
+  启发式拼接尝试（人工确认）：flag{krjl424zlmqu458xktq}
+【flag 候选汇总】（可直接核验/提交）
+  * flag{evtx-smoke-ok}   (来自 t3.evtx)
+【扫描统计】
+  高（≥0.85）：1 条
+  中（0.55–0.85）：2 条
+  低（<0.55）：3 条

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """文件雕刻/提取：签名识别、候选口令池、压缩包处理（弱口令/假加密绕过/嵌套递归）"""
+import base64
 import hashlib
 import io
 import os
@@ -14,7 +15,71 @@ from .decode import flagify
 from .utils import printable_ratio
 
 
+# ---------------------------------------------------------------- base64 载荷页
+# 解码结果接受的签名（防网页噪音/内嵌图片资源淹没提取目录）
+_B64_SIGS = (
+    (b'MZ', '.exe'),
+    (b'PK\x03\x04', '.zip'),
+    (b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1', '.doc'),   # OLE2（Word/Excel）
+    (b'%PDF', '.pdf'),
+    (b'\x7fELF', '.elf'),
+    (b'\x1f\x8b\x08', '.gz'),
+)
+
+
+def carve_base64_blobs(blob, min_chars=2000, max_files=6):
+    """从文本（HTML/JS 载荷页）提取长 base64 段并解码为文件。
+
+    场景：恶意页面用 base64 内嵌 Word/EXE/ZIP（"saveAs" 下载页），
+    流里没有文件签名可雕刻，只有一段超长 base64 文本——本函数补上这条链路。
+    仅接受解码结果带明确文件签名者（.exe 另验 PE 头）；返回 [(扩展名, 偏移, 数据)]。
+    """
+    out, seen = [], set()
+    pat = re.compile(rb'[A-Za-z0-9+/=\s]{%d,}' % min_chars)
+    for m in pat.finditer(blob):
+        clean = re.sub(rb'\s', b'', m.group(0))
+        if len(clean) < min_chars:
+            continue
+        s = clean
+        if len(s) % 4 == 1:
+            s = s[:-1]                    # 非法长度：丢尾部 1 字符（JS 常去 padding）
+        if len(s) % 4:
+            s += b'=' * (4 - len(s) % 4)  # 补齐 padding（不截断，避免丢字节）
+        try:
+            dec = base64.b64decode(s, validate=False)
+        except Exception:
+            continue
+        if len(dec) < min_chars // 2:
+            continue
+        ext = None
+        for sig, e in _B64_SIGS:
+            if dec[:len(sig)] == sig:
+                ext = e
+                break
+        if not ext:
+            continue
+        if ext == '.exe':                 # MZ 巧合概率高，追加 PE 头校验
+            if len(dec) < 0x80:
+                continue
+            pe_off = int.from_bytes(dec[0x3c:0x40], 'little')
+            if not (0x40 <= pe_off < 0x1000 and dec[pe_off:pe_off + 4] == b'PE\x00\x00'):
+                continue
+        h = hashlib.sha1(dec).hexdigest()
+        if h in seen:
+            continue
+        seen.add(h)
+        out.append((ext, m.start(), dec))
+        if len(out) >= max_files:
+            break
+    return out
+
+
 # ---------------------------------------------------------------- 文件雕刻
+# JPEG 起始（FF D8 FF 之后）的合法第 4 字节标记：APPn(E0-E5)/DQT(DB)/SOF(C0-C3)/APP13(ED)/APP14(EE)/COM(FE)
+JPEG_MARKERS = frozenset((0xE0, 0xE1, 0xE2, 0xE3, 0xE4, 0xE5, 0xDB,
+                          0xC0, 0xC1, 0xC2, 0xC3, 0xED, 0xEE, 0xFE))
+
+
 def carve_files(blob, min_size=80):
     """按文件签名从字节流中雕刻文件，返回 [(扩展名, 偏移, 数据)]（已按重叠裁剪）"""
     hits = []
@@ -35,6 +100,10 @@ def carve_files(blob, min_size=80):
             hits.append(('.png', st, blob[st:end + 8]))
     for m in re.finditer(rb'\xff\xd8\xff', blob):                # JPEG
         st = m.start()
+        # 第 4 字节必须是合法 JPEG 标记（APPn/DQT/SOF/COM 等）。TLS 等加密高熵数据里
+        # 会偶现 FFD8FF 巧合（A.pcapng 曾误报 19 张"大图"），无此判别会大量误报
+        if st + 3 >= len(blob) or blob[st + 3] not in JPEG_MARKERS:
+            continue
         nxt = blob.find(b'\xff\xd8\xff', st + 4)
         limit = nxt if nxt > 0 else min(len(blob), st + 20 * 1024 * 1024)
         e = blob[st:limit].rfind(b'\xff\xd9')
@@ -63,6 +132,32 @@ def carve_files(blob, min_size=80):
         hits.append(('.rar', m.start(), blob[m.start():]))
     for m in re.finditer(rb'7z\xbc\xaf\x27\x1c', blob):          # 7Z
         hits.append(('.7z', m.start(), blob[m.start():]))
+    # PE 可执行文件（MZ 头 + PE 签名双重校验；恶意样本/载荷题）
+    pe_starts = []
+    for m in re.finditer(rb'MZ', blob):
+        st = m.start()
+        if st + 0x40 > len(blob):
+            continue
+        try:
+            pe_off = struct.unpack('<I', blob[st + 0x3C:st + 0x40])[0]
+        except Exception:
+            continue
+        if 0x40 <= pe_off < 0x1000 and blob[st + pe_off:st + pe_off + 4] == b'PE\x00\x00':
+            pe_starts.append(st)
+    for i, st in enumerate(pe_starts):
+        end = pe_starts[i + 1] if i + 1 < len(pe_starts) else min(len(blob), st + 100 * 1024 * 1024)
+        hits.append(('.exe', st, blob[st:end]))
+    # OLE2 复合文档（.doc/.xls/.ppt；宏病毒/恶意文档题）
+    ole_magic = b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1'
+    ole_starts = [m.start() for m in re.finditer(re.escape(ole_magic), blob)]
+    for i, st in enumerate(ole_starts):
+        end = ole_starts[i + 1] if i + 1 < len(ole_starts) else min(len(blob), st + 50 * 1024 * 1024)
+        hits.append(('.doc', st, blob[st:end]))
+    # ELF（Linux 载荷）
+    for m in re.finditer(rb'\x7fELF', blob):
+        st = m.start()
+        if st + 6 <= len(blob) and blob[st + 4] in (1, 2) and blob[st + 5] in (1, 2):
+            hits.append(('.elf', st, blob[st:min(len(blob), st + 50 * 1024 * 1024)]))
     hits.sort(key=lambda h: (h[1], -len(h[2])))
     out, last_end = [], -1
     for ext, st, seg in hits:

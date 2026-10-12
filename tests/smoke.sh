@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# ctfsweep 冒烟（macOS / Linux）：语法门 + 单元冒烟 + 启动器 + 安装/卸载循环 + 引导模式 + 自管理子命令
+# ctfsweep 冒烟（macOS / Linux）：语法门 + 单元冒烟 + 启动器 + 历史安装/清理循环 + 引导模式 + 自管理子命令
+# （源码直跑模式下 install/update 已改为指引输出；本节测的是历史安装脚本仍可用 + 清理不伤数据）
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -73,62 +74,42 @@ fi
 echo "== 7/7 自管理子命令（config / update / uninstall，离线）=="
 _csw="$_stage_home/.devtools/ctfsweep/bin/ctfsweep"
 
-# 7.1 config：显示运行模式与配置信息
+# 7.1 config：显示运行模式与配置信息（旧版 devtools 安装布局）
 HOME="$_stage_home" "$_csw" config > "$_stage_home/.cfg.out" 2>&1 \
     || _fail "config 子命令失败（退出码非 0）"
 case "$(cat "$_stage_home/.cfg.out")" in
-    *"运行模式: 已安装"*"配置文件:"*) echo "config 子命令 OK" ;;
+    *"运行模式: 旧版 devtools 安装"*"配置文件:"*) echo "config 子命令 OK" ;;
     *) _fail "config 输出异常：$(cat "$_stage_home/.cfg.out")" ;;
 esac
 
-# 7.2 update：与快照一致 → 已是最新
+# 7.2 update：源码直跑模式下输出更新指引（不再下载/修复）
 HOME="$_stage_home" CTFSWEEP_MIRROR="file://$_stage" "$_csw" update > "$_stage_home/.u1.out" 2>&1 \
     || _fail "update 失败（退出码非 0）"
 case "$(cat "$_stage_home/.u1.out")" in
-    *"已是最新"*) echo "update（已是最新）OK" ;;
+    *"源码直跑"*) echo "update（指引输出）OK" ;;
     *) _fail "update 输出异常：$(cat "$_stage_home/.u1.out")" ;;
 esac
 
-# 7.3 update --check：只检查不改动
+# 7.3 update --check：兼容接受（同样输出指引）
 HOME="$_stage_home" CTFSWEEP_MIRROR="file://$_stage" "$_csw" update --check > "$_stage_home/.u2.out" 2>&1 \
     || _fail "update --check 失败（退出码非 0）"
 case "$(cat "$_stage_home/.u2.out")" in
-    *"已是最新"*) echo "update --check OK" ;;
+    *"源码直跑"*) echo "update --check OK" ;;
     *) _fail "update --check 输出异常：$(cat "$_stage_home/.u2.out")" ;;
 esac
 
-# 7.4 篡改已安装文件 → update 应检测差异并修复，随后再跑一次应收敛为「已是最新」
-_target="$_stage_home/.devtools/ctfsweep/lib/ctfsweep/core/utils.py"
-printf '\n# tampered by smoke\n' >> "$_target"
-HOME="$_stage_home" CTFSWEEP_MIRROR="file://$_stage" "$_csw" update > "$_stage_home/.u3.out" 2>&1 \
-    || _fail "update（修复）失败（退出码非 0）"
-case "$(cat "$_stage_home/.u3.out")" in
-    *"更新完成"*) : ;;
-    *) _fail "update（修复）输出异常：$(cat "$_stage_home/.u3.out")" ;;
-esac
-if "$PY" -c "import sys; sys.exit(0 if b'tampered by smoke' not in open(sys.argv[1],'rb').read() else 1)" "$_target"; then
-    echo "update（检测差异并修复）OK"
-else
-    _fail "篡改未被修复"
-fi
-HOME="$_stage_home" CTFSWEEP_MIRROR="file://$_stage" "$_csw" update > "$_stage_home/.u4.out" 2>&1 \
-    || _fail "update（收敛校验）失败（退出码非 0）"
-case "$(cat "$_stage_home/.u4.out")" in
-    *"已是最新"*) echo "update（修复后收敛）OK" ;;
-    *) _fail "update（收敛校验）输出异常：$(cat "$_stage_home/.u4.out")" ;;
-esac
-
-# 7.5 uninstall -y：卸载（隔离 HOME）
+# 7.4 uninstall -y：清理旧版安装残留
+#（隔离 HOME 无用户数据 → 功能文件移除后空壳一并移除；真实环境有数据则保留数据目录）
 HOME="$_stage_home" "$_csw" uninstall -y > "$_stage_home/.u5.out" 2>&1 \
     || _fail "uninstall 失败（退出码非 0）"
 case "$(cat "$_stage_home/.u5.out")" in
-    *"卸载完成"*) : ;;
+    *"清理完成"*) : ;;
     *) _fail "uninstall 输出异常：$(cat "$_stage_home/.u5.out")" ;;
 esac
 if [ ! -d "$_stage_home/.devtools/ctfsweep" ]; then
-    echo "uninstall -y OK"
+    echo "uninstall -y OK（功能残留清理、空壳移除）"
 else
-    _fail "卸载后安装目录仍存在"
+    _fail "清理后安装目录仍存在"
 fi
 
 rm -rf "$_stage" "$_stage_home" "$_boot_root"

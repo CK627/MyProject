@@ -1,6 +1,6 @@
 #compdef ctfsweep
 # ctfsweep 补全（zsh）：把本文件所在目录加入 fpath 后重开终端，或直接 source 本文件
-# （installer/install.sh 会把 source 行写进 ~/.zshrc，自动生效）。
+# （源码直跑模式：在 ~/.zshrc 中 source 项目里的本文件即可）。
 #
 # 候选为手写清单（不依赖 _arguments）：
 #   ctf <TAB>             → 子命令 + 全部选项 + 文件（不敲 "-" 也能看到 --选项）
@@ -8,17 +8,19 @@
 #   ctf -f<TAB>           → 直接补全 -f（短形式仍可按前缀补全；--f<TAB> → --file）
 #   ctf -f <TAB>          → 补全文件；-F <TAB> → 补全文件夹；--extract-dir <TAB> → 补全目录
 #   ctf --min-score <TAB> → 0.40 / 0.55 / 0.85 / 0.95
-#   ctf update <TAB>      → --check；ctf uninstall <TAB> → -y / --yes
+#   ctf uninstall <TAB>   → -y / --yes
 #   ctf train <TAB>       → --data / --epochs / --model-out
 #   已输入过的选项不会重复列出（-f 与 --file 视为同一个）
 
 # ---- 候选清单 ----
 _ctfsweep_subcmds=(
-  'update:检查并更新到最新版（镜像优先，回退 GitHub）'
-  'install:从源码仓库安装到 devtools'
-  'uninstall:卸载 ctfsweep'
-  'config:显示配置与安装信息'
+  'update:更新指引（源码直跑：git pull）'
+  'install:已弃用（源码直跑，不安装外部副本）'
+  'uninstall:清理旧版安装残留（保留数据）'
+  'config:显示运行信息与配置'
   'train:训练本地判断核（judge）模型'
+  'label:交互式标注未标注候选'
+  'learning:自主学习（带收敛判断）'
   'help:显示帮助'
 )
 
@@ -48,10 +50,6 @@ _ctfsweep_opts_pairs=(
   '-k --keywords:追加关键词（逗号分隔）'
 )
 
-_ctfsweep_opts_update=(
-  '--check:仅检查更新，不执行升级'
-)
-
 _ctfsweep_opts_uninstall=(
   '-y:跳过确认'
   '--yes:跳过确认'
@@ -61,6 +59,17 @@ _ctfsweep_opts_train=(
   '--data:数据集文件（默认 ~/.devtools/ctfsweep/judge/dataset.jsonl）'
   '--epochs:训练轮数'
   '--model-out:模型输出路径'
+)
+
+_ctfsweep_opts_label=(
+  '--batch:每批标注条数（默认 10）'
+)
+
+_ctfsweep_opts_learning=(
+  '--min-auc:最低 AUC 达标值（默认 0.85）'
+  '--min-samples:最低样本数（默认 16）'
+  '--max-epochs:最大训练轮数（默认 500）'
+  '--epochs:每轮训练轮数（默认 200）'
 )
 
 _ctfsweep() {
@@ -73,8 +82,7 @@ _ctfsweep() {
   if (( CURRENT >= 3 )); then
     case "${words[2]}" in
       update)
-        _describe -O 'update 选项' _ctfsweep_opts_update
-        return 0
+        return 0   # update 无参数（仅输出更新指引）
         ;;
       uninstall)
         _describe -O 'uninstall 选项' _ctfsweep_opts_uninstall
@@ -92,6 +100,30 @@ _ctfsweep() {
             ;;
         esac
         _describe -O 'train 选项' _ctfsweep_opts_train
+        return 0
+        ;;
+      label)
+        case "$prev" in
+          --batch)
+            compadd -- 5 10 20 50
+            return 0
+            ;;
+        esac
+        _describe -O 'label 选项' _ctfsweep_opts_label
+        return 0
+        ;;
+      learning)
+        case "$prev" in
+          --min-auc)
+            compadd -- 0.80 0.85 0.90 0.95
+            return 0
+            ;;
+          --min-samples|--max-epochs|--epochs)
+            compadd -- 8 16 32 64 100 200 500 1000
+            return 0
+            ;;
+        esac
+        _describe -O 'learning 选项' _ctfsweep_opts_learning
         return 0
         ;;
       install|config|help)
@@ -208,26 +240,7 @@ if (( $+functions[compdef] )); then
 fi
 
 # ============================================
-# 包装函数
-# 函数在当前 shell 里执行，所以 ctfsweep update / install / uninstall 跑完后可以
-# 立刻刷新补全与 shell 状态，不必手动 source ~/.zshrc 或重开终端。
-# （脚本本身是子进程，无法修改父 shell 的环境，只有 shell 函数能做到这一点）
+# 说明（源码直跑模式）
+# 补全与 PATH 均由本文件所在的项目目录提供；代码更新（git pull）后无需刷新。
+# （历史版本曾在此定义 ctfsweep 包装函数用于安装后的即时刷新，已随安装模式移除）
 # ============================================
-ctfsweep() {
-  command ctfsweep "$@"
-  local _ctfsweep_ret=$?
-  case "$1" in
-    update|install)
-      [ -f "$HOME/.devtools/ctfsweep/completions/ctfsweep.zsh" ] \
-        && source "$HOME/.devtools/ctfsweep/completions/ctfsweep.zsh"
-      hash -r 2>/dev/null
-      ;;
-    uninstall)
-      # 卸载后重载 shell 配置并移除本包装函数
-      source ~/.zshrc 2>/dev/null
-      unfunction ctfsweep 2>/dev/null
-      hash -r 2>/dev/null
-      ;;
-  esac
-  return $_ctfsweep_ret
-}

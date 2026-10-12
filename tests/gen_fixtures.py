@@ -11,6 +11,11 @@
     t3.evtx     evtx 风格 UTF-16LE 字节（明文 flag + 两个花括号片段 + 五类噪音样本）
     t4.pcap     HTTP 流中内嵌 zip（内含 flag 文本），供 --extract 测试
     t5-ad.pcap  AD 域流量：Kerberos(88) RC4 票据 + SMB NTLM 认证 + LDAP 明文绑定
+    t6-hosts.pcap  ARP 请求/应答 + DHCP 主机名 → 主机表（IP↔MAC / 主机名线索）
+    t7-tls.pcap    TLS 跳过 / JPEG 头判别 / HTML 反误报 / 真 Windows 会话正例
+    t8-b64.pcap    HTML 载荷页内嵌 base64 的 ZIP（saveAs 下载页）
+    t9-dns.pcap    真实 DNS 长查询（外带嫌疑）/ HTML·CSS·文件名不得误报
+    t10-ftp.pcap   FTP 会话（凭据/命令序列 → 非 flag 证据）/ 二进制关键词字节巧合不得误报
 """
 import base64
 import io
@@ -243,6 +248,139 @@ def build_t5_ad():
     return pcap_file(frames)
 
 
+def build_t6():
+    """t6-hosts.pcap：ARP（IP↔MAC）+ DHCP 主机名 选项 12 → 主机表"""
+    a = bytes.fromhex('0200000000aa')      # 10.9.9.10
+    b = bytes.fromhex('0200000000bb')      # 10.9.9.20
+    bcast = b'\xff' * 6
+
+    def eth(smac, dmac, et):
+        return dmac + smac + struct.pack('>H', et)
+
+    arp_req = (eth(a, bcast, 0x0806)
+               + struct.pack('>HHBBH', 1, 0x0800, 6, 4, 1)
+               + a + _ip('10.9.9.10') + b'\x00' * 6 + _ip('10.9.9.20'))
+    arp_rep = (eth(b, a, 0x0806)
+               + struct.pack('>HHBBH', 1, 0x0800, 6, 4, 2)
+               + b + _ip('10.9.9.20') + a + _ip('10.9.9.10'))
+    bootp = (b'\x01\x01\x06\x00' + struct.pack('>I', 0x5a5a1234)
+             + b'\x00' * 4 + b'\x00' * 16 + a + b'\x00' * 10 + b'\x00' * 64 + b'\x00' * 128)
+    opts = b'\x35\x01\x01' + b'\x0c\x08SMOKE-PC' + b'\xff'
+    dhcp_payload = bootp + b'\x63\x82\x53\x63' + opts
+    ip = (struct.pack('>BBHHHBBH', 0x45, 0, 20 + len(dhcp_payload), 0x1337, 0x4000, 64, 17, 0)
+          + _ip('10.9.9.10') + _ip('255.255.255.255'))
+    dhcp_frame = eth(a, bcast, 0x0800) + ip + udp(68, 67, dhcp_payload)
+    http = eth_ipv4(tcp(40010, 80, 1, b'GET / HTTP/1.1\r\nHost: smoke.local\r\n\r\n'), 6)
+    return pcap_file([arp_req, arp_rep, dhcp_frame, http])
+
+
+def build_t7():
+    """t7-tls.pcap：TLS 跳过 / JPEG 判别 / HTML 反误报 / 真 Windows 会话（正例）"""
+    frames = []
+    # 1) TLS 流内嵌"合法头"伪 JPEG → 应被 TLS 判定跳过（不雕刻）
+    tls = (b'\x16\x03\x01\x00\x64' + b'\x01' + b'\x00\x00\x60' + b'\x03\x03'
+           + bytes(range(0x20, 0x80)))                       # 看起来像握手记录
+    fakejpg = b'\xff\xd8\xff\xe0' + b'FAKE-IMAGE-DATA' * 20 + b'\xff\xd9'
+    frames.append(eth_ipv4(tcp(49001, 443, 1, tls + fakejpg), 6))
+    # 2) 明文 HTTP 流中的真 JPEG（FFD8FF E0）→ 应提取
+    realjpg = b'\xff\xd8\xff\xe0' + b'JFIF\x00' + b'REAL-IMAGE-DATA' * 60 + b'\xff\xd9'
+    resp = (b'HTTP/1.1 200 OK\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n'
+            % len(realjpg)) + realjpg
+    frames.append(eth_ipv4(tcp(80, 49002, 1, resp), 6, src='10.9.9.20', dst='10.9.9.10'))
+    # 3) HTML 页面含 C:\ 字样与表格标签 → 不得误报"交互会话"
+    html = (b'<html><body>\n<table class="list">\n'
+            b'C:\\inetpub\\wwwroot>\r\n</td></tr>\r\n</td></tr>\r\n<b>up</b>\r\n</body></html>')
+    hresp = (b'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: %d\r\n\r\n'
+             % len(html)) + html
+    frames.append(eth_ipv4(tcp(80, 49003, 1, hresp), 6, src='10.9.9.20', dst='10.9.9.10'))
+    # 4) 真 Windows 交互会话（正例：banner + 提示符 + 命令）
+    win = (b'Microsoft Windows [Version 10.0.19041.1]\r\n\r\n'
+           b'C:\\Users\\smoke> whoami\r\nsmoke-pc\\smoke\r\n'
+           b'C:\\Users\\smoke> ipconfig\r\nWindows IP Configuration\r\n'
+           b'C:\\Users\\smoke> net user\r\n\r\nC:\\Users\\smoke> ')
+    frames.append(eth_ipv4(tcp(49004, 4444, 1, win), 6))
+    return pcap_file(frames)
+
+
+def build_t8():
+    """t8-b64.pcap：HTML 载荷页内嵌 base64 的 ZIP（内含 flag）→ 应解码提取"""
+    from random import Random
+    rnd = Random(42)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr('readme.txt', 'flag{b64-embedded-ok}\n' + 'padding data\n' * 200)
+        zf.writestr('blob.bin', bytes(rnd.randrange(256) for _ in range(4096)))
+    inner = buf.getvalue()
+    b64 = base64.b64encode(inner)
+    html = (b'<html><head><script>function saveAs(b,f){}</script></head><body>\n'
+            b'<div id="payload">' + b64 + b'</div>\n</body></html>')
+    resp = (b'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: %d\r\n\r\n'
+            % len(html)) + html
+    frames = [eth_ipv4(tcp(80, 49005, 1, resp), 6, src='10.9.9.20', dst='10.9.9.10')]
+    return pcap_file(frames)
+
+
+def build_t9():
+    """t9-dns.pcap：真实 DNS 长查询（应报外带嫌疑）/ 良性长域名 · HTML·CSS·文件名（不得误报）"""
+    # 1) 真实 DNS 外带式长查询（超长单标签）
+    exfil = b'Zm9vYmFy' * 6 + b'.exfil.tunnel-domain.com'
+    frames = [eth_ipv4(udp(53001, 53, dns_query(exfil)), 17)]
+    # 2) 良性长域名（多短标签拼接，>50 字符）——不得报"DNS 外带"
+    benign = b'adsh.wagbridge.taobao.alimama.com.gds.alibabadns.com'
+    frames.append(eth_ipv4(udp(53002, 53, dns_query(benign)), 17))
+    # 3) HTTP 页面垃圾：CSS 颜色 / multipart 文件名 / JS 片段（历史上全部误报过）
+    junk = (b'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n'
+            b'<style>.x{color:#f2f2f2;border-color:#fff9ec}</style>\n'
+            b'form-data; name="upload_file"; filename="ms17-010.cn.php"\n'
+            b'layui-v2.4.5 MIT License By https://www.layui.com\n')
+    frames.append(eth_ipv4(tcp(80, 53003, 1, junk), 6, src='10.9.9.20', dst='10.9.9.10'))
+    return pcap_file(frames)
+
+
+def build_t10():
+    """t10-ftp.pcap：FTP 会话（凭据/命令序列 → 非 flag 类高置信证据）/
+    二进制流里的关键词字节巧合（不得误报）/ 真实文本关键词（正例）。
+
+    对应两处用户实测反馈：汇总区把 FTP 凭据当"可直接提交的 flag 候选"，
+    以及图片流里 latin-1 视角貌似可打印的乱码被当成关键词线索。
+    """
+    C, S = '10.9.9.30', '10.9.9.40'
+    frames, cseq, sseq = [], 1, 1
+
+    def cli(payload):
+        nonlocal cseq
+        frames.append(eth_ipv4(tcp(51000, 21, cseq, payload), 6, src=C, dst=S))
+        cseq += len(payload)
+
+    def srv(payload):
+        nonlocal sseq
+        frames.append(eth_ipv4(tcp(21, 51000, sseq, payload), 6, src=S, dst=C))
+        sseq += len(payload)
+
+    srv(b'220 (vsFTPd 3.0.3)\r\n')
+    cli(b'USER dj\r\n')
+    srv(b'331 Please specify the password.\r\n')
+    cli(b'PASS dj\r\n')
+    srv(b'230 Login successful.\r\n')
+    cli(b'PORT 10,9,9,30,199,40\r\nNLST\r\n')
+    srv(b'150 Here comes the directory listing.\r\n226 Directory send OK.\r\n')
+    cli(b'RETR 1.jpg\r\n')
+    srv(b'150 Opening BINARY mode data connection for 1.jpg (1234 bytes).\r\n226 Transfer complete.\r\n')
+    cli(b'RETR 2.jpg\r\n')
+    srv(b'150 Opening BINARY mode data connection for 2.jpg (4321 bytes).\r\n226 Transfer complete.\r\n')
+    # 二进制流（确定性"散布"字节，模拟压缩/加密数据）：
+    # latin-1 视角几乎全可打印（旧的 0.7 闸门必然误报），严格文本判定应全部剔除
+    pool = ([c for c in range(0x20, 0x7F) if c not in (0x7B, 0x7D)]
+            + list(range(0xA1, 0x100)))
+    arr = bytes(pool[(i * 73 + 11) % len(pool)] for i in range(1024))
+    binary = arr[:200] + b'flag' + arr[300:500] + b'ctf' + arr[:100]
+    frames.append(eth_ipv4(tcp(51001, 8080, 1, binary), 6, src=C, dst=S))
+    # 真实文本里的关键词（正例：必须保留线索）
+    text = b'notes: the ctf challenge starts at noon\r\nsecond line mentions ctf again\r\n'
+    frames.append(eth_ipv4(tcp(51002, 8080, 1, text), 6, src=C, dst=S))
+    return pcap_file(frames)
+
+
 def generate(outdir):
     os.makedirs(outdir, exist_ok=True)
     files = {
@@ -251,6 +389,11 @@ def generate(outdir):
         't3.evtx': build_t3(),
         't4.pcap': build_t4(),
         't5-ad.pcap': build_t5_ad(),
+        't6-hosts.pcap': build_t6(),
+        't7-tls.pcap': build_t7(),
+        't8-b64.pcap': build_t8(),
+        't9-dns.pcap': build_t9(),
+        't10-ftp.pcap': build_t10(),
     }
     for name in sorted(files):
         with open(os.path.join(outdir, name), 'wb') as f:

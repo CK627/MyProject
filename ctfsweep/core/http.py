@@ -1,13 +1,77 @@
 # -*- coding: utf-8 -*-
-"""HTTP 深度分析：请求序列 / POST 字段（含 JSON 体）/ JWT 解码 / 请求↔响应事务配对"""
+"""HTTP 深度分析：请求序列 / POST 字段（含 JSON 体）/ JWT 解码 / 请求↔响应事务配对
++ 响应体解码链（chunked 分块 → gzip/deflate 解压；用于下载文件提取）"""
 import json
 import re
+import zlib
 from urllib.parse import unquote_plus
 
 from .blobscan import add
+from .capture import merge_stream
 from .utils import printable_ratio, try_b64
 
 HTTP_REQ_RE = re.compile(rb'(?<![A-Za-z])(GET|POST|HEAD|PUT|OPTIONS|DELETE|PATCH) (\S{1,300}) HTTP/1\.[01]')
+
+
+def _dechunk_prefix(data, pos=0):
+    """从 pos 解析 chunked 编码：返回 (decoded, new_pos)；无有效分块返回 (None, pos)。"""
+    chunks, n, p = [], len(data), pos
+    while p < n:
+        m = re.match(rb'\s*([0-9a-fA-F]{1,8})\r?\n', data[p:p + 14])
+        if not m:
+            break
+        size = int(m.group(1), 16)
+        p += m.end()
+        if size == 0:
+            break
+        chunk = data[p:p + size]
+        if len(chunk) < size:
+            p = pos
+            chunks = []
+            break
+        chunks.append(chunk)
+        p += size
+        if data[p:p + 2] == b'\r\n':
+            p += 2
+    if chunks:
+        return b''.join(chunks), p
+    return None, pos
+
+
+def http_body_decode(body):
+    """HTTP 响应体解码链：chunked 拼接 → gzip/zlib 解压（自动循环，最多 3 层）。
+
+    返回 (decoded, notes)；notes 记录应用的变换（如 ['chunked', 'gzip']）。
+    """
+    notes = []
+    cur = body
+    for _ in range(3):
+        changed = False
+        d, _np = _dechunk_prefix(cur)
+        if d is not None and d != cur:
+            cur = d
+            notes.append('chunked')
+            changed = True
+        if cur[:2] == b'\x1f\x8b':                     # gzip
+            try:
+                dobj = zlib.decompressobj(31)
+                out = dobj.decompress(cur) + dobj.flush()
+                if out:
+                    cur = out
+                    notes.append('gzip')
+                    changed = True
+            except Exception:
+                pass
+        elif cur[:2] in (b'x\x9c', b'x\xda', b'x\x01'):  # zlib
+            try:
+                cur = zlib.decompress(cur)
+                notes.append('zlib')
+                changed = True
+            except Exception:
+                pass
+        if not changed:
+            break
+    return cur, notes
 
 
 def http_summary(blob, ts0, http_reqs, form_fields):
@@ -74,8 +138,11 @@ def jwt_summary(tok):
         return None
 
 
-def parse_http_responses(blob):
-    """解析 HTTP 响应流：返回 [(状态码, content-type, 正文bytes)]（优先按 content-length 精确切分）"""
+def parse_http_responses(blob, nocl_cap=2048):
+    """解析 HTTP 响应流：返回 [(状态码, content-type, 正文bytes)]（content-length 精确切分；
+    chunked 响应自动解码拼接）。
+    nocl_cap: 无 CL/chunked 时的正文上限（默认 2048，适合"短文本回显"配对；
+    雕刻文件场景传 None 表示不设上限）"""
     out = []
     resp_re = re.compile(rb'HTTP/1\.[01] (\d{3})')
     pos, n = 0, len(blob)
@@ -90,13 +157,22 @@ def parse_http_responses(blob):
         cl = re.search(rb'(?i)content-length:\s*(\d+)', head)
         ctm = re.search(rb'(?i)content-type:\s*([^\r\n;]+)', head)
         ctype = ctm.group(1).strip().lower() if ctm else b''
+        te = re.search(rb'(?i)transfer-encoding:\s*[^\r\n]*chunked', head)
         if cl:
             ln = int(cl.group(1))
             body = blob[he + 4:he + 4 + ln]
             pos = he + 4 + ln
+        elif te:
+            nxt = blob.find(b'HTTP/1.', he + 4)
+            raw = blob[he + 4:nxt if nxt >= 0 else n]
+            body, _notes = http_body_decode(raw)
+            pos = nxt if nxt >= 0 else n
         else:
             nxt = blob.find(b'HTTP/1.', he + 4)
-            body = blob[he + 4:nxt if nxt >= 0 else min(n, he + 4 + 2048)]
+            if nocl_cap:
+                body = blob[he + 4:nxt if nxt >= 0 else min(n, he + 4 + nocl_cap)]
+            else:
+                body = blob[he + 4:nxt if nxt >= 0 else n]
             pos = nxt if nxt >= 0 else n
         out.append((int(m.group(1)), ctype, body))
     return out
@@ -106,7 +182,7 @@ def build_http_transactions(tcp_streams, findings, seen):
     """配对 HTTP 请求↔响应正文；webshell/RCE 命令回显、接口短文本并入置信度报告"""
     out, added = [], 0
     for k, segs in tcp_streams.items():
-        blob = b''.join(p for _n, _t, p in segs)
+        blob = merge_stream(segs)
         if len(blob) < 40 or len(blob) > 3 * 1024 * 1024:
             continue
         reqs = list(HTTP_REQ_RE.finditer(blob))
@@ -115,7 +191,7 @@ def build_http_transactions(tcp_streams, findings, seen):
         rsegs = tcp_streams.get((k[2], k[3], k[0], k[1]))
         if not rsegs:
             continue
-        resps = parse_http_responses(b''.join(p for _n, _t, p in rsegs))
+        resps = parse_http_responses(merge_stream(rsegs))
         loc = '%s:%d -> %s:%d' % k
         for m, (code, ctype, body) in zip(reqs, resps):
             uri = m.group(2).decode('latin-1')

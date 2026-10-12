@@ -1,0 +1,76 @@
+==============================================================================
+[文件] t5-ad.pcap (0.9 KB)
+  格式: pcap  链路类型: Ethernet   数据包: 5 个
+  【主机表】IP ↔ MAC / 主机名（ARP+Ethernet+DHCP+NBNS）：
+    10.9.9.10       02:00:00:00:00:02
+    10.9.9.20       02:00:00:00:00:02
+  【AD / 域渗透线索】
+    域: CORP.LOCAL
+    账号(2): svc_sql、kanna.seto
+    SPN(1): MSSQLSvc/dc01.corp.local
+    票据: AS-REP svc_sql  etype 23 (RC4-HMAC)  cipher 48B  RC4：hashcat -m 18200/13100 可离线爆破（首选）
+      └ $krb5asrep$23$svc_sql@CORP.LOCAL:0b30557a9fc4e90e33587da2c7ec1136$5b80a5caef14395e83a8cdf2173c6186abd0f51a3f6489aed3f81d42678cb1d6
+    NetNTLMv2: kanna.seto
+      └ kanna.seto::corp:0123456789abcdef:aabbccddeeff00112233445566778899:0101000000000000000000000000000000000000000000000000000000000000
+    LDAP 明文口令: cn=svc_sql,dc=corp,dc=local = P@ssw0rd-AD-2026
+  【高置信（可直接核验）】
+    [0.93 高] LDAP口令: LDAP 明文绑定：cn=svc_sql,dc=corp,dc=local 口令= P@ssw0rd-AD-2026   @10.9.9.10:50003 -> 10.9.9.20:389
+    [0.90 高] Kerberos票据: AS-REP（可 AS-REP Roasting） | svc_sql | etype RC4-HMAC | cipher 48B | RC4：hashcat -m 18200/13100 可离线爆破（首选）   @10.9.9.10:50001 -> 10.9.9.20:88
+    [0.90 高] Kerberos票据: $krb5asrep$23$svc_sql@CORP.LOCAL:0b30557a9fc4e90e33587da2c7ec1136$5b80a5caef14395e83a8cdf2173c6186abd0f51a3f6489aed3f81d42678cb1d6   @10.9.9.10:50001 -> 10.9.9.20:88 [hashcat]
+    [0.85 高] NetNTLM: NetNTLMv2 响应（hashcat -m 5600）：kanna.seto@corp   @10.9.9.10:50002 -> 10.9.9.20:445
+    [0.85 高] NetNTLM: kanna.seto::corp:0123456789abcdef:aabbccddeeff00112233445566778899:0101000000000000000000000000000000000000000000000000000000000000   @10.9.9.10:50002 -> 10.9.9.20:445 [hashcat]
+  【中置信（需人工确认）】
+    [0.55 中] 域账号: 域 CORP.LOCAL 出现的账号：svc_sql、kanna.seto   @(Kerberos/NTLM)
+    [0.55 中] 域账号: SPN（服务主体名，Kerberoasting 目标）：MSSQLSvc/dc01.corp.local   @(Kerberos TGS-REP)
+
+[留存区] 已记录本次扫描（5 条候选）：<TMP>/work/t5-ad.pcap
+  已知答案可回填: ctfsweep mark "<TMP>/work/t5-ad.pcap" <真实flag>
+
+==============================================================================
+
+【元判断核综合评分】
+总发现项: 7
+  高置信（>=0.85）: 5
+  中置信（0.55-0.85）: 2
+  低置信（<0.55）: 0
+
+【前 10 项发现】
+  1. [高 0.93] LDAP口令
+     模块: scanner
+     证据: b'LDAP \xe6\x98\x8e\xe6\x96\x87\xe7\xbb\x91\xe5\xae\x9a\xef\xbc\x9acn=svc_sql,dc=corp,dc=local  \xe5\x8f\xa3\xe4\xbb\xa4= P@ssw0rd-AD-2026'
+
+  2. [高 0.90] Kerberos票据
+     模块: scanner
+     证据: b'AS-REP\xef\xbc\x88\xe5\x8f\xaf AS-REP Roasting\xef\xbc\x89 | svc_sql | etype RC4-HMAC | cipher 48B | RC4\xef\xbc\x9ahashcat -m 18200/13100 \xe5\x8f\xaf\xe7\xa6\xbb\xe7\xba\xbf\xe7\x88\x86\xe7\xa0\xb
+
+  3. [高 0.90] Kerberos票据
+     模块: scanner
+     证据: b'$krb5asrep$23$svc_sql@CORP.LOCAL:0b30557a9fc4e90e33587da2c7ec1136$5b80a5caef14395e83a8cdf2173c6186abd0f51a3f6489aed3f81d42678cb1d6'
+
+  4. [高 0.85] NetNTLM
+     模块: scanner
+     证据: b'NetNTLMv2 \xe5\x93\x8d\xe5\xba\x94\xef\xbc\x88hashcat -m 5600\xef\xbc\x89\xef\xbc\x9akanna.seto@corp'
+
+  5. [高 0.85] NetNTLM
+     模块: scanner
+     证据: b'kanna.seto::corp:0123456789abcdef:aabbccddeeff00112233445566778899:0101000000000000000000000000000000000000000000000000000000000000'
+
+  6. [中 0.55] 域账号
+     模块: scanner
+     证据: b'\xe5\x9f\x9f CORP.LOCAL \xe5\x87\xba\xe7\x8e\xb0\xe7\x9a\x84\xe8\xb4\xa6\xe5\x8f\xb7\xef\xbc\x9asvc_sql\xe3\x80\x81kanna.seto'
+
+  7. [中 0.55] 域账号
+     模块: scanner
+     证据: b'SPN\xef\xbc\x88\xe6\x9c\x8d\xe5\x8a\xa1\xe4\xb8\xbb\xe4\xbd\x93\xe5\x90\x8d\xef\xbc\x8cKerberoasting \xe7\x9b\xae\xe6\xa0\x87\xef\xbc\x89\xef\xbc\x9aMSSQLSvc/dc01.corp.local'
+
+==============================================================================
+【证据汇总】（未发现 flag 形状候选；以下为 ≥0.85 的非 flag 证据）
+  * [Kerberos票据] AS-REP（可 AS-REP Roasting） | svc_sql | etype RC4-HMAC | cipher 48B | RC4：hashcat -m 18200/13100 可离线爆破（首选）   (来自 t5-ad.pcap)
+  * [Kerberos票据] $krb5asrep$23$svc_sql@CORP.LOCAL:0b30557a9fc4e90e33587da2c7ec1136$5b80a5caef14395e83a8cdf2173c6186abd0f51a3f6489aed3f81d42678cb1d6   (来自 t5-ad.pcap)
+  * [NetNTLM] NetNTLMv2 响应（hashcat -m 5600）：kanna.seto@corp   (来自 t5-ad.pcap)
+  * [NetNTLM] kanna.seto::corp:0123456789abcdef:aabbccddeeff00112233445566778899:0101000000000000000000000000000000000000000000000000000000000000   (来自 t5-ad.pcap)
+  * [LDAP口令] LDAP 明文绑定：cn=svc_sql,dc=corp,dc=local 口令= P@ssw0rd-AD-2026   (来自 t5-ad.pcap)
+【扫描统计】
+  高（≥0.85）：5 条
+  中（0.55–0.85）：2 条
+  低（<0.55）：0 条

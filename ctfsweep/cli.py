@@ -1,16 +1,23 @@
 # -*- coding: utf-8 -*-
-"""命令行入口：参数解析、配置文件加载、批量扫描与结果汇总"""
+"""命令行入口：参数解析、配置文件加载、批量扫描与结果汇总。
+
+集成路由调度（Router）与元判断核（MetaJudge）：
+- 文件类型匹配 → 模块调度 → 结构化输出 → 综合评分
+- 保留旧版扫描器作为基础能力（流量/原始文件），新增取证模块通过 Router 分派
+"""
 import os
 import sys
 
 from . import __version__
-from .core.capture import PCAP_MAGICS, PCAPNG_MAGIC
+from .core.capture import CaptureContext, PCAP_MAGICS, PCAPNG_MAGIC
 from .core.decode import assemble_suggestion
 from .core.extract import PWD_POOL, _pk, precollect_pwds
 from .core import judge
 from .core import selfmgr
+from .core.router import Router, Finding, ScanOptions
+from .core.meta_judge import MetaJudge
 from .core.report import report
-from .core.scanner import scan_capture, scan_rawfile
+from .core.utils import BAND_HIGH, BAND_MID, FLAG_RE
 
 HELP = """ctfsweep — CTF 流量 / 日志 / 注册表 快速扫描器（零依赖，Python 3.8+）
 
@@ -20,11 +27,18 @@ HELP = """ctfsweep — CTF 流量 / 日志 / 注册表 快速扫描器（零依�
   ./bin/ctfsweep <文件或目录> ...        # 仓库启动器（macOS / Linux）
 
 管理子命令:
-  ctfsweep update [--check]   检查并更新到最新版（镜像优先，回退 GitHub；--check 只检查）
-  ctfsweep install            从源码仓库安装到 devtools
-  ctfsweep uninstall [-y]     卸载（-y 跳过确认）
-  ctfsweep config             显示配置与安装信息
-  ctfsweep train [--data F]   训练本地判断核模型（留一组评估 + 保存；--epochs N / --model-out F）
+  ctfsweep update             更新指引（源码直跑模式：git pull）
+  ctfsweep install            已弃用（源码直跑，不安装外部副本）
+  ctfsweep uninstall [-y]     清理旧版安装残留（保留用户数据；-y 跳过确认）
+  ctfsweep config             显示运行信息与生效配置
+  ctfsweep train [--data F]   训练本地判断核模型（超参数读训练配置；--epochs N / --model-out F 可覆盖）
+  ctfsweep label              交互式标注未标注候选（确认/否定/跳过）
+  ctfsweep auto-label         自动标注未标注候选（强模型规则验证 → 正/负样本）
+  ctfsweep mark <路径> <flag> 用真实答案回填一道题（文件/文件夹均可）：匹配候选→正样本，
+                              同题其他高分候选→负样本（难负样本）；无记录时自动先扫描
+  ctfsweep learning [opts]    自主学习：先逐题复核留存区（题目；答案：<真实flag>），再训练
+                              （带收敛判断；超参数读训练配置；--min-auc N --min-samples N 可覆盖）
+  ctfsweep gen-data [-o F]    生成 CTF 取证训练数据集（覆盖 PCAP/内存/浏览器/日志/邮件/数据库/配置/压缩/DNS/编码；默认输出到用户数据目录）
   ctfsweep help               显示本帮助
 
 支持输入: pcap / pcapng（抓包）、evtx（事件日志）、.reg / 任意文本
@@ -37,13 +51,14 @@ HELP = """ctfsweep — CTF 流量 / 日志 / 注册表 快速扫描器（零依�
   --no-decode       关闭 hex / base64 自动解码
   --depth N         解码链最大深度（默认 3，即 hex/base64 可反复套娃）
   --limit N         每个文件最多输出条数（默认 50，按置信度排序后截取）
-  --extract         从流量中提取文件（ZIP/PNG/JPG/GIF/PDF/GZ/RAR/7Z），
+  --extract         从流量中提取文件（ZIP/PNG/JPG/GIF/PDF/GZ/RAR/7Z/PE/OLE2/ELF，
+                    以及 HTML 载荷页内嵌的 base64 文件），
                     保存到 "<抓包名>_extracted/" 并自动解压/扫描其内容；
                     加密 zip 自动尝试：空口令→常用表→--pwd-file 字典→流量采集口令
   --extract-dir D   指定提取输出目录（默认与抓包同目录）
   --pwd-file F      附加口令字典文件（每行一个，用于加密压缩包）
   --judge           用本地判断核模型对候选打分（p=…，并列出重点候选；需先 ctfsweep train）
-  --config F        指定配置文件（默认读取 ~/.config/ctfsweep/ctfsweep.conf）
+  --config F        指定配置文件（默认读取 ~/.devtools/ctfsweep/ctfsweep.conf）
   --version         显示版本
   -h, --help        显示本帮助
 
@@ -54,15 +69,23 @@ HELP = """ctfsweep — CTF 流量 / 日志 / 注册表 快速扫描器（零依�
   0.72 中   JWT 令牌（自动解码 header/payload，伪造身份类题）
   0.65 中   (flag|ctf)…{ 未闭合片段（典型的分段 flag 前半截）
   0.62 中   命令回显 / 环境变量密钥回显（webshell、取证题关键线索）
-  0.60 中   裸花括号片段 {xxxx    0.55 中   裸闭合片段 xxxx}
+  0.60 中   裸花括号片段 {xxxx
+  0.55 中   裸闭合片段 xxxx}
             （evtx / reg 等原始文件自动剔除噪音：GUID / 路径后缀拼贴 / 乱码区巧合）
   0.45 低   DNS 查询名（域名白名单一眼可辨）
   0.42 低   接口短文本响应（HTTP 事务配对结果）
   0.40 低   关键词上下文（普通字符串命中，需人工浏览）
 
 判断核（--judge）:
-  本地训练的轻量判断网络（纯 Python MLP），对候选输出 p 分并按"答案相关性"排序；
-  训练: ctfsweep train（数据 = 本机解题标注 ~/.devtools/ctfsweep/judge/dataset.jsonl）
+  本地训练的轻量判断网络（纯 Python MLP 集成，二进制 .ctfj 模型），对候选输出 p 分并按"答案相关性"排序；
+  模型与配置在项目内 models/（model.ctfj + train_config.json，随项目版本管理）；
+  训练数据在缓存区 ~/.devtools/ctfsweep/judge/（dataset.jsonl 累积标注 / pending.jsonl 扫描候选池）；
+  训练: ctfsweep train；超参数: 编辑 models/train_config.json（网络结构/学习率/种子等，改参数无需改代码）
+
+留存区（每次扫描自动记录）:
+  每次扫描的候选快照记入 ~/.devtools/ctfsweep/judge/retention.jsonl；
+  有答案: ctfsweep mark <路径> <真实flag>（立即回填正/负样本）；
+  没答案: ctfsweep learning 时逐题询问（题目；答案：<真实flag>，一个接一个，处理完再训练）
 """
 
 
@@ -83,33 +106,34 @@ def _load_conf(path):
 
 
 def _default_conf_path():
-    """配置文件查找：环境变量 CTFSWEEP_CONF > ~/.config/ctfsweep/ctfsweep.conf"""
+    """配置文件查找：环境变量 CTFSWEEP_CONF > ~/.devtools/ctfsweep/ctfsweep.conf"""
     env = os.environ.get('CTFSWEEP_CONF')
     if env:
         return env
-    p = os.path.join(os.path.expanduser('~'), '.config', 'ctfsweep', 'ctfsweep.conf')
+    p = os.path.join(os.path.expanduser('~'), '.devtools', 'ctfsweep', 'ctfsweep.conf')
     return p if os.path.isfile(p) else None
 
 
 def _cmd_config():
-    """ctfsweep config：显示安装信息与生效配置。"""
+    """ctfsweep config：显示运行信息与生效配置。"""
     mode, root, _devtools = selfmgr.self_info()
     print('ctfsweep %s' % __version__)
-    if mode == 'installed':
-        tier = '系统级' if root.startswith(('/Library/devtools', '/usr/local/devtools')) else '用户级'
-        print('运行模式: 已安装（%s，devtools 布局）' % tier)
-    elif mode == 'repo':
-        print('运行模式: 源码仓库（未安装）')
+    if mode == 'repo':
+        print('运行模式: 源码仓库（项目内直跑，未安装外部副本）')
+    elif mode == 'installed':
+        print('运行模式: 旧版 devtools 安装（本机已改为项目内直跑，建议清理旧副本）')
     else:
-        print('运行模式: 未识别（可能不是 devtools 布局安装）')
+        print('运行模式: 未识别')
     print('程序目录: %s' % root)
-    if mode == 'installed':
-        udir = os.path.join(os.path.expanduser('~'), '.devtools', 'ctfsweep')
-        print('用户数据: %s（补全副本等）' % udir)
-    print('判断核数据: %s（数据集/模型，update 与卸载不受影响）' % judge.user_dir())
+    print('模型: %s（项目内；%s）' % (judge.model_path(),
+                                   '已就绪' if os.path.isfile(judge.model_path()) else '未训练'))
+    tc_path = judge.train_config_path()
+    print('训练配置: %s（项目内；%s）' % (tc_path, '已就绪' if os.path.isfile(tc_path)
+                                        else '不存在，首次训练时自动生成'))
+    print('扫描缓存: %s（候选池 pending.jsonl / 数据集 dataset.jsonl）' % judge.user_dir())
 
     env_conf = os.environ.get('CTFSWEEP_CONF')
-    conv = os.path.join(os.path.expanduser('~'), '.config', 'ctfsweep', 'ctfsweep.conf')
+    conv = os.path.join(os.path.expanduser('~'), '.devtools', 'ctfsweep', 'ctfsweep.conf')
     if env_conf:
         print('配置文件: %s（来自 CTFSWEEP_CONF）' % env_conf)
         conf_path = env_conf
@@ -149,8 +173,11 @@ def _cmd_config():
 
 
 def _cmd_train(args):
-    """ctfsweep train：训练本地判断核（留一组评估 + 保存模型）。"""
-    data_path, model_out, epochs = None, None, 250
+    """ctfsweep train：训练本地判断核（留一组评估 + 保存模型）。
+
+    超参数默认读取训练配置（judge/train_config.json）；--epochs 可临时覆盖。
+    """
+    data_path, model_out, epochs = None, None, None
     i = 0
     while i < len(args):
         a = args[i]
@@ -178,14 +205,175 @@ def _cmd_train(args):
     if len(rows) < 8:
         print('数据太少（%d 条），至少需要 8 条标注样本。' % len(rows))
         return 2
-    judge.run_training(rows, model_out=model_out, epochs=epochs)
+    judge.run_training(rows, model_out=model_out, epochs=epochs)   # epochs=None → 读训练配置
     return 0
+
+
+def _cmd_label(args):
+    """ctfsweep label：交互式标注未标注候选。"""
+    batch_size = 10
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == '--batch' and i + 1 < len(args):
+            try:
+                batch_size = int(args[i + 1])
+            except Exception:
+                pass
+            i += 2
+        else:
+            i += 1
+    return judge.interactive_label(batch_size=batch_size)
+
+
+def _cmd_auto_label(args):
+    """ctfsweep auto-label：自动标注未标注候选（强模型规则验证）。"""
+    pos_count, neg_count, fail_reasons = judge.auto_annotate_pending()
+    return 0
+
+
+def _scan_for_candidates(path, keywords=None):
+    """扫描文件或文件夹，收集候选快照（供留存区记录 / mark 自动补扫）。
+
+    返回 (candidates, files_count)。文件与文件夹一视同仁（目录递归展开，
+    路径取名随意无影响——如 flag.pacpng/ 这种"名字像文件实为目录"也照常处理）。
+    """
+    keywords = keywords or ['flag', 'ctf']
+    if os.path.isdir(path):
+        targets = []
+        for root, _dirs, files in os.walk(path):
+            for f in sorted(files):
+                if f != '.DS_Store':
+                    targets.append(os.path.join(root, f))
+    else:
+        targets = [path]
+    cands = []
+    for fp in targets:
+        try:
+            data = open(fp, 'rb').read()
+        except Exception:
+            continue
+        fname = os.path.basename(fp)
+        try:
+            # 与主扫描同一入口：抓包/原始字节的判别在 CaptureContext 里，不再自己嗅魔数
+            ctx = CaptureContext(data)
+            findings, _meta = Router(fp).run_stream(
+                ctx, ScanOptions(keywords=keywords, decode=True, depth=3, limit=50))
+        except Exception:
+            continue
+        for score, kind, _tok, val, _loc in findings:
+            if score >= judge.RETENTION_MIN_SCORE:
+                v = val if isinstance(val, str) else val.decode('utf-8', 'replace')
+                cands.append({'score': score, 'kind': kind, 'val': v, 'file': fname})
+    return cands, len(targets)
+
+
+def _cmd_mark(args):
+    """ctfsweep mark <文件或文件夹> <真实flag>：用真实答案回填一道题。
+
+    正样本 = 与答案匹配的候选；负样本 = 同题其他高分候选（难负样本）。
+    无扫描记录时自动先扫描一次（文件/文件夹均可）。
+    """
+    if len(args) < 2:
+        print('用法: ctfsweep mark <文件或文件夹> <真实flag>')
+        print('  示例: ctfsweep mark ./logs "flag{windows-log-answer}"')
+        print('  回填规则: 与答案匹配的候选 → 正样本；')
+        print('            同题其他高分候选 → 负样本（难负样本，最有学习价值）')
+        return 2
+    path, real_flag = args[0], args[1]
+    if not os.path.exists(path):
+        print('路径不存在: %s' % path)
+        return 2
+    rec = judge.find_retention_for(path)
+    if rec is None:
+        print('[留存区] 未找到该路径的扫描记录，自动扫描一次...')
+        cands, n_files = _scan_for_candidates(path)
+        if cands:
+            print('  扫描完成: %d 个文件 / %d 条候选' % (n_files, len(cands)))
+            judge.record_scan(path, cands, files_count=n_files)
+        else:
+            print('  扫描未产出候选（答案将直接作为正样本回填）')
+    res = judge.mark_answers(path, real_flag)
+    if res is None:
+        print('回填写入失败（留存区记录异常）')
+        return 1
+    pos, neg, dedup, matched, rec2 = res
+    print('[mark] 题目: %s' % rec2.get('path'))
+    print('  答案: %s' % real_flag)
+    print('  回填: 正样本 %d 条 / 负样本 %d 条（与已有数据重复跳过 %d）' % (pos, neg, dedup))
+    if not matched:
+        print('  [注] 候选未匹配到答案——答案已作为正样本直接入库；请确认答案与题目对应')
+    elif pos == 0:
+        print('  （答案命中但样本已在数据集中——重复跳过；负样本已补充）')
+    print('  提示: 运行 ctfsweep learning 将新数据纳入训练')
+    return 0
+
+
+def _cmd_gen_data(args):
+    """ctfsweep gen-data：生成 CTF 取证训练数据集（默认输出到用户数据目录）。"""
+    from ctfsweep.core import data_generator
+    # 默认输出到用户数据目录（与"数据集中放 .devtools"原则一致）
+    if '-o' not in args and '--output' not in args:
+        args = list(args) + ['-o', os.path.join(judge.user_dir(), 'generated_data.jsonl')]
+    _old_argv = sys.argv
+    try:
+        sys.argv = ['ctfsweep gen-data'] + list(args)
+        data_generator.main()
+    except SystemExit as e:
+        return e.code or 0
+    finally:
+        sys.argv = _old_argv
+    return 0
+
+
+def _cmd_learning(args):
+    """ctfsweep learning：自主学习（带收敛判断）。
+
+    超参数默认读取训练配置（judge/train_config.json）；命令行选项可临时覆盖。
+    """
+    min_auc, min_samples, max_epochs, epochs_per_run = None, None, None, None
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == '--min-auc' and i + 1 < len(args):
+            try:
+                min_auc = float(args[i + 1])
+            except Exception:
+                pass
+            i += 2
+        elif a == '--min-samples' and i + 1 < len(args):
+            try:
+                min_samples = int(args[i + 1])
+            except Exception:
+                pass
+            i += 2
+        elif a == '--max-epochs' and i + 1 < len(args):
+            try:
+                max_epochs = int(args[i + 1])
+            except Exception:
+                pass
+            i += 2
+        elif a == '--epochs' and i + 1 < len(args):
+            try:
+                epochs_per_run = int(args[i + 1])
+            except Exception:
+                pass
+            i += 2
+        else:
+            i += 1
+    return judge.learning_loop(
+        min_auc=min_auc,
+        min_samples=min_samples,
+        max_epochs=max_epochs,
+        epochs_per_run=epochs_per_run,
+    )
 
 
 def main():
     args = sys.argv[1:]
-    # 管理子命令（update / install / uninstall / config / train / help）
-    if args and args[0] in ('update', 'install', 'uninstall', 'config', 'train', 'help'):
+    # 管理子命令（update / install / uninstall / config / train / label / auto-label / mark / learning / gen-data / help）
+    if args and args[0] in ('update', 'install', 'uninstall', 'config', 'train', 'label',
+                            'auto-label', 'mark', 'learning', 'gen-data', 'help'):
         sub, rest = args[0], args[1:]
         if sub == 'help':
             print(HELP)
@@ -194,6 +382,16 @@ def main():
             return _cmd_config()
         if sub == 'train':
             return _cmd_train(rest)
+        if sub == 'label':
+            return _cmd_label(rest)
+        if sub == 'auto-label':
+            return _cmd_auto_label(rest)
+        if sub == 'mark':
+            return _cmd_mark(rest)
+        if sub == 'learning':
+            return _cmd_learning(rest)
+        if sub == 'gen-data':
+            return _cmd_gen_data(rest)
         if sub == 'update':
             return selfmgr.cmd_update(rest)
         if sub == 'install':
@@ -331,6 +529,13 @@ def main():
 
     highs, n_high, n_mid, n_low = {}, 0, 0, 0
     global_frags, global_frag_src = [], {}
+    scan_cands = []   # 本次扫描的候选快照（写入留存区，供答案回填）
+
+    # 元判断核：聚合所有模块的结构化输出
+    meta = MetaJudge()
+    # 旧版判断核（保留兼容）
+    judge_net = judge_net  # 前面已加载
+
     for fp in targets:
         fname = os.path.basename(fp)
         print('=' * 78)
@@ -340,56 +545,103 @@ def main():
         except Exception as ex:
             print('  读取失败: %r' % ex)
             continue
+
+        # 解析一次，两个阶段共用（过去 Router 与旧版扫描器各解析一遍）
+        ctx = CaptureContext(data)
+        extract_ctx = None
+        if do_extract:
+            stem = os.path.splitext(os.path.basename(fp))[0]
+            od = extract_dir or os.path.join(os.path.dirname(os.path.abspath(fp)), stem + '_extracted')
+            extract_ctx = {'outdir': od, 'stem': stem}
+        opts = ScanOptions(keywords=keywords, decode=do_decode, depth=depth,
+                           limit=limit, extract=extract_ctx)
+
+        # =========================================================================
+        # 1. 路由调度（阶段一）：文件类型模块 → 【模块名】块
+        # =========================================================================
+        router_inst = Router(fp)
         try:
-            if data[:4] in PCAP_MAGICS or data[:4] == PCAPNG_MAGIC:
-                ctx = None
-                if do_extract:
-                    stem = os.path.splitext(os.path.basename(fp))[0]
-                    od = extract_dir or os.path.join(os.path.dirname(os.path.abspath(fp)), stem + '_extracted')
-                    ctx = {'outdir': od, 'stem': stem}
-                findings = scan_capture(data, keywords, do_decode, depth, ctx)
-            else:
-                findings = scan_rawfile(data, keywords, do_decode, depth, limit)
+            router_inst.run_filetype(ctx)
+            filetype_findings = router_inst.get_all_findings()
+
+            if filetype_findings:
+                print('\n【路由匹配模块】%s' % ' → '.join(router_inst.modules))
+                router_inst.print_filetype_report()
+
+                # 交给元判断核聚合
+                for f in filetype_findings:
+                    meta.add_finding(f.to_dict())
+        except Exception as ex:
+            print('  路由调度出错: %r' % ex)
+
+        # =========================================================================
+        # 2. 路由调度（阶段二）：流扫描 → 分带报告
+        #    过程输出（格式:/主机表/[交互会话]/[提取]）由 scanner 自己打印，
+        #    必须排在文件类型块之后——`【dns】` 在 `格式:` 之前是测试断言过的契约
+        # =========================================================================
+        stream_findings = []
+        try:
+            stream_findings = router_inst.run_stream(ctx, opts)
+            # 只有抓包的结构化输出进元判断核（历史口径）：非抓包走 scan_rawfile，
+            # 它的候选今天只进分带报告，不进聚合——放开会让每个 .evtx/.txt/.mem
+            # 凭空多出一个【元判断核综合评分】块。
+            if ctx.is_capture:
+                for f in stream_findings:
+                    meta.add_finding(f.to_meta_dict())
         except Exception as ex:
             print('  扫描出错: %r' % ex)
             continue
-        for score, kind, tok, val, loc in findings:
-            if score >= 0.85:
+
+        # =========================================================================
+        # 3. 结果统计
+        # =========================================================================
+        for f in stream_findings:
+            if f.confidence >= BAND_HIGH:
                 n_high += 1
-                v = val if isinstance(val, str) else val.decode('utf-8', 'replace')
-                highs.setdefault(' '.join(v.split())[:160], os.path.basename(fp))
-            elif score >= 0.55:
+                v = f.val if isinstance(f.val, str) else f.val.decode('utf-8', 'replace')
+                # 值 → (kind, 来源文件)：汇总区要按 kind 区分 flag 候选与非 flag 证据
+                highs.setdefault(' '.join(v.split())[:160], (f.kind, os.path.basename(fp)))
+            elif f.confidence >= BAND_MID:
                 n_mid += 1
             else:
                 n_low += 1
+
+        # =========================================================================
+        # 4. 判断核打分与分带报告
+        #    `report()` 与 `judge.predict_finding` 都按 5 元组解包，边界上转一次
+        # =========================================================================
         _pfunc = None
         if judge_net is not None:
             finder = judge.ContextFinder(data)
-            ftype = 'capture' if (data[:4] in PCAP_MAGICS or data[:4] == PCAPNG_MAGIC) else 'raw'
+            ftype = 'capture' if ctx.is_capture else 'raw'
             _pcache = {}
 
-            def _pfunc(f, _finder=finder, _ft=ftype, _cache=_pcache):
-                key = (f[1], str(f[3])[:120])
+            def _pfunc(t, _finder=finder, _ft=ftype, _cache=_pcache):
+                key = (t[1], str(t[3])[:120])
                 if key not in _cache:
-                    _cache[key] = judge.predict_finding(judge_net, f, _finder, _ft)
+                    _cache[key] = judge.predict_finding(judge_net, t, _finder, _ft)
                 return _cache[key]
 
-        report(findings, limit, min_score, pfunc=_pfunc)
+        report([f.to_tuple() for f in stream_findings], limit, min_score, pfunc=_pfunc)
         if judge_net is not None:
-            pool = sorted([f for f in findings if f[0] >= min_score],
-                          key=lambda f: -f[0])[:max(limit, 60)]
-            pool.sort(key=lambda f: -_pfunc(f))
+            pool = sorted([f for f in stream_findings if f.confidence >= min_score],
+                          key=lambda f: -f.confidence)[:max(limit, 60)]
+            pool.sort(key=lambda f: -_pfunc(f.to_tuple()))
             top = pool[:6]
             if top:
                 print('  【判断核·重点候选】（模型排序，优先核验）')
                 for f in top:
-                    v = f[3] if isinstance(f[3], str) else f[3].decode('utf-8', 'replace')
+                    v = f.val if isinstance(f.val, str) else f.val.decode('utf-8', 'replace')
                     v = ' '.join(v.split())
-                    print('    p=%.2f  %s   @%s' % (_pfunc(f), v[:110], f[4]))
+                    print('    p=%.2f  %s   @%s' % (_pfunc(f.to_tuple()), v[:110], f.loc))
+
+        # =========================================================================
+        # 5. 片段收集（跨文件拼接用）
+        # =========================================================================
         frag_vals = []
-        for f in findings:
-            if f[1].startswith('片段'):
-                v = f[3] if isinstance(f[3], str) else f[3].decode('utf-8', 'replace')
+        for f in stream_findings:
+            if f.kind.startswith('片段'):
+                v = f.val if isinstance(f.val, str) else f.val.decode('utf-8', 'replace')
                 if v and v not in frag_vals:
                     frag_vals.append(v)
         for v in frag_vals:
@@ -404,6 +656,51 @@ def main():
             s = assemble_suggestion(frag_vals)
             if s:
                 print('    启发式拼接尝试（人工确认）：%s' % s[:200])
+
+        # =========================================================================
+        # 5b. 数据收集：候选 → 留存区（每次扫描都记录）；--judge 时同步写 pending 池
+        # =========================================================================
+        for f in stream_findings:
+            if f.confidence >= judge.RETENTION_MIN_SCORE:
+                v = f.val if isinstance(f.val, str) else f.val.decode('utf-8', 'replace')
+                scan_cands.append({
+                    'score': f.confidence,
+                    'kind': f.kind,
+                    'val': v,
+                    'file': fname,
+                })
+                if do_judge:
+                    candidate = {
+                        'score': f.confidence,
+                        'kind': f.kind,
+                        'val': v,
+                        'tok': f.tok,
+                        'file_type': 'capture' if ctx.is_capture else 'raw',
+                        'module_scores': {},
+                        'meta_score': 0.0,
+                    }
+                    judge.save_pending(candidate)
+
+    # =========================================================================
+    # 5c. 留存区：记录本次扫描（供答案回填与 learning 复核）
+    # =========================================================================
+    try:
+        _rec = judge.record_scan(path, scan_cands, files_count=len(targets))
+        if _rec:
+            print('\n[留存区] 已记录本次扫描（%d 条候选）：%s'
+                  % (len(_rec.get('candidates') or []), path))
+            print('  已知答案可回填: ctfsweep mark "%s" <真实flag>' % path)
+    except Exception as _ex:
+        print('\n[留存区] 记录失败: %r' % _ex)
+
+    # =========================================================================
+    # 6. 元判断核综合报告
+    # =========================================================================
+    if meta.findings:
+        print('\n' + '=' * 78)
+        meta.score()
+        meta.print_report(min_score)
+
     print('=' * 78)
     if len(global_frags) >= 2:
         print('【全局片段拼接建议】（跨文件收集到 %d 个片段，供人工确认）' % len(global_frags))
@@ -415,12 +712,44 @@ def main():
         s = assemble_suggestion(global_frags)
         if s:
             print('  启发式拼接尝试（人工确认）：%s' % s[:240])
+    def _flag_shaped(s):
+        """候选值是否呈 flag 形状——用来把「flag 候选」与「非 flag 类证据」分开。
+
+        高置信不等于"是答案"：FTP 凭据、交互会话记录、系统版本这些同样是高置信，
+        但把它们列进"可直接提交的候选"会误导（用户实测反馈"得出来的根本不是 flag"）。
+        """
+        try:
+            return bool(FLAG_RE.search(s.encode('utf-8', 'replace')))
+        except Exception:
+            return False
+
     if highs:
-        print('【高置信候选汇总】（可直接核验/提交）')
-        for v, src in highs.items():
-            print('  * %s   (来自 %s)' % (v, src))
+        _fl = [(v, k, src) for v, (k, src) in highs.items() if _flag_shaped(v)]
+        _ev = [(v, k, src) for v, (k, src) in highs.items() if not _flag_shaped(v)]
+        if _fl:
+            print('【flag 候选汇总】（可直接核验/提交）')
+            for v, _k, src in _fl:
+                print('  * %s   (来自 %s)' % (v, src))
+        if _ev:
+            if _fl:
+                print('【证据汇总】（非 flag 类，按题目要求核实）')
+            else:
+                print('【证据汇总】（未发现 flag 形状候选；以下为 ≥%s 的非 flag 证据）' % BAND_HIGH)
+            for v, k, src in _ev:
+                print('  * [%s] %s   (来自 %s)' % (k, v, src))
+    else:
+        # 分带报告一条高置信都没有——但模块块（【config】/【dns】…）可能仍有高置信发现，
+        # 那类不进 `highs`。两者都空才明确说"没找到"，避免把"有发现"误报成"无"。
+        _meta_high = 0
+        try:
+            if meta.findings:
+                _meta_high = meta.get_summary(min_score).get('high', 0)
+        except Exception:
+            _meta_high = 0
+        if not _meta_high:
+            print('【重点候选】未发现高（≥%s）候选' % BAND_HIGH)
     print('【扫描统计】')
-    print('  高置信（可直接核验）：%d 条' % n_high)
-    print('  中置信（需人工确认）：%d 条' % n_mid)
-    print('  低置信（线索参考）：%d 条' % n_low)
+    print('  高（≥%s）：%d 条' % (BAND_HIGH, n_high))
+    print('  中（%s–%s）：%d 条' % (BAND_MID, BAND_HIGH, n_mid))
+    print('  低（<%s）：%d 条' % (BAND_MID, n_low))
     return 0

@@ -13,6 +13,8 @@
 """
 import struct
 
+from .capture import merge_stream
+
 KDC_PORTS = (88, 464)
 LDAP_PORTS = (389, 3268, 636, 3269)
 KRB_MSG_TAGS = {0x6a: 'AS-REQ', 0x6b: 'AS-REP', 0x6c: 'TGS-REQ',
@@ -284,6 +286,40 @@ def _conn_key(dirkey):
     return (a, b) if a <= b else (b, a)
 
 
+def analyze(filepath, ctx=None, opts=None):
+    """AD 取证入口（供 `ctfsweep mark` 自动补扫与单测直接调用）。
+
+    ⚠️ 这是**亚模块（role="sub"）**：正常扫描路径里它不由 Router 顶层分派，
+    而是 `scanner.scan_capture()` 在流扫描内部驱动（见 `_MODULE_ROLE`）。
+    那样子做是为了保持两件既有事实：
+      * AD 的 findings 属于 `module="scanner"`（顶层分派会变成 `"ad"`，
+        元判断核的权重与规则分随之改变，输出就变了）；
+      * `print_ad_info()` 的打印位置在 `[交互会话]` **之前**。
+
+    这里返回的 `AnalysisResult` 用的是 `module="ad"`，只在被显式单独调用时出现。
+    """
+    from .capture import CaptureContext
+    from .router import AnalysisResult, Finding, ScanOptions
+
+    opts = opts or ScanOptions()
+    if ctx is None:
+        with open(filepath, 'rb') as f:
+            ctx = CaptureContext(f.read())
+    if not ctx.is_capture:
+        return AnalysisResult("ad")
+
+    result = AnalysisResult("ad")
+
+    def _add(f):
+        # f 是 5 元组 (score, kind, tok, val, loc)；这里显式转成 Finding 统一货币
+        result.findings.append(Finding.from_tuple(f, module="ad"))
+
+    info = scan_ad(ctx.tcp_streams, ctx.udp_payloads, _add)
+    if info and not opts.quiet:
+        print_ad_info(info)
+    return result
+
+
 def scan_ad(tcp_streams, udp_payloads, add):
     """扫描 AD 协议，返回供打印的线索结构 dict。"""
     info = {'realm': '', 'users': [], 'spns': [], 'tickets': [], 'ntlm': [],
@@ -299,7 +335,7 @@ def scan_ad(tcp_streams, udp_payloads, add):
     krb_blobs = []
     for dirkey, segs in tcp_streams.items():
         if 88 in (dirkey[1], dirkey[3]):
-            krb_blobs.append(('%s:%d -> %s:%d' % dirkey, b''.join(p for _n, _t, p in segs), True))
+            krb_blobs.append(('%s:%d -> %s:%d' % dirkey, merge_stream(segs), True))
     for num, src, sport, dst, dport, payload in udp_payloads:
         if 88 in (sport, dport):
             krb_blobs.append(('UDP %s:%d -> %s:%d 包#%d' % (src, sport, dst, dport, num),
@@ -308,7 +344,7 @@ def scan_ad(tcp_streams, udp_payloads, add):
     for dirkey, segs in tcp_streams.items():
         if 88 in (dirkey[1], dirkey[3]):
             continue
-        blob = b''.join(p for _n, _t, p in segs)
+        blob = merge_stream(segs)
         if blob[:1] in (b'\x6a', b'\x6b', b'\x6c', b'\x6d') or b'\x6b\x82' in blob[:3 * 1024 * 1024]:
             krb_blobs.append(('%s:%d -> %s:%d (疑似Kerberos)' % dirkey, blob, False))
 
@@ -357,7 +393,7 @@ def scan_ad(tcp_streams, udp_payloads, add):
     # --- 2) NTLMSSP（SMB / HTTP / 任意流）
     streams = []
     for dirkey, segs in tcp_streams.items():
-        streams.append((dirkey, b''.join(p for _n, _t, p in segs)))
+        streams.append((dirkey, merge_stream(segs)))
     for num, src, sport, dst, dport, payload in udp_payloads:
         streams.append((('%s' % src, sport, '%s' % dst, dport), payload))
     challenges = {}

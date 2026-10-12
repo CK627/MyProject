@@ -13,8 +13,40 @@ SECRET_LINE_RE = re.compile(rb'(?m)^[ \t]*([A-Za-z][A-Za-z0-9_]{1,40})=([^\r\n\x
 SENSITIVE_NAME_RE = re.compile(rb'(?i)(^|_)sk$|key|token|secret|pass|pwd|api|auth|cred')
 
 
+# 置信度分档阈值（全项目唯一口径：报告、元判断核、统计都走这里）
+BAND_HIGH = 0.85
+BAND_MID = 0.55
+
+
 def level_of(score):
-    return '高' if score >= 0.85 else ('中' if score >= 0.55 else '低')
+    return '高' if score >= BAND_HIGH else ('中' if score >= BAND_MID else '低')
+
+
+def text_like_window(b, ascii_thresh=0.8):
+    """判断字节窗口是否像"真实文本"（剔除二进制区里的关键词字节巧合）。
+
+    场景：图片/压缩/加密数据里，`flag`、`ctf` 这类关键词会以**字节巧合**出现，
+    而它的上下文在 latin-1 视角下"貌似可打印"——0x80-0xFF 里的高位字节被当成字母
+    （JPEG 数据实测可打印率约 75%，`scan_blob` 原来的 0.7 闸门挡不住）。
+
+    判定（满足任一即为文本）：
+      1) 可打印 ASCII（含 \\t\\n\\r）占比 >= `ascii_thresh`；
+      2) 能**严格** UTF-8 解码，且解码后字符可打印率 >= 0.9（中文文本页面）。
+    其余 → 视为二进制区，丢弃该关键词命中。
+    """
+    if not b:
+        return False
+    ascii_ok = sum(1 for c in b if 32 <= c < 127 or c in (9, 10, 13))
+    if ascii_ok >= len(b) * ascii_thresh:
+        return True
+    try:
+        s = b.decode('utf-8')
+    except Exception:
+        return False
+    if not s:
+        return False
+    ok = sum(1 for ch in s if ch.isprintable() or ch in '\r\n\t')
+    return ok >= len(s) * 0.9
 
 
 def kw_boundary_ok(text, i, kw):

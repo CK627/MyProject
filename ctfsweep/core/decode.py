@@ -57,7 +57,22 @@ def fragments(blob, keywords, findings, seen, loc, strict_text=False):
         return False
 
     def skip(st, en, inner):
-        return (not text_like(st, en)) or (strict_text and noisy(st, en, inner))
+        if not text_like(st, en):
+            return True
+        if strict_text:
+            return noisy(st, en, inner)
+        # 非严格模式（流量流）：X.509 证书 / 二进制区里的字节巧合片段。
+        # 实例：证书 DER 的 `04 7B 30 79 30 77`（长度字节 0x7B + SEQUENCE）= ASCII "{0y0w"，
+        # 因 Windows 频繁拉取微软证书而几乎每题必现；判定：±140 字节内控制字节
+        #（\x00-\x08 / \x0E-\x1F / \x7F，不含 \t\n\r）≥4 个 → 二进制区，剔除。
+        ctx = blob[max(0, st - 140): en + 140]
+        ctrl = sum(1 for c in ctx if c < 9 or 13 < c < 32 or c == 127)
+        if ctrl >= 4:
+            return True
+        # 同一字符连续 ≥5 次（如二进制区 "6jkkkkklr"）——自然文本/真实片段中罕见
+        if re.search(rb'(.)\1{4,}', inner):
+            return True
+        return False
 
     for m in re.finditer(rb'(?i)(flag|ctf)[A-Za-z0-9_]{0,6}\{[A-Za-z0-9_\-\.{}]{2,90}', blob):
         if FLAG_RE.match(blob, m.start()):
@@ -69,7 +84,7 @@ def fragments(blob, keywords, findings, seen, loc, strict_text=False):
         if k not in seen:
             seen.add(k)
             findings.append((0.65, '片段(前)', b'', val, loc))
-    for m in re.finditer(rb'(?<![A-Za-z0-9_]){([a-z0-9]{4,24})', blob):
+    for m in re.finditer(rb'(?<![A-Za-z0-9_]){([a-z0-9]{6,24})', blob):
         inner = m.group(1)
         nxt = blob[m.end(1):m.end(1) + 1]
         if nxt in (b'}', b'-'):
@@ -87,7 +102,8 @@ def fragments(blob, keywords, findings, seen, loc, strict_text=False):
         st = m.start(1)
         back = blob[st - 1:st]
         inner = m.group(1)
-        if back and (back.isalnum() or back in b'_-{}:'):
+        # 前置字符排除：字母数字（词内）、_-{}: 、'#'（CSS 颜色 #f2f2f2} —— 网页样式噪音）
+        if back and (back.isalnum() or back in b'_-{}:#'):
             continue
         if not (any(97 <= c <= 122 for c in inner) and any(48 <= c <= 57 for c in inner)):
             continue

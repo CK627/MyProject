@@ -8,14 +8,13 @@ _ctfsweep() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     opts="-f --file -F --folder -k --keywords --min-score --no-decode --depth --limit --extract --extract-dir --pwd-file --judge --config --version -h --help"
-    subcmds="update install uninstall config train help"
+    subcmds="update install uninstall config train label learning help"
 
-    # 子命令专属参数（ctfsweep update ... / ctfsweep train ...）
+    # 子命令专属参数（ctfsweep uninstall ... / ctfsweep train ...）
     if [ "$COMP_CWORD" -ge 2 ]; then
         case "${COMP_WORDS[1]}" in
             update)
-                COMPREPLY=( $(compgen -W "--check" -- "$cur") )
-                return 0
+                return 0   # update 无参数（仅输出更新指引）
                 ;;
             uninstall)
                 COMPREPLY=( $(compgen -W "-y --yes" -- "$cur") )
@@ -33,6 +32,30 @@ _ctfsweep() {
                         ;;
                 esac
                 COMPREPLY=( $(compgen -W "--data --model-out --epochs" -- "$cur") )
+                return 0
+                ;;
+            label)
+                case "$prev" in
+                    --batch)
+                        COMPREPLY=( $(compgen -W "5 10 20 50" -- "$cur") )
+                        return 0
+                        ;;
+                esac
+                COMPREPLY=( $(compgen -W "--batch" -- "$cur") )
+                return 0
+                ;;
+            learning)
+                case "$prev" in
+                    --min-auc)
+                        COMPREPLY=( $(compgen -W "0.80 0.85 0.90 0.95" -- "$cur") )
+                        return 0
+                        ;;
+                    --min-samples|--max-epochs|--epochs)
+                        COMPREPLY=( $(compgen -W "8 16 32 64 100 200 500 1000" -- "$cur") )
+                        return 0
+                        ;;
+                esac
+                COMPREPLY=( $(compgen -W "--min-auc --min-samples --max-epochs --epochs" -- "$cur") )
                 return 0
                 ;;
             install|config|help)
@@ -84,26 +107,7 @@ _ctfsweep() {
 complete -o filenames -F _ctfsweep ctfsweep
 
 # ============================================
-# 包装函数
-# 函数在当前 shell 里执行，所以 ctfsweep update / install / uninstall 跑完后可以
-# 立刻刷新补全与 shell 状态，不必手动 source ~/.bashrc 或重开终端。
-# （脚本本身是子进程，无法修改父 shell 的环境，只有 shell 函数能做到这一点）
+# 说明（源码直跑模式）
+# 补全与 PATH 均由本文件所在的项目目录提供；代码更新（git pull）后无需刷新。
+# （历史版本曾在此定义 ctfsweep 包装函数用于安装后的即时刷新，已随安装模式移除）
 # ============================================
-ctfsweep() {
-    command ctfsweep "$@"
-    local _ctfsweep_ret=$?
-    case "$1" in
-        update|install)
-            [ -f "$HOME/.devtools/ctfsweep/completions/ctfsweep.bash" ] \
-                && source "$HOME/.devtools/ctfsweep/completions/ctfsweep.bash"
-            hash -r 2>/dev/null
-            ;;
-        uninstall)
-            # 卸载后重载 shell 配置并移除本包装函数
-            source ~/.bashrc 2>/dev/null
-            unset -f ctfsweep 2>/dev/null
-            hash -r 2>/dev/null
-            ;;
-    esac
-    return $_ctfsweep_ret
-}

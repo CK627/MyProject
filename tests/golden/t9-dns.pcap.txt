@@ -1,0 +1,44 @@
+==============================================================================
+[文件] t9-dns.pcap (0.6 KB)
+
+【路由匹配模块】scanner → ad → dns
+
+【dns】
+  [高 0.90] 长域名（可能为 DNS 外带）: zm9vymfyzm9vymfyzm9vymfyzm9vymfyzm9vymfyzm9vymfy.exfil.tunnel-domain.com...
+    证据: 域名长度: 72, 最长标签: 48, 查询次数: 1
+    建议: 该域名可能为 DNS 外带通道，检查是否泄露数据
+  格式: pcap  链路类型: Ethernet   数据包: 3 个
+  【主机表】IP ↔ MAC / 主机名（ARP+Ethernet+DHCP+NBNS）：
+    10.9.9.10       02:00:00:00:00:02
+    10.9.9.20       02:00:00:00:00:02
+  【低置信（线索参考）】
+    [0.45 低] DNS查询: Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFy.exfil.tunnel-domain.com   @10.9.9.10 -> 10.9.9.20
+    [0.45 低] DNS查询: adsh.wagbridge.taobao.alimama.com.gds.alibabadns.com   @10.9.9.10 -> 10.9.9.20
+
+==============================================================================
+
+【元判断核综合评分】
+总发现项: 3
+  高置信（>=0.85）: 1
+  中置信（0.55-0.85）: 0
+  低置信（<0.55）: 2
+
+【前 10 项发现】
+  1. [高 0.91] 长域名（可能为 DNS 外带）: zm9vymfyzm9vymfyzm9vymfyzm9vymfyzm9vymfyzm9vymfy.exfil.tunnel-domain.com...
+     模块: dns
+     证据: 域名长度: 72, 最长标签: 48, 查询次数: 1
+     建议: 该域名可能为 DNS 外带通道，检查是否泄露数据
+
+  2. [低 0.45] DNS查询
+     模块: scanner
+     证据: b'Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFy.exfil.tunnel-domain.com'
+
+  3. [低 0.45] DNS查询
+     模块: scanner
+     证据: b'adsh.wagbridge.taobao.alimama.com.gds.alibabadns.com'
+
+==============================================================================
+【扫描统计】
+  高（≥0.85）：0 条
+  中（0.55–0.85）：0 条
+  低（<0.55）：2 条
