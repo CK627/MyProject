@@ -117,7 +117,7 @@ MetaJudge 按 `MODULE_WEIGHTS`（ad 0.95 / memory 0.90 / config 0.85 … scanner
 
 ### 噪音闸门（改扫描逻辑时先看这里）
 
-判定标准是**"这条输出对解题有没有引导价值"**，不是"看起来像不像可疑"。已经落地的十二条：
+判定标准是**"这条输出对解题有没有引导价值"**，不是"看起来像不像可疑"。已经落地的十三条：
 
 - **二进制容器先抽字符串**（`core/logs.py::_extract_strings`）：`.evtx` 这类容器不能按字节
   当文本读——`\x60` 之类的字节巧合会被喂给攻击正则，刷出满屏「RCE（命令替换）」，
@@ -175,7 +175,18 @@ MetaJudge 按 `MODULE_WEIGHTS`（ad 0.95 / memory 0.90 / config 0.85 … scanner
   .NET/Java 的栈帧里满地都是 `System.Web.HttpApplication.IExecutionStep.Execute()`，
   实测 `Application.evtx` 因此报出 `[高 0.95] SQL 注入`——0.95 是"可直接核验"档，
   误报代价最高。现在要求真正的 SQL 语境（`union select` / `exec(@sql)` / `exec('…')`
-  / `sp_executesql` / `xp_cmdshell`）。
+  / `sp_executesql` / `exec xp_cmdshell` / `xp_cmdshell '…'`）。
+  ⚠️ `xp_cmdshell` **光看名字也不行**：装了 SQL Server 的主机，Application.evtx 的
+  perflib 计数器里就有一个光秃秃的 `xp_cmdshell` 字符串，要求 exec 上下文或调用括号。
+- **WMI/WQL 查询行整行剔除**（`core/logs.py::_is_wmi_query`，在 `_detect_and_analyze`
+  派发前过滤）：Windows 的 WMI 提供程序用**类 SQL 语法**查询
+  （`Start IWbemServices::ExecQuery - ROOT\CIMV2 : SELECT * FROM Win32_Account ...`），
+  在 `select … from` 这条 SQLi 正则上整片命中。实测 `日志排查` 那道题的 Application.evtx
+  产出 **15 条 `[高 0.95] 攻击检测: SQL 注入`**，把【前 10 项发现】占掉 8 席——真正要看的
+  flag 线索被压在下面，是最难排查的那种噪音（误报越"可信"，伤害越大）。
+  判据要求**两个条件同时成立**：出现 WMI 调用标记（`IWbemServices`/`ExecQuery`/`wmic`）
+  **且**出现 WMI 类名或 SQL 关键字——只看类名会误伤"提到 `Win32_Process` 的普通日志行"。
+  按行剔除，同一份内容里的真 SQLi 不受影响（`check_logs_wmi_gate()` 端到端守着）。
 - **HTTP 请求必须记下 `Host` 头**（`core/http.py::http_summary` + `scanner.py` 的
   `[HTTP服务端]` 块）：请求行里只有**裸路径**，主机名在 `Host` 头里。实测 2021-09-10 那道题
   （BazarLoader 投递）48 条请求全是 `/bmdff/...`，投递域名 `simpsonsavingss.com` 与投递 IP

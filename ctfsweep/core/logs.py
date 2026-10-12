@@ -25,6 +25,33 @@ def _looks_binary(raw: bytes) -> bool:
     return b"\x00" in raw
 
 
+# ---------------------------------------------------------------------------
+# WMI/WQL 查询行的剔除
+# ---------------------------------------------------------------------------
+#
+# Windows 的 WMI 提供程序用**类 SQL 语法**（WQL）查询：
+#   Start IWbemServices::ExecQuery - ROOT\CIMV2 : SELECT * FROM Win32_Account WHERE SID='...'
+# 这是操作系统自身的正常运行日志（驱动轮询、性能计数器），却在 `select … from`
+# 这条 SQL 注入正则上整片命中。实测某 Windows 主机的 Application.evtx 产出 **15 条
+# [高 0.95] 攻击检测: SQL 注入**，把【前 10 项发现】占掉 8 席——真正要看的 flag 线索
+# 被这些"看起来最可信"的误报压在下面，正是最难排查的那种噪音。
+#
+# 判据要**两个条件同时成立**才算 WMI：出现 WMI 调用标记（IWbemServices/ExecQuery/wmic）
+# **且**出现 WMI 类名或 SQL 关键字。只看类名会误伤提到 `Win32_Process` 的其他日志行。
+
+_WMI_CALL_RE = re.compile(r"(?i)\bIWbemServices\b|\bExecQuery\b|\bwmic\b")
+_WMI_CLASS_RE = re.compile(r"(?i)\b(?:Win32_[A-Za-z]+|WDMClassesOfDriver|CIM_[A-Za-z]+"
+                           r"|MSFT_[A-Za-z]+|__Namespace|Win32Provider)\b")
+_SQL_KW_RE = re.compile(r"(?i)\b(?:select|insert\s+into|update|delete\s+from)\b")
+
+
+def _is_wmi_query(line: str) -> bool:
+    """该行是否为 WMI/WQL 查询（类 SQL 语法，会被 SQL 注入正则整片误报）。"""
+    if not _WMI_CALL_RE.search(line):
+        return False
+    return bool(_WMI_CLASS_RE.search(line)) or bool(_SQL_KW_RE.search(line))
+
+
 def _extract_strings(raw: bytes) -> str:
     """从二进制容器里抽可读字符串。
 
@@ -61,7 +88,9 @@ ATTACK_PATTERNS = [
     # `System.Web.HttpApplication.IExecutionStep.Execute()`，实测 Application.evtx
     # 因此报出 [高 0.95] 的 SQL 注入——0.95 是"可直接核验"档，误报代价最高。
     # 改成要求 SQL 上下文：`EXEC(@sql)`/`EXEC('…')`/`EXEC(1)`，或存储过程名。
-    (r"(?:union\s+(?:all\s+)?select|select\s+.+\s+from|insert\s+into|delete\s+from|update\s+.+\s+set|drop\s+table|drop\s+database|alter\s+table|\bexec(?:ute)?\s*\(\s*[@'\d]|\bsp_executesql\b|\bxp_cmdshell\b)",
+    # ⚠️ `xp_cmdshell` 同理不能光看名字：装了 SQL Server 的主机，Application.evtx 的
+    # perflib 计数器里就有一个光秃秃的 `xp_cmdshell` 字符串。要求 exec 上下文或调用括号。
+    (r"(?:union\s+(?:all\s+)?select|select\s+.+\s+from|insert\s+into|delete\s+from|update\s+.+\s+set|drop\s+table|drop\s+database|alter\s+table|\bexec(?:ute)?\s*\(\s*[@'\d]|\bexec(?:ute)?\s+(?:master\s*\.\s*\.\s*)?xp_cmdshell\b|\bsp_executesql\b|\bxp_cmdshell\s*[('\"]|xp_cmdshell\s+['\"])",
      "SQL 注入", 0.95, "sql_injection"),
     (r"(?:'\s*(?:or|and)\s+'?\d+'?\s*=\s*'?\d+'?|'\s*(?:or|and)\s+'[^']*'\s*=\s*'[^']*'|1\s*=\s*1|'\s*;\s*--)",
      "SQL 注入（布尔盲注）", 0.90, "sql_injection"),
@@ -146,7 +175,11 @@ def analyze(filepath: str) -> AnalysisResult:
 
 def _detect_and_analyze(content: str, filepath: str, result: AnalysisResult):
     """检测日志类型并分析。"""
-    lines = content.split("\n")
+    # WMI/WQL 查询行先整行剔除（见 _is_wmi_query）：它们用类 SQL 语法，
+    # 会让 SQL 注入正则在对**任何** Windows 主机取证时刷出满屏高置信误报。
+    # 放在派发之前，四种分析器（access/syslog/auth/generic）一视同仁。
+    lines = [ln for ln in content.split("\n") if not _is_wmi_query(ln)]
+    content = "\n".join(lines)
 
     # 1. 检测 Access Log 格式
     if _is_access_log(lines):

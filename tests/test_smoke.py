@@ -417,6 +417,62 @@ def check_dedup_and_text_gate():
     check(not looks_like_text(''), '闸门：空串不算文本（调用方需自行放行空值）')
 
 
+def check_logs_wmi_gate():
+    """WMI/WQL 查询行不得被判成 SQL 注入（纯离线）。
+
+    回归目标：`日志排查` 那道题的 Application.evtx 里，Windows 自己的 WMI 提供程序
+    轮询（`Start IWbemServices::ExecQuery - ROOT\\CIMV2 : SELECT * FROM Win32_Account`）
+    用类 SQL 语法，被 SQL 注入正则整片命中——**15 条 [高 0.95]**，把【前 10 项发现】
+    占掉 8 席，真正要看的 flag 线索被压在下面。
+    """
+    import re
+    from ctfsweep.core.logs import ATTACK_PATTERNS, _is_wmi_query
+
+    sqli = [p for p in ATTACK_PATTERNS if p[3] == 'sql_injection'][0][0]
+
+    # 真实载荷必须照旧命中
+    for s in ("1' UNION ALL SELECT username,password FROM users--",
+              "'; EXEC xp_cmdshell 'dir' --",
+              "EXEC xp_cmdshell('net user')",
+              "exec master..xp_cmdshell 'whoami'",
+              "EXEC(@sql)",
+              "xp_cmdshell 'dir'"):
+        check(bool(re.search(sqli, s, re.I)), 'SQLi：真实载荷仍命中（%s）' % s[:28])
+
+    # WMI 轮询行被识别为 WMI 查询（真正生效的是派发前的整行剔除，见下）
+    for s in ("Start IWbemServices::ExecQuery - ROOT\\CIMV2 : Select * from Win32_Process Where ProcessID = '4'",
+              'Start IWbemServices::ExecQuery - root\\wmi : select * from WDMClassesOfDriver'):
+        check(_is_wmi_query(s), 'WMI：识别为 WMI 查询（%s）' % s[:36])
+
+    # 端到端：同一份内容里，WMI 行不出声，真载荷照旧出声
+    from ctfsweep.core.logs import _detect_and_analyze
+    from ctfsweep.core.router import AnalysisResult
+
+    res = AnalysisResult('logs')
+    _detect_and_analyze(
+        "Start IWbemServices::ExecQuery - ROOT\\CIMV2 : Select * from Win32_Process Where ProcessID = '4'\n"
+        "Start IWbemServices::ExecQuery - root\\wmi : select * from WDMClassesOfDriver\n",
+        'wmi.evtx', res)
+    check(not res.findings, 'WMI：纯 WMI 轮询日志零告警（实测原报 15 条 [高 0.95]）')
+
+    res2 = AnalysisResult('logs')
+    _detect_and_analyze(
+        "Start IWbemServices::ExecQuery - ROOT\\CIMV2 : Select * from Win32_Process\n"
+        "/search?q=1' UNION ALL SELECT username,password FROM users--\n",
+        'mix.log', res2)
+    kinds = [f.kind for f in res2.findings]
+    check(any('SQL 注入' in k for k in kinds),
+          'WMI：同一份内容里的真 SQLi 不受影响（剔除是按行的）')
+
+    # 只是"提到" WMI 类名的普通行不能误杀（否则会漏掉同行的真线索）
+    check(not _is_wmi_query('process Win32_Process created: cmd.exe /c whoami'),
+          'WMI：仅提到类名不算 WMI 查询行')
+    # 光秃秃的 xp_cmdshell（SQL Server 装机后的 perflib 计数器名）不是攻击
+    check(not re.search(sqli, 'xp_cmdshell', re.I), 'SQLi：裸 xp_cmdshell 不再命中')
+    check(not re.search(sqli, 'System.Web.HttpApplication.IExecutionStep.Execute()', re.I),
+          'SQLi：.NET 栈帧的 Execute() 不再命中')
+
+
 def _client_hello(sni=None, hs_type=1):
     """手搓一个 TLS 记录（单个 record，测试用）。`sni=None` = 不带任何扩展。"""
     import struct
@@ -756,6 +812,9 @@ def main():
 
         print('== 二进制上下文净化（readable_window）==')
         check_readable_window()
+
+        print('== 日志攻击检测的 WMI 闸门 ==')
+        check_logs_wmi_gate()
 
         print('== 重复结论去重 / 文本闸门 ==')
         check_dedup_and_text_gate()
