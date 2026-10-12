@@ -58,7 +58,7 @@ CI（`.github/workflows/ci.yml`）在 ubuntu 上用 **Python 3.8 / 3.11 / 3.13**
 `cli.main()` 对每个文件：`CaptureContext(data)` **解析一次**（`core/capture.py`，缓存
 `l4`/`tcp_streams`/`udp_payloads`/`stream_blobs()`），再交给 `core/router.py` 的 `Router`
 按顺序跑两个阶段。**阶段次序是契约**——`tests/test_smoke.py` 断言 `【dns】` 出现在 `格式:`
-之前，因为阶段二的过程输出（`格式:`/`【主机表】`/`【AD / 域渗透线索】`/`[交互会话]`/`[提取]`）
+之前，因为阶段二的过程输出（`格式:`/`【主机表】`/`【AD / 域渗透线索】`/`[交互会话]`/`[邮件会话]`/`[提取]`）
 由模块自己 print，与分带报告交错，无法事后重排：
 
 1. **`run_filetype()`** — `match_module()` 按扩展名（`_TYPE_MAP`）+ 文件头特征
@@ -117,7 +117,7 @@ MetaJudge 按 `MODULE_WEIGHTS`（ad 0.95 / memory 0.90 / config 0.85 … scanner
 
 ### 噪音闸门（改扫描逻辑时先看这里）
 
-判定标准是**"这条输出对解题有没有引导价值"**，不是"看起来像不像可疑"。已经落地的两条：
+判定标准是**"这条输出对解题有没有引导价值"**，不是"看起来像不像可疑"。已经落地的四条：
 
 - **二进制容器先抽字符串**（`core/logs.py::_extract_strings`）：`.evtx` 这类容器不能按字节
   当文本读——`\x60` 之类的字节巧合会被喂给攻击正则，刷出满屏「RCE（命令替换）」，
@@ -131,6 +131,19 @@ MetaJudge 按 `MODULE_WEIGHTS`（ad 0.95 / memory 0.90 / config 0.85 … scanner
   （`d15krst4gi8g86.cloudfront.net` 是正常的），`dns.py` 与 `dns_lead_reason` 共用这一份名单。
   ⚠️ 折叠行的分数必须 `>= cli` 的 `MIN_SCORE` 默认值（0.40），否则会被静默滤掉——
   折叠是"少占屏"，不是"隐瞒"。
+  ⚠️ **"超长标签"不能只看长度**：`mail.pisosyrecubrimientos.com` 的 20 字符标签是西语单词
+  （pisos y recubrimientos）。判据走 `_encoded_label()`——带数字 / 大小写混排 / 几乎无元音，
+  三者都不占的长标签是词，不是编码外带。`dns_lead_reason` 因此**保留原串大小写**做这一步
+  （`lower()` 之后就分不出 base64 了）。
+- **同一证据不占满"前 10 项发现"**（`meta_judge.MetaJudge.get_top_findings`）：FTP 爆破的 11 次
+  登录会产出 11 条一模一样的"成功凭据"，按分数排序后把前 10 项全部占满，其余线索一条都看不见
+  （实测 FTP-malware.pcap 正是如此）。前 N 项按 `(kind, 证据)` 去重；`get_summary` 与分带报告
+  仍按原始条数如实计数——**去重只作用于"前 N 项"这个展示位**。
+- **邮件会话聚合、加密要如实说**（`core/session.py::_analyze_mail`）：23 条 SMTP 会话之间只有
+  服务器 IP 不同，逐条列出就是刷屏。聚合成一段报会话数 / 客户端自报主机名（HELO/EHLO，
+  僵尸网络题的关键指纹）/ 信封 / 其中多少条被 `STARTTLS` 加密。正文加密时**必须写明
+  "内容不可解读"**——否则 10 MB 的 spambot 抓包会看起来"什么都没扫到"，而会话形态恰恰是
+  那种题唯一可用的引导（实测修复前只有 3 条低置信 DNS 输出）。
 
 ### 输入解析层
 
@@ -141,6 +154,15 @@ MetaJudge 按 `MODULE_WEIGHTS`（ad 0.95 / memory 0.90 / config 0.85 … scanner
 `core/utils.py` 集中了所有共享正则（`FLAG_RE`/`JWT_RE`/`B64_RUN`/`HEX_RUN`/`SECRET_LINE_RE`）
 与 `kw_boundary_ok()`（词内误报闸门：`FolderValueFlags`、`create_pdo_flag`、`msctf_`）。
 DNS 相关的 `KNOWN_INFRA_SUFFIXES` / `dns_lead_reason` 也在这里（见上文「噪音闸门」）。
+
+⚠️ **`merge_stream()` 的缓冲区按"序号跨度"分配，跨度必须先过合理性闸门**：
+同一个客户端临时端口被多条连接复用（或序号被伪造）时，几个互不相干的 ISN 会被按
+4 元组聚合到一起，序号之间根本没有可比性。实测 spambot.pcap：7 条"流"各有 3 个包、
+18 字节载荷，序号却横跨 3.5 GB ⇒ 旧实现每条流分配 256 MB 零缓冲，10 MB 的抓包吃
+**2.1 GB 内存、跑 250 秒**。现在的判据是 `span > max(4 MB, 载荷总量 × 64)` 就退回
+"按包序直接拼接"——序号可比的流跨度 ≈ 去重后的字节数，丢包空洞只占零头，不会误伤
+（`tests/test_smoke.py::check_stream_merge()` 守着：正常合并 / last-wins / 巨跨度退化 /
+小空洞补零四种情形）。
 
 ### 判断核（本地 MLP，可训练）
 

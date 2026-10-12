@@ -232,11 +232,27 @@ class MetaJudge:
         }
 
     def get_top_findings(self, n: int = 10, min_score: float = 0.0) -> List[Dict[str, Any]]:
-        """获取前 N 个最高分发现项（只含 score >= min_score 的项）。"""
+        """获取前 N 个最高分发现项（只含 score >= min_score 的项）。
+
+        同 kind + 同证据只取第一条：**同一份证据在多个会话里重复出现**时
+        （FTP 爆破/邮件群发的典型形态），11 条一模一样的"成功凭据"会把前 N 项
+        全部占满，其余线索一条都看不见——实测 FTP-malware.pcap 的前 10 项就是
+        同一个凭据的 10 份拷贝。分带报告与统计仍按原始条数如实计数，
+        这里只是让"前 N 项"真正覆盖 N 条**不同**的线索。
+        """
         if not self.scored_findings:
             self.score()
         items = [f for f in self.scored_findings if f["score"] >= min_score]
-        return items[:n]
+        out, seen = [], set()
+        for f in items:
+            key = (f["kind"], f["evidence"])
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(f)
+            if len(out) >= n:
+                break
+        return out
 
     def get_json(self) -> Dict[str, Any]:
         """获取 JSON 输出（供判断核使用）。"""

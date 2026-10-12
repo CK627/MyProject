@@ -50,6 +50,9 @@ KNOWN_INFRA_SUFFIXES = (
     ".kunlunca.com", ".wswebpic.com", ".jiashule.com", ".qiyipic.com",
     ".hdslb.com", ".biliapi.net", ".douyucdn.cn", ".pstatp.com", ".bytedns.net",
     ".ourdvsss.cn", ".lxdns.com", ".gslb.com", ".mmtrix.com",
+    # 虚拟主机运营商的机器名（p3plcpnl001.prod.phx3.secureserver.net
+    # 会被"主机名尾部数字串"误判成 DGA）
+    ".secureserver.net",
 )
 
 
@@ -86,16 +89,35 @@ _DISCOVERY_MARKS = ('_msdcs', '_sites')
 _VOWELS = frozenset('aeiou')
 
 
+def _encoded_label(lb):
+    """标签是否像**编码数据**（base64/hex 外带）而非自然语言词。
+
+    只按长度判会误报：`mail.pisosyrecubrimientos.com` 的 20 字符标签是西语单词
+    （pisos y recubrimientos），而 base64/hex 外带的标签要么带数字、要么大小写
+    混排、要么几乎没有元音。三者都不占的长标签就是词，不是线索。
+    """
+    if len(lb) < 20:
+        return False
+    if any(c.isdigit() for c in lb):
+        return True
+    if lb != lb.lower() and lb != lb.upper():        # 大小写混排 = base64
+        return True
+    alpha = [c for c in lb if c.isalpha()]
+    return bool(alpha) and sum(1 for c in alpha if c.lower() in _VOWELS) / float(len(alpha)) < 0.25
+
+
 def dns_lead_reason(name):
     """域名是否值得逐条列出；返回原因字符串（None = 常规域名，交由调用方折叠）。"""
     s = name.decode('latin-1') if isinstance(name, bytes) else str(name)
-    s = s.lower().rstrip('.')
+    s = s.rstrip('.')
     if not s or ' ' in s:
         return None
 
-    labels = s.split('.')
-    if max(len(x) for x in labels) >= 20:
+    labels = s.lower().split('.')
+    # 编码外带看原串（大小写混排是 base64 的特征，lower() 之后就看不出来了）
+    if any(_encoded_label(x) for x in s.split('.')):
         return '超长标签（编码外带/隧道特征）'
+    s = s.lower()
     if len(s) > 60:
         return '域名超长（多段拼接外带特征）'
 

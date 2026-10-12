@@ -381,6 +381,55 @@ def build_t10():
     return pcap_file(frames)
 
 
+def build_t11():
+    """t11-smtp.pcap：邮件会话（EHLO 自报名 / STARTTLS / 明文投递信封）。
+
+    对应 spambot 类题目的形态：一台主机对**大量**邮件服务器反复 EHLO+STARTTLS，
+    正文加密后唯一可用的线索就是会话形态与自报主机名。旧版对邮件流量零输出，
+    整份抓包看起来"什么都没有"。
+    """
+    C = '10.9.9.30'
+    frames = []
+
+    def sess(sip, cport, helo, starttls, envelope=None):
+        cseq, sseq = 1000, 5000
+
+        def cli(payload):
+            nonlocal cseq
+            frames.append(eth_ipv4(tcp(cport, 25, cseq, payload), 6, src=C, dst=sip))
+            cseq += len(payload)
+
+        def srv(payload):
+            nonlocal sseq
+            frames.append(eth_ipv4(tcp(25, cport, sseq, payload), 6, src=sip, dst=C))
+            sseq += len(payload)
+
+        srv(b'220 mail.example.com ESMTP\r\n')
+        cli(b'EHLO %s\r\n' % helo.encode())
+        srv(b'250-mail.example.com\r\n250 STARTTLS\r\n')
+        if starttls:
+            cli(b'STARTTLS\r\n')
+            return
+        if envelope:
+            sender, rcpt, subj = envelope
+            cli(b'MAIL FROM:<%s>\r\n' % sender.encode())
+            srv(b'250 OK\r\n')
+            cli(b'RCPT TO:<%s>\r\n' % rcpt.encode())
+            srv(b'250 OK\r\n')
+            cli(b'DATA\r\n')
+            srv(b'354 End data with <CR><LF>.<CR><LF>\r\n')
+            cli(b'Subject: %s\r\n\r\ninvoice attached\r\n.\r\n' % subj.encode())
+            srv(b'250 OK\r\n')
+
+    # 三条 EHLO 后即 STARTTLS（正文加密，只剩会话形态可读），一条完成明文投递
+    sess('10.9.9.50', 51001, '10.0.0.19', True)
+    sess('10.9.9.51', 51002, '10.0.0.30', True)
+    sess('10.9.9.52', 51003, '10.0.0.45', True)
+    sess('10.9.9.53', 51004, '10.0.0.19', False,
+         ('billing@example.net', 'victim@corp.example', 'New Invoice 59175'))
+    return pcap_file(frames)
+
+
 def generate(outdir):
     os.makedirs(outdir, exist_ok=True)
     files = {
@@ -394,6 +443,7 @@ def generate(outdir):
         't8-b64.pcap': build_t8(),
         't9-dns.pcap': build_t9(),
         't10-ftp.pcap': build_t10(),
+        't11-smtp.pcap': build_t11(),
     }
     for name in sorted(files):
         with open(os.path.join(outdir, name), 'wb') as f:

@@ -299,6 +299,52 @@ def check_meta_judge():
     got = scored('config', '畸形检查', None)['score']
     check(isinstance(got, float), '元判断核：畸形 confidence 不炸（None→%.2f）' % got)
 
+    # (f) 前 N 项按 (kind, 证据) 去重：同一份证据在多个会话里重复出现时
+    #     （FTP 爆破/邮件群发），全部占满前 N 项会让其余线索一条都看不见。
+    mj = MetaJudge(
+        [{'module': 'scanner', 'kind': 'FTP成功凭据', 'confidence': 0.85,
+          'evidence': 'dj / dj', 'loc': 'FTP a:1→b:21'},
+         {'module': 'scanner', 'kind': 'FTP成功凭据', 'confidence': 0.85,
+          'evidence': 'dj / dj', 'loc': 'FTP a:2→b:21'},
+         {'module': 'scanner', 'kind': 'FTP成功凭据', 'confidence': 0.85,
+          'evidence': 'dj / dj', 'loc': 'FTP a:3→b:21'},
+         {'module': 'scanner', 'kind': '漏洞利用', 'confidence': 0.80,
+          'evidence': 'vsftpd 2.3.4 后门', 'loc': 'FTP a:1→b:21'}])
+    mj.score()
+    top = mj.get_top_findings(10)
+    check([f['kind'] for f in top] == ['FTP成功凭据', '漏洞利用'],
+          '元判断核：前 N 项按 (kind, 证据) 去重（重复证据不占满列表）')
+    check(mj.get_summary()['total'] == 4,
+          '元判断核：去重只作用于"前 N 项"，总数仍如实计数')
+    mj2 = MetaJudge([{'module': 'scanner', 'kind': 'K%d' % i, 'confidence': 0.9,
+                      'evidence': 'e%d' % i} for i in range(20)])
+    mj2.score()
+    check(len(mj2.get_top_findings(10)) == 10, '元判断核：不同线索仍取满 N 条')
+
+
+def check_stream_merge():
+    """TCP 重组不得按"序号跨度"无脑分配缓冲区（纯离线，不依赖夹具）。
+
+    回归目标：spambot.pcap 的 7 条"流"各有 3 个包、18 字节载荷，序号却横跨
+    3.5 GB（同一客户端端口被多条连接复用，几个 ISN 被按 4 元组聚合）。
+    旧实现在每条流上分配 256 MB 零缓冲 → 10 MB 的抓包吃 2.1 GB 内存、跑 250 秒。
+    """
+    from ctfsweep.core.capture import merge_stream
+
+    # 序号可比：正常重传/乱序合并（跨度 ≈ 载荷量）
+    segs = [(1, 0.0, b'hello ', 100), (2, 0.0, b'world', 106)]
+    check(merge_stream(segs) == b'hello world', '重组：正常流按 seq 拼接不丢字节')
+    # 重传覆盖：后到的段覆盖先到的（last-wins）
+    segs = [(1, 0.0, b'AAAA', 100), (2, 0.0, b'BB', 102)]
+    check(merge_stream(segs) == b'AABB', '重组：重传 last-wins 覆盖')
+    # 序号不可比：span 与载荷量悬殊 → 退回按包序拼接，且**不得**分配巨缓冲
+    segs = [(1, 0.0, b'one', 100), (2, 0.0, b'two', 2000000000), (3, 0.0, b'six', 3600000000)]
+    got = merge_stream(segs)
+    check(got == b'onetwosix', '重组：序号跨度过大时退回按包序拼接（不补零、不爆内存）')
+    # 空洞补零仍保留（真实丢包场景：跨度小、确实缺字节）
+    segs = [(1, 0.0, b'AB', 100), (2, 0.0, b'CD', 104)]
+    check(merge_stream(segs) == b'AB\x00\x00CD', '重组：真实小空洞仍补 0x00（Wireshark 一致）')
+
 
 def check_router_dispatch(tmp):
     """文件类型模块必须真的被调度到（防"签名不匹配 → 静默空转"）。
@@ -482,6 +528,14 @@ def main():
                      'd15krst4gi8g86.cloudfront.net', 'b28-yk-w2.youku.com',
                      'v10.events.data.microsoft.com', 'addons.g-fox.cn'):
             check(dns_lead_reason(name) is None, '常规域名不报线索：%s' % name)
+        # 只按长度判"超长标签"会把自然语言长词当编码外带：pisosyrecubrimientos
+        # 是西语单词（20 字符、带元音、无数字），base64/hex 外带标签则不会三者都占。
+        for name in ('mail.pisosyrecubrimientos.com',
+                     'p3plcpnl001.prod.phx3.secureserver.net'):
+            check(dns_lead_reason(name) is None, '自然语言长词不算编码外带：%s' % name)
+        for name in ('Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFy.x.com',
+                     'a3f9b2c1d4e5f60718293a4b5c6d7e8f.x.com'):
+            check(dns_lead_reason(name) is not None, '编码标签仍报外带：%s' % name[:30])
         for name in ('Zm9vYmFy' * 6 + '.exfil.tunnel-domain.com',
                      'kamuchehddhgfgf.ddns.net',
                      'ubbifeder.cyou', 'opsbox8097.com', 'wpad.wokemountain.com',
@@ -544,11 +598,28 @@ def main():
         same = [d for d in os.listdir(croot) if d.startswith('same-')]
         check(len(same) == 2, '同名不同目录（目录扫描）：缓存各自独立（按完整路径散列）')
 
+        print('== t11-smtp.pcap：邮件会话（EHLO / STARTTLS / 明文信封）==')
+        rc, out = run_cli([os.path.join(tmp, 't11-smtp.pcap')])
+        # 邮件流量曾经零输出：spambot 抓包（10 MB、25 条 SMTP）只报出 3 条低置信
+        # DNS，整份文件看起来"什么都没扫到"——而会话形态本身就是那道题唯一的引导。
+        check('[邮件会话] 4 条 SMTP' in out, '邮件会话聚合为一段（不逐条刷屏）')
+        check('客户端自报主机名(HELO/EHLO): 10.0.0.19, 10.0.0.30, 10.0.0.45' in out,
+              '客户端自报主机名（僵尸网络/群发题的关键指纹）')
+        check('3 条正文被 STARTTLS 加密' in out, '加密会话如实说明"内容不可解读"')
+        check('MAIL FROM <billing@example.net> → RCPT TO <victim@corp.example>' in out,
+              '明文投递信封（发件人 / 收件人）')
+        check('主题: New Invoice 59175' in out, '投递主题')
+        check('[0.85 高] 邮件投递信封' in out, '信封进高置信（可直接核验）')
+        check('[0.55 中] 邮件会话' in out, '会话形态进中置信（高于 MIN_SCORE，不被静默滤掉）')
+
         print('== 判断核（judge）==')
         check_judge(tmp)
 
         print('== 元判断核（meta_judge）==')
         check_meta_judge()
+
+        print('== TCP 重组（merge_stream）==')
+        check_stream_merge()
 
         print('== 路由分派 ==')
         check_router_dispatch(tmp)

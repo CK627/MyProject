@@ -117,6 +117,67 @@ _LNX_CMD_RE = re.compile(
     rb'(\s[^\r\n]{0,80})?$', re.I)
 
 
+# ---------------------------------------------------------------- 邮件 (SMTP/ESMTP)
+# 25 = 明文 SMTP，587 = submission（STARTTLS），465 = SMTPS（一上来就是 TLS）
+_MAIL_PORTS = (25, 465, 587)
+
+
+def _mail_lines(blob):
+    """blob → 可读行。TLS 握手之后的正文是密文，按可见字符占比整行剔掉。"""
+    out = []
+    for raw in re.split(rb'\r?\n', blob):
+        line = raw.replace(b'\x00', b'').strip()
+        if not line or len(line) > 400:
+            continue
+        if sum(1 for b in line if 32 <= b < 127) < len(line) * 0.85:
+            continue
+        out.append(line)
+    return out
+
+
+def _analyze_mail(cli_segs, srv_segs):
+    """返回 dict：helo / mail_from / rcpt_to / subject / starttls / banner / ehlo_seen
+
+    群发/僵尸网络题的形态是"一台主机对**大量**邮件服务器反复 EHLO+STARTTLS"。
+    正文被 TLS 加密后能拿到的关键信息只有：会话数量、客户端自报主机名（EHLO）、
+    信封收发件人与主题。报告必须把这些说出来——否则整份抓包看起来"什么都没扫到"，
+    而这恰恰是题目唯一可用的引导。
+    """
+    info = {'helo': [], 'mail_from': [], 'rcpt_to': [], 'subject': [],
+            'starttls': False, 'banner': None, 'ehlo_seen': False}
+
+    def take(key, val):
+        if val and val not in info[key]:
+            info[key].append(val)
+
+    for segs in (cli_segs, srv_segs):
+        for seg in segs:
+            for line in _mail_lines(seg[2]):
+                m = re.match(rb'(?:EHLO|HELO)\s+(\S+)', line, re.I)
+                if m:
+                    info['ehlo_seen'] = True
+                    take('helo', m.group(1).decode('latin-1', 'replace'))
+                    continue
+                m = re.match(rb'MAIL FROM:\s*<?([^>\s]*)', line, re.I)
+                if m:
+                    take('mail_from', m.group(1).decode('latin-1', 'replace') or '(空)')
+                    continue
+                m = re.match(rb'RCPT TO:\s*<?([^>\s]*)', line, re.I)
+                if m:
+                    take('rcpt_to', m.group(1).decode('latin-1', 'replace'))
+                    continue
+                m = re.match(rb'Subject:\s*(\S.{0,120})', line, re.I)
+                if m:
+                    take('subject', m.group(1).decode('latin-1', 'replace').strip())
+                    continue
+                if re.match(rb'STARTTLS', line, re.I):
+                    info['starttls'] = True
+                    continue
+                if info['banner'] is None and re.match(rb'^[235]\d\d[ -]', line):
+                    info['banner'] = line.decode('latin-1', 'replace')[:80]
+    return info
+
+
 def _parse_win_transcript(blob):
     """从含 Windows 提示符的 blob 解析 [(cmd, output_snippet)]"""
     parts = _WIN_PROMPT.split(blob)
@@ -174,6 +235,7 @@ def analyze_sessions(tcp_streams, add_finding=None):
     """
     lines = []
     done_pairs = set()
+    mail_pair_seen = set()
 
     # ---------------- FTP ----------------
     keys = set(tcp_streams.keys())
@@ -229,6 +291,72 @@ def analyze_sessions(tcp_streams, add_finding=None):
                 add_finding((0.95, '漏洞利用', b'',
                              '%s；banner=%s' % (detail, banner[:60]),
                              'FTP %s:%d→%s:%d' % (src, sport, dst, dport)))
+
+    # ---------------- 邮件会话（SMTP/ESMTP: 25 / 465 / 587）----------------
+    # 逐条列出 23 个会话会把屏幕刷满（它们的区别只有服务器 IP），所以聚合成一段：
+    # 会话数、客户端自报主机名、信封收发件人、其中多少条正文被 TLS 加密。
+    mail_sessions = []
+    for key in sorted(keys):
+        src, sport, dst, dport = key
+        if dport not in _MAIL_PORTS:
+            continue
+        rev = (dst, dport, src, sport)
+        info = _analyze_mail(tcp_streams[key], tcp_streams.get(rev, []))
+        if info['ehlo_seen'] or info['mail_from']:
+            mail_sessions.append((src, sport, dst, dport, info))
+
+    if mail_sessions:
+        servers = sorted(set('%s:%d' % (d, dp) for _s, _sp, d, dp, _i in mail_sessions))
+        clients = sorted(set(s for s, _sp, _d, _dp, _i in mail_sessions))
+        helos = [h for _s, _sp, _d, _dp, i in mail_sessions for h in i['helo']]
+        senders = [x for _s, _sp, _d, _dp, i in mail_sessions for x in i['mail_from']]
+        rcpts = [x for _s, _sp, _d, _dp, i in mail_sessions for x in i['rcpt_to']]
+        subjects = [x for _s, _sp, _d, _dp, i in mail_sessions for x in i['subject']]
+
+        def _uniq(seq):
+            out = []
+            for x in seq:
+                if x not in out:
+                    out.append(x)
+            return out
+
+        tls = sum(1 for _s, _sp, _d, _dp, i in mail_sessions if i['starttls'])
+        helos, senders, rcpts, subjects = _uniq(helos), _uniq(senders), _uniq(rcpts), _uniq(subjects)
+        lines.append('  [邮件会话] %d 条 SMTP：%s → %d 个邮件服务器%s'
+                     % (len(mail_sessions), clients[0] if len(clients) == 1 else '%d 台主机' % len(clients),
+                        len(servers), '（%d 条正文被 STARTTLS 加密，内容不可解读）' % tls if tls else ''))
+        if helos:
+            lines.append('    客户端自报主机名(HELO/EHLO): %s' % ', '.join(helos[:8]))
+        if senders or rcpts:
+            lines.append('    信封: MAIL FROM <%s> → RCPT TO <%s>'
+                         % (', '.join(senders[:4]) or '(未捕获)',
+                            ', '.join(rcpts[:6]) or '(未捕获)'))
+        if subjects:
+            lines.append('    主题: %s' % ' | '.join(subjects[:4]))
+        if add_finding:
+            # 0.55 = 中置信：会话形态本身（谁、对多少服务器、是否加密）是线索，
+            # 但不是"可直接核验的答案"。低于 0.40 会被 --min-score 静默滤掉——
+            # 那等于把这个文件唯一的信息藏起来，绝不能设那么低。
+            detail = '%d 条 SMTP 会话，目标 %d 个服务器' % (len(mail_sessions), len(servers))
+            if helos:
+                detail += '；客户端自报名 %s' % ', '.join(helos[:5])
+            if tls:
+                detail += '；%d 条正文被 STARTTLS 加密' % tls
+            add_finding((0.55, '邮件会话', b'', detail, 'SMTP %s' % ', '.join(servers[:4])))
+        # 明文完成的投递信封 = 可直接核验的收发件人（高置信）
+        for _s, _sp, _d, _dp, i in mail_sessions:
+            if not (i['mail_from'] and i['rcpt_to']):
+                continue
+            for sender in i['mail_from'][:2]:
+                pair = '%s → %s' % (sender, ', '.join(i['rcpt_to'][:4]))
+                if pair in mail_pair_seen:
+                    continue
+                mail_pair_seen.add(pair)
+                subj = ('；主题: %s' % i['subject'][0]) if i['subject'] else ''
+                lines.append('    [邮件投递] %s%s' % (pair, subj))
+                if add_finding:
+                    add_finding((0.85, '邮件投递信封', b'', pair + subj,
+                                 'SMTP %s:%d→%s:%d' % (_s, _sp, _d, _dp)))
 
     # ---------------- 爆破工具输出提取（Hydra/Medusa 等）----------------
     # 特征：终端流中出现 "host: X login: Y password: Z"（常带 ANSI 颜色码）

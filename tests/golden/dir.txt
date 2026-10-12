@@ -40,6 +40,20 @@
     [0.40 低] 关键词[ctf]: ...notes: the ctf challenge starts at noon second line mentions ctf again...   @10.9.9.30:51002 -> 10.9.9.40:8080 (会话拼接 73B)
     [0.40 低] 关键词[ctf]: ...ge starts at noon second line mentions ctf again...   @10.9.9.30:51002 -> 10.9.9.40:8080 (会话拼接 73B)
 ==============================================================================
+[文件] t11-smtp.pcap (2.1 KB)
+  格式: pcap  链路类型: Ethernet   数据包: 23 个
+  【主机表】---- 路由器/网关 MAC（挂多个 IP，非终端主机）----
+    02:00:00:00:00:02  ← 5 个 IP（10.9.9.30, 10.9.9.50, 10.9.9.51, 10.9.9.52, ...）
+  [邮件会话] 4 条 SMTP：10.9.9.30 → 4 个邮件服务器（3 条正文被 STARTTLS 加密，内容不可解读）
+    客户端自报主机名(HELO/EHLO): 10.0.0.19, 10.0.0.30, 10.0.0.45
+    信封: MAIL FROM <billing@example.net> → RCPT TO <victim@corp.example>
+    主题: New Invoice 59175
+    [邮件投递] billing@example.net → victim@corp.example；主题: New Invoice 59175
+  【高置信（可直接核验）】
+    [0.85 高] 邮件投递信封: billing@example.net → victim@corp.example；主题: New Invoice 59175   @SMTP 10.9.9.30:51004→10.9.9.53:25
+  【中置信（需人工确认）】
+    [0.55 中] 邮件会话: 4 条 SMTP 会话，目标 4 个服务器；客户端自报名 10.0.0.19, 10.0.0.30, 10.0.0.45；3 条正文被 STARTTLS 加密   @SMTP 10.9.9.50:25, 10.9.9.51:25, 10.9.9.52:25, 10.9.9.53:25
+==============================================================================
 [文件] t2.pcapng (0.2 KB)
   格式: pcapng  链路类型: Ethernet   数据包: 1 个
   【主机表】IP ↔ MAC / 主机名（ARP+Ethernet+DHCP+NBNS）：
@@ -146,15 +160,15 @@
     [0.45 低] DNS查询: Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFy.exfil.tunnel-domain.com   @10.9.9.10 -> 10.9.9.20（超长标签（编码外带/隧道特征））
     [0.42 低] DNS查询（常规域名，已折叠）: 1 个：adsh.wagbridge.taobao.alimama.com.gds.alibabadns.com   @共 1 条 UDP/53 查询
 
-[留存区] 已记录本次扫描（18 条候选）：<TMP>/work
+[留存区] 已记录本次扫描（19 条候选）：<TMP>/work
   已知答案可回填: ctfsweep mark "<TMP>/work" <真实flag>
 
 ==============================================================================
 
 【元判断核综合评分】
-总发现项: 28
-  高置信（>=0.85）: 14
-  中置信（0.55-0.85）: 7
+总发现项: 30
+  高置信（>=0.85）: 15
+  中置信（0.55-0.85）: 8
   低置信（<0.55）: 7
 
 【前 10 项发现】
@@ -214,6 +228,7 @@
   * flag{evtx-smoke-ok}   (来自 t3.evtx)
 【证据汇总】（非 flag 类，按题目要求核实）
   * [FTP成功凭据] dj / dj   (来自 t10-ftp.pcap)
+  * [邮件投递信封] billing@example.net → victim@corp.example；主题: New Invoice 59175   (来自 t11-smtp.pcap)
   * [Kerberos票据] AS-REP（可 AS-REP Roasting） | svc_sql | etype RC4-HMAC | cipher 48B | RC4：hashcat -m 18200/13100 可离线爆破（首选）   (来自 t5-ad.pcap)
   * [Kerberos票据] $krb5asrep$23$svc_sql@CORP.LOCAL:0b30557a9fc4e90e33587da2c7ec1136$5b80a5caef14395e83a8cdf2173c6186abd0f51a3f6489aed3f81d42678cb1d6   (来自 t5-ad.pcap)
   * [NetNTLM] NetNTLMv2 响应（hashcat -m 5600）：kanna.seto@corp   (来自 t5-ad.pcap)
@@ -222,5 +237,5 @@
   * [交互会话记录] 命令序列: whoami; ipconfig; net user   (来自 t7-tls.pcap)
   * [系统版本] 10.0.19041.1   (来自 t7-tls.pcap)
 【扫描统计】
-  线路报告（抓包/原始文件）：高 13 条 / 中 8 条 / 低 10 条
-  模块报告（类型块）：高 14 条 / 中 7 条 / 低 7 条
+  线路报告（抓包/原始文件）：高 14 条 / 中 9 条 / 低 10 条
+  模块报告（类型块）：高 15 条 / 中 8 条 / 低 7 条

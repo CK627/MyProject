@@ -123,6 +123,22 @@ AD 类题目（Kerberoasting / AS-REP Roasting / NetNTLM 中继 / LDAP 明文绑
 - 🪪 **JWT 自动识别与解码**：header / payload 直接展开（伪造身份类题目的答案就在 payload 里）
 - 🔍 **环境变量 / 密钥回显侦测**：`WEBUI_SK=...`、`PWD=...` 等一条不落
 
+### 会话 / 协议提取（FTP · 邮件 · 反弹 shell）
+
+针对"入侵行为分析"类问答式取证题，直接给出可作答的字段：
+
+- 📂 **FTP（21）**：登录尝试序列（USER/PASS 失败与成功）、**成功凭据**、登录后的命令序列；
+  识别 vsftpd 2.3.4 笑脸后门（CVE-2011-2523）
+- 📧 **邮件（SMTP/ESMTP 25 / 587 / 465）**：会话数、目标服务器数、**客户端自报主机名
+  （HELO/EHLO，僵尸网络/群发的关键指纹）**、明文投递信封（`MAIL FROM` → `RCPT TO`）与主题。
+  正文被 `STARTTLS` 加密时会**如实标注"内容不可解读"**——会话形态本身就是线索，
+  不会因为正文加密而整份文件零输出
+- 🐚 **反弹 / 交互 shell**：Windows cmd 与 Linux shell 的命令记录与回显、系统版本、
+  暴露的 bash bind shell、Hydra/Medusa 爆破结果、Redis 写 SSH 公钥提权链
+
+同一份证据在多个会话里重复出现时（FTP 爆破的 11 次登录），**前 N 项发现会自动按
+（类型 + 证据）去重**，不会让同一行占满整份线索列表。
+
 ### 文件提取（`--extract`）
 
 - 🔪 从 TCP 会话与 UDP 载荷中按文件签名**雕刻文件**：ZIP / PNG / JPG / GIF / PDF / GZ / RAR / 7Z /
@@ -145,6 +161,7 @@ AD 类题目（Kerberoasting / AS-REP Roasting / NetNTLM 中继 / LDAP 明文绑
   | 0.93 | 高 | LDAP 明文绑定口令 |
   | 0.90 | 高 | 可离线爆破的 RC4 Kerberos 票据（AS-REP / TGS） |
   | 0.85 | 高 | NetNTLMv1/v2 响应（可直接交给 hashcat） |
+  | 0.85 | 高 | 邮件投递信封（`MAIL FROM` → `RCPT TO` + 主题） |
   | 0.97 | 高 | 明文完整 flag |
   | 0.95 | 高 | 解码后得到完整 flag（hex/base64/DNS 等） |
   | 0.75 | 中 | 内容"加壳"候选（疑似 flag 本体） |
@@ -153,6 +170,7 @@ AD 类题目（Kerberoasting / AS-REP Roasting / NetNTLM 中继 / LDAP 明文绑
   | 0.62 | 中 | 命令回显 / 环境变量密钥回显 / AES Kerberos 票据（需字典） |
   | 0.55 | 中 | 域账号 / SPN 清单（AD 线索） |
   | 0.60 / 0.55 | 中 | 裸花括号片段 `{xxx` / `xxx}` |
+  | 0.55 | 中 | 邮件会话形态（会话数 / 自报主机名 / 加密会话数） |
   | 0.45 | 低 | DNS 查询名 |
   | 0.42 | 低 | 接口短文本响应 |
   | 0.40 | 低 | 关键词上下文 |
