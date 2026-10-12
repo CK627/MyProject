@@ -113,8 +113,14 @@ def web_attack_reason(uri):
     return None
 
 
-def http_summary(blob, ts0, http_reqs, form_fields):
-    """从 TCP 流中提取 HTTP 请求行与 POST 表单字段（服务目录扫描次序/登录凭证/上传路径类题目）。
+def http_summary(blob, ts0, http_reqs, form_fields, peer_ip=''):
+    """从 TCP 流中提取 HTTP 请求行、Host 头与 POST 表单字段（服务目录扫描次序/登录凭证/上传路径类题目）。
+
+    `peer_ip` 是该流的目的 IP（服务端）。`Host` 头必须一起记下来：
+    请求行里只有路径，没有主机名——实测 2021-09-10 那道题（BazarLoader 投递），
+    48 条请求全是 `/bmdff/...` 这样的裸路径，投递域名 `simpsonsavingss.com` 与
+    投递 IP `194.62.42.206` 在报告里一个字都不出现，而那正是答案要的 IOC。
+    `http_reqs` 条目因此是 5 元组 `(ts, method, uri, host, peer_ip)`。
 
     返回 [(攻击原因, 解码后的 URI)]（无攻击载荷时为空列表），供调用方汇总上报。
     """
@@ -126,7 +132,13 @@ def http_summary(blob, ts0, http_reqs, form_fields):
     for mi, m in enumerate(matches):
         method = m.group(1).decode()
         uri = m.group(2).decode('latin-1')
-        http_reqs.append((ts0, method, uri))
+        seg_end = matches[mi + 1].start() if mi + 1 < len(matches) else min(len(window), m.end() + 20000)
+        hdr_end = window.find(b'\r\n\r\n', m.end())
+        # Host 头只需要"请求行到段尾"这一段；这里不改 POST 分支原来的 hdr_end 语义
+        hdr_lim = seg_end if hdr_end < 0 or hdr_end > seg_end else hdr_end
+        hm = re.search(rb'(?i)\r\nhost:[ \t]*([^\r\n]{1,150})', window[m.end():hdr_lim])
+        host = hm.group(1).decode('latin-1').strip() if hm else ''
+        http_reqs.append((ts0, method, uri, host, peer_ip))
         reason = web_attack_reason(uri)
         if reason:
             try:
@@ -135,8 +147,6 @@ def http_summary(blob, ts0, http_reqs, form_fields):
                 hits.append((reason, uri))
         if method != 'POST':
             continue
-        seg_end = matches[mi + 1].start() if mi + 1 < len(matches) else min(len(window), m.end() + 20000)
-        hdr_end = window.find(b'\r\n\r\n', m.end())
         if hdr_end < 0 or hdr_end > seg_end:
             continue
         body = window[hdr_end + 4:seg_end][:8000]

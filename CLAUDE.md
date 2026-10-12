@@ -117,7 +117,7 @@ MetaJudge 按 `MODULE_WEIGHTS`（ad 0.95 / memory 0.90 / config 0.85 … scanner
 
 ### 噪音闸门（改扫描逻辑时先看这里）
 
-判定标准是**"这条输出对解题有没有引导价值"**，不是"看起来像不像可疑"。已经落地的七条：
+判定标准是**"这条输出对解题有没有引导价值"**，不是"看起来像不像可疑"。已经落地的十条：
 
 - **二进制容器先抽字符串**（`core/logs.py::_extract_strings`）：`.evtx` 这类容器不能按字节
   当文本读——`\x60` 之类的字节巧合会被喂给攻击正则，刷出满屏「RCE（命令替换）」，
@@ -171,6 +171,26 @@ MetaJudge 按 `MODULE_WEIGHTS`（ad 0.95 / memory 0.90 / config 0.85 … scanner
   前 10 项全部退化成 `b'TGS-REP \xe6\x9c\x8d...'`——而这一行正是"解不出答案也要给出的
   关键信息引导"。改成 `val.decode('utf-8', 'replace')`，与 `report()` 对 `val` 的口径一致；
   **`tok` 仍走 latin-1 且只给 `report()` 用，不在此处解码**（见 `Finding` 的两条约定）。
+- **`exec(`/`execute(` 不能单独当 SQL 注入判据**（`core/logs.py::ATTACK_PATTERNS`）：
+  .NET/Java 的栈帧里满地都是 `System.Web.HttpApplication.IExecutionStep.Execute()`，
+  实测 `Application.evtx` 因此报出 `[高 0.95] SQL 注入`——0.95 是"可直接核验"档，
+  误报代价最高。现在要求真正的 SQL 语境（`union select` / `exec(@sql)` / `exec('…')`
+  / `sp_executesql` / `xp_cmdshell`）。
+- **HTTP 请求必须记下 `Host` 头**（`core/http.py::http_summary` + `scanner.py` 的
+  `[HTTP服务端]` 块）：请求行里只有**裸路径**，主机名在 `Host` 头里。实测 2021-09-10 那道题
+  （BazarLoader 投递）48 条请求全是 `/bmdff/...`，投递域名 `simpsonsavingss.com` 与投递 IP
+  在报告里一个字都不出现——而答案要的正是这两个 IOC。`http_reqs` 条目因此是 5 元组
+  `(ts, method, uri, host, peer_ip)`，请求列表按 `host+uri` 渲染，另出
+  `[HTTP服务端]（Host → IP ×请求数）` 汇总块。
+- **从 TLS ClientHello 抽 SNI**（`core/scanner.py::tls_sni` + `[TLS SNI]` 块）：HTTPS 已是
+  C2/投递的主要载体，正文全加密，**唯一留在明文的身份信息就是 SNI**。实测 2020-09-25
+  那道题报告给出了受害主机/MAC/账号/投递的 `jojo.exe`，却给不出 `paste.nrecom.net` 与
+  `37.120.174.218`。纯字节游走（record `0x16 0x03` → 握手类型 `0x01` → 跳过
+  4+2+32 / session_id / cipher_suites / compression → 扩展里找 `0x0000`），不做解密。
+  ⚠️ 排序必须把 `under_known_infra()` 命中的放**后面**——一台普通 Windows 主机的 SNI
+  列表 90% 是 Microsoft/Edge/Teams 遥测，不排会把真 C2 域名挤出 15 条上限；
+  `KNOWN_INFRA_SUFFIXES` 因此补了 `.msedge.net` / `.skype.com` / `.xboxlive.com` /
+  `.trafficmanager.net` 等 HTTPS 服务后缀（同一份名单也让 DNS 折叠受益）。
 
 ### 输入解析层
 

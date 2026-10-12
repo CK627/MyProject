@@ -37,6 +37,10 @@ KNOWN_INFRA_SUFFIXES = (
     ".microsoft.com", ".microsoftaik.azure.net", ".azure.net", ".azure.com",
     ".windowsupdate.com", ".windows.com", ".msftncsi.com", ".msftconnecttest.com",
     ".office.net", ".office.com", ".live.com", ".msn.com", ".bing.com",
+    # Edge/Teams/Xbox/更新链路的 HTTPS 服务名（实测一台普通 Windows 主机的
+    # SNI 列表里这些占 90%，不豁免就会把真正的 C2 域名挤到列表末尾）
+    ".msedge.net", ".skype.com", ".xboxlive.com", ".azureedge.net",
+    ".trafficmanager.net", ".akamaiedge.net", ".edgesuite.net", ".msecnd.net",
     ".google.com", ".googlevideo.com", ".gstatic.com", ".googleapis.com",
     ".youtube.com", ".apple.com", ".icloud.com", ".mzstatic.com",
     ".adobe.com", ".akamai.net", ".akamaized.net", ".akamaihd.net", ".edgekey.net",

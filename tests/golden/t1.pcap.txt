@@ -10,8 +10,10 @@
   格式: pcap  链路类型: Ethernet   数据包: 3 个
   【主机表】IP ↔ MAC / 主机名（ARP+Ethernet+DHCP+NBNS）：
     10.9.9.10       02:00:00:00:00:02
+  [HTTP服务端]（Host → IP ×请求数）：
+    smoke.local                            10.9.9.20          ×1
   [HTTP请求序列] 共 1 条（按时间）：
-      1. GET /admin/panel   @06/15/2025 15:06:40
+      1. GET smoke.local/admin/panel   @06/15/2025 15:06:40
   【高置信（可直接核验）】
     [0.97 高] 明文flag: flag{plain-smoke-ok}   @10.9.9.10:40001->10.9.9.20:8080 包#1
     [0.95 高] hex解码: 666c61677b6833782d736d6f6b652d6f6b7d...  =>  flag{h3x-smoke-ok}   @10.9.9.10:40001->10.9.9.20:8080 包#1

@@ -57,7 +57,11 @@ def _extract_strings(raw: bytes) -> str:
 
 ATTACK_PATTERNS = [
     # SQL 注入
-    (r"(?:union\s+(?:all\s+)?select|select\s+.+\s+from|insert\s+into|delete\s+from|update\s+.+\s+set|drop\s+table|drop\s+database|alter\s+table|exec\s*\(|execute\s*\()",
+    # ⚠️ `exec(` / `execute(` **不能**单独作判据：.NET/Java 的栈帧里满地都是
+    # `System.Web.HttpApplication.IExecutionStep.Execute()`，实测 Application.evtx
+    # 因此报出 [高 0.95] 的 SQL 注入——0.95 是"可直接核验"档，误报代价最高。
+    # 改成要求 SQL 上下文：`EXEC(@sql)`/`EXEC('…')`/`EXEC(1)`，或存储过程名。
+    (r"(?:union\s+(?:all\s+)?select|select\s+.+\s+from|insert\s+into|delete\s+from|update\s+.+\s+set|drop\s+table|drop\s+database|alter\s+table|\bexec(?:ute)?\s*\(\s*[@'\d]|\bsp_executesql\b|\bxp_cmdshell\b)",
      "SQL 注入", 0.95, "sql_injection"),
     (r"(?:'\s*(?:or|and)\s+'?\d+'?\s*=\s*'?\d+'?|'\s*(?:or|and)\s+'[^']*'\s*=\s*'[^']*'|1\s*=\s*1|'\s*;\s*--)",
      "SQL 注入（布尔盲注）", 0.90, "sql_injection"),

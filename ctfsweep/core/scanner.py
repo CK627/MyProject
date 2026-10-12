@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """扫描编排：抓包扫描（scan_capture）与原始文件扫描（scan_rawfile）"""
+import collections
 import io
 import os
 import zipfile
@@ -13,7 +14,8 @@ from .extract import (PWD_POOL, carve_base64_blobs, carve_files,
 from .http import build_http_transactions, http_summary, jwt_summary
 from .utils import (FLAG_RE, JWT_RE, SECRET_LINE_RE, SENSITIVE_NAME_RE,
                     decode_score, dns_lead_reason, kw_boundary_ok,
-                    printable_ratio, readable_window, try_b64, ts_str)
+                    printable_ratio, readable_window, try_b64, ts_str,
+                    under_known_infra)
 
 
 def _is_tls_stream(blob):
@@ -36,6 +38,54 @@ def _is_tls_stream(blob):
                 return True
             pos = window.find(magic, pos + 3)
     return False
+
+
+def tls_sni(blob):
+    """从 TLS ClientHello 里取 SNI（Server Name Indication），取不到返回 ''。
+
+    为什么必须有：HTTPS 已是绝大多数 C2/投递流量的载体，正文全加密，
+    唯一留在**明文**里的身份信息就是 SNI。实测 2020-09-25 那道题，报告能给出
+    受害主机 / MAC / 账号 / 投递的 `jojo.exe`，却给不出 `paste.nrecom.net`
+    与 `37.120.174.218`——因为域名只存在于 SNI 里。2021-09-10 那道题的
+    BazarLoader C2 同理。
+    """
+    pos = 0
+    while pos + 6 <= len(blob):
+        if blob[pos] != 0x16 or blob[pos + 1] != 0x03:
+            pos += 1
+            continue
+        rec_len = int.from_bytes(blob[pos + 3:pos + 5], 'big')
+        end = min(pos + 5 + rec_len, len(blob))
+        if blob[pos + 5] != 0x01:            # 不是 ClientHello，跳到下一个记录
+            pos = end if end > pos else pos + 1
+            continue
+        hs = blob[pos + 5:end]               # 握手消息（含 4 字节头）
+        p = 4 + 2 + 32                       # 跳过 handshake header / version / random
+        if p >= len(hs):
+            return ''
+        p += 1 + hs[p]                       # session_id
+        if p + 2 > len(hs):
+            return ''
+        p += 2 + int.from_bytes(hs[p:p + 2], 'big')   # cipher_suites
+        if p + 1 > len(hs):
+            return ''
+        p += 1 + hs[p]                       # compression_methods
+        if p + 2 > len(hs):
+            return ''
+        ext_end = min(p + 2 + int.from_bytes(hs[p:p + 2], 'big'), len(hs))
+        p += 2
+        while p + 4 <= ext_end:
+            etype = int.from_bytes(hs[p:p + 2], 'big')
+            elen = int.from_bytes(hs[p + 2:p + 4], 'big')
+            if etype == 0x0000 and p + 9 <= ext_end:
+                body = hs[p + 4:p + 4 + elen]
+                nl = int.from_bytes(body[3:5], 'big')     # list_len(2)+type(1)+name_len(2)
+                name = body[5:5 + nl]
+                if name:
+                    return name.decode('latin-1', 'replace')
+            p += 4 + elen
+        return ''
+    return ''
 
 
 def analyze(filepath, ctx=None, opts=None):
@@ -97,6 +147,7 @@ def scan_capture(data, keywords, do_decode, depth, extract=None, ctx=None):
     # 这里仍按包序重放 l4 以产出 findings，顺序与原先逐包交错时完全一致
     tcp_streams, udp_payloads = ctx.tcp_streams, ctx.udp_payloads
     http_reqs, form_fields, web_hits = [], [], []
+    tls_names = collections.Counter()          # (SNI, 服务端 IP) → 出现次数
     unknown_pkts = ctx.unknown_pkts
     for num, lt, pkt, ts, r in ctx.l4:
         if not r:
@@ -160,7 +211,12 @@ def scan_capture(data, keywords, do_decode, depth, extract=None, ctx=None):
             collect_pwds_from_blob(blob)          # 采集候选口令（供加密压缩包尝试）
         loc = '%s:%d -> %s:%d (会话拼接 %dB)' % (dirkey[0], dirkey[1], dirkey[2], dirkey[3], len(blob))
         scan_blob(blob, keywords, do_decode, depth, findings, seen, loc)
-        web_hits += http_summary(blob, segs[0][1], http_reqs, form_fields)
+        # dirkey 是 (src, sport, dst, dport)：正向流的目的地址就是 HTTP 服务端
+        web_hits += http_summary(blob, segs[0][1], http_reqs, form_fields, dirkey[2])
+        if 443 in (dirkey[1], dirkey[3]) or _is_tls_stream(blob[:4096]):
+            sni = tls_sni(blob)
+            if sni:
+                tls_names[(sni, dirkey[2])] += 1
         if len(blob) <= 3 * 1024 * 1024:
             for m in JWT_RE.finditer(blob):              # JWT 令牌（伪造身份/认证题）
                 desc = jwt_summary(m.group(0))
@@ -324,10 +380,39 @@ def scan_capture(data, keywords, do_decode, depth, extract=None, ctx=None):
             add((0.85, 'Web攻击载荷', b'', '%s ×%d；例: %s' % (reason, len(uris), uris[0][:200]),
                  'HTTP 请求'), findings, seen)
 
+    if tls_names:
+        # HTTPS 正文不可读，SNI 是唯一留在明文里的名字。不给这一块，
+        # 全 HTTPS 的 C2/投递域名在报告里一个字都不会出现。
+        # 排序**先按"是否已知厂商基础设施"分两段**：普通主机的 SNI 里
+        # 微软/Edge/Xbox 遥测占九成，纯按次数排会把 C2 挤到第 15 位之后
+        # （实测 2020-09-25 的 `paste.nrecom.net` 正是如此）。
+        print('  [TLS SNI]（HTTPS 握手明文里的服务名 → IP；非常见厂商域名在前）：')
+        ranked = sorted(tls_names.items(),
+                        key=lambda kv: (under_known_infra(kv[0][0]), -kv[1]))
+        for (sni, ip), c in ranked[:15]:
+            print('    %-38s %-18s ×%d' % (sni[:38], ip, c))
+        if len(ranked) > 15:
+            print('    ...（其余 %d 个省略）' % (len(ranked) - 15))
+
     if http_reqs:
+        # 服务端汇总（host → IP ×次数）。请求行里只有路径没有主机名，
+        # 不给这一块，`GET /bmdff/...` 这类投递请求就完全看不出打到了哪台服务器。
+        srv = collections.OrderedDict()
+        for _ts, _m, _u, host, ip in http_reqs:
+            if host or ip:
+                key = (host or '?', ip or '?')
+                srv[key] = srv.get(key, 0) + 1
+        if srv:
+            print('  [HTTP服务端]（Host → IP ×请求数）：')
+            ranked = sorted(srv.items(), key=lambda kv: -kv[1])
+            for (host, ip), c in ranked[:12]:
+                print('    %-38s %-18s ×%d' % (host[:38], ip, c))
+            if len(ranked) > 12:
+                print('    ...（其余 %d 个服务端省略）' % (len(ranked) - 12))
         print('  [HTTP请求序列] 共 %d 条（按时间）：' % len(http_reqs))
-        for i, (ts, method, uri) in enumerate(http_reqs[:60], 1):
-            print('    %3d. %s %s   @%s' % (i, method, uri[:90], ts_str(ts)))
+        for i, (ts, method, uri, host, _ip) in enumerate(http_reqs[:60], 1):
+            tgt = (host + uri) if host else uri
+            print('    %3d. %s %s   @%s' % (i, method, tgt[:100], ts_str(ts)))
         if len(http_reqs) > 60:
             print('    ...（其余 %d 条省略）' % (len(http_reqs) - 60))
     if form_fields:

@@ -383,6 +383,54 @@ def check_readable_window():
     check(readable_window('ĀЀఀ' + 'abc') == '', '净化：可读片段过短也丢弃')
 
 
+def _client_hello(sni=None, hs_type=1):
+    """手搓一个 TLS 记录（单个 record，测试用）。`sni=None` = 不带任何扩展。"""
+    import struct
+    exts = b''
+    if sni is not None:
+        name = sni.encode()
+        exts = (b'\x00\x00' + struct.pack('>H', 5 + len(name))   # ext: server_name
+                + struct.pack('>H', 3 + len(name)) + b'\x00'      # list_len + type
+                + struct.pack('>H', len(name)) + name)
+    body = (b'\x03\x03' + b'\x11' * 32           # version + random
+            + b'\x00'                             # session_id 长度 0
+            + struct.pack('>H', 2) + b'\x13\x01'   # cipher_suites
+            + b'\x01\x00'                          # compression_methods
+            + struct.pack('>H', len(exts)) + exts)
+    hs = bytes([hs_type]) + struct.pack('>I', len(body))[1:] + body
+    return b'\x16\x03\x01' + struct.pack('>H', len(hs)) + hs
+
+
+def check_tls_sni():
+    """TLS SNI 提取：全 HTTPS 的题目里，C2/投递域名只存在于 SNI（纯离线）。
+
+    回归目标：2020-09-25 那道题报告能给出受害主机/MAC/账号/投递的 jojo.exe，
+    却给不出 `paste.nrecom.net` 与 `37.120.174.218`——它们是 HTTPS，域名只在 SNI。
+    """
+    from ctfsweep.core.scanner import tls_sni
+
+    for dom in ('paste.nrecom.net', 'a.b.c.example.co.uk', 'x.io'):
+        check(tls_sni(_client_hello(dom)) == dom, 'SNI：提取 %s' % dom)
+
+    # 前缀杂字节（TCP 流从中间开始是常态）也要能找到
+    check(tls_sni(b'\x00' * 40 + _client_hello('evil.example')) == 'evil.example',
+          'SNI：前缀杂字节不影响提取')
+    # 多个记录：前面是别的 TLS 记录，ClientHello 在后面
+    check(tls_sni(b'\x16\x03\x03\x00\x05' + b'\x99' * 5 + _client_hello('later.example'))
+          == 'later.example', 'SNI：跳过非 ClientHello 记录')
+    # 无扩展（老式 ClientHello）→ 空串；调用方拿到空串才不会写出乱码
+    check(tls_sni(_client_hello(None)) == '', 'SNI：无扩展时返回空串')
+    # ServerHello（握手类型 0x02）即使结构雷同也不当 ClientHello 解
+    check(tls_sni(_client_hello('nope.example', hs_type=2)) == '',
+          'SNI：ServerHello 不解 SNI')
+    check(tls_sni(b'GET / HTTP/1.1\r\nHost: x\r\n\r\n') == '', 'SNI：明文 HTTP 不误判')
+    # 截断不得抛异常（畸形包在真实抓包里遍地都是）
+    full = _client_hello('trunc.example')
+    for cut in range(0, len(full), 3):
+        tls_sni(full[:cut])
+    check(tls_sni(b'') == '' and tls_sni(b'\x16\x03') == '', 'SNI：截断/空输入不抛异常')
+
+
 def check_router_dispatch(tmp):
     """文件类型模块必须真的被调度到（防"签名不匹配 → 静默空转"）。
 
@@ -674,6 +722,9 @@ def main():
 
         print('== 二进制上下文净化（readable_window）==')
         check_readable_window()
+
+        print('== TLS SNI 提取 ==')
+        check_tls_sni()
 
         print('== 路由分派 ==')
         check_router_dispatch(tmp)
