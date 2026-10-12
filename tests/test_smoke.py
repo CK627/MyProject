@@ -383,6 +383,40 @@ def check_readable_window():
     check(readable_window('ĀЀఀ' + 'abc') == '', '净化：可读片段过短也丢弃')
 
 
+def check_dedup_and_text_gate():
+    """重复结论只留一条 + 加密请求体的乱码字段整条丢弃（纯离线）。
+
+    回归目标（都是"同一条信息刷满屏幕"）：
+      * dump.pcapng：50 条 FTP 会话连同一台 vsftpd 2.3.4，
+        `漏洞利用：笑脸后门（CVE-2011-2523）` 证据逐字相同却印了 50 行。
+      * FLAG 消失之谜.pcap：AES 后的 App 流量按 utf-8 'replace' 解出来，
+        `[POST字段摘录]` 7 行里 6 行是 `��)�;��=l?�]` 这种读不了的乱码。
+    """
+    from ctfsweep.core.blobscan import add
+    from ctfsweep.core.utils import looks_like_text
+
+    # 同结论不同 loc → 只留第一条（loc 不进通用去重键）
+    findings, seen = [], set()
+    for port in (21, 22, 23):
+        add((0.95, '漏洞利用', b'', 'vsftpd 2.3.4 笑脸后门', 'FTP x:%d→y:21' % port),
+            findings, seen)
+    check(len(findings) == 1, '去重：同结论不同位置只留一条')
+    check(findings[0][4] == 'FTP x:21→y:21', '去重：保留的是第一条（带它的位置）')
+
+    # 结论不同 → 都必须留下（别把去重做过头）
+    add((0.95, '漏洞利用', b'', 'vsftpd 2.3.4 笑脸后门（已触发后门 shell）', 'FTP x:24→y:21'),
+        findings, seen)
+    check(len(findings) == 2, '去重：结论不同则各自保留')
+
+    # 文本闸门
+    check(looks_like_text('email=1@1.com'), '闸门：正常字段值判为文本')
+    check(looks_like_text('mock_script=const sandbox = this'), '闸门：代码判为文本')
+    check(not looks_like_text('��)�;��=l?�]��b�K'),
+          '闸门：替换字符乱码判为二进制')
+    check(not looks_like_text('\x00\x01\x02\x03\x04\x05\x06\x07'), '闸门：控制字节判为二进制')
+    check(not looks_like_text(''), '闸门：空串不算文本（调用方需自行放行空值）')
+
+
 def _client_hello(sni=None, hs_type=1):
     """手搓一个 TLS 记录（单个 record，测试用）。`sni=None` = 不带任何扩展。"""
     import struct
@@ -722,6 +756,9 @@ def main():
 
         print('== 二进制上下文净化（readable_window）==')
         check_readable_window()
+
+        print('== 重复结论去重 / 文本闸门 ==')
+        check_dedup_and_text_gate()
 
         print('== TLS SNI 提取 ==')
         check_tls_sni()

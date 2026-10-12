@@ -278,6 +278,20 @@ def readable_window(s, min_len=16):
     return out if len(out) >= min_len else ''
 
 
+def looks_like_text(s, thresh=0.85):
+    """str 整体是否像**人写的文本**（二进制/加密体的闸门）。
+
+    与 `readable_window` 的分工：那是"从混合串里**切出**一段可读文本"（证据串用），
+    这里是"整串算不算文本"的是/否判定——用于**整条丢弃**由加密请求体解出来的乱码
+    （`[POST字段摘录]` 的 `k=v` 对）。判据复用同一份 `_text_ok` 码位白名单，
+    避免两处漂移；阈值 0.85 留出余地，正常文本里的个别怪字符不会误杀。
+    """
+    if not s:
+        return False
+    ok = sum(1 for ch in s if _text_ok(ch))
+    return ok >= len(s) * thresh
+
+
 def kw_boundary_ok(text, i, kw):
     """关键词命中位置边界检查（str 文本）：区分独立词与词内误报。
 

@@ -5,7 +5,20 @@ from .utils import FLAG_RE, kw_boundary_ok, text_like_window
 
 
 def add(finding, findings, seen):
-    """去重：解码/片段按内容，关键词按文本，其余按全文"""
+    """去重：解码/片段按内容，关键词按文本，其余按**内容**（不再带位置）。
+
+    ⚠️ 通用分支**刻意不把 `loc` 放进去重键**。历史上键是 `(kind, v, loc)`，
+    于是"同一条结论在不同会话里各报一次"会全部活下来——实测 dump.pcapng 是
+    50 条 FTP 会话连同一台 vsftpd 2.3.4，`漏洞利用：笑脸后门（CVE-2011-2523）`
+    被原样印了 **50 行**，证据逐字相同，只有端口不同。这正是"与答案无关的噪音
+    会增加解题难度"：真正该看的 [FTP会话] 爆破序列被顶出屏幕。
+    同值即同结论，留第一条（带它的位置）即可；会话级的差异由 [FTP会话]/[交互会话]
+    这类**块**按会话逐条呈现，本来就不该由 findings 承担。
+
+    反例检查（这些 kind 的重复**不是**噪音，故各自单独处理，不走本分支）：
+    `明文flag` 同值跨视图合并（双份抓包）、`DNS查询` 的域名在循环内已按 `dns_seen`
+    去重、`域账号`/`Kerberos票据` 在 ad.py 内已各自去重。
+    """
     score, kind, tok, val, loc = finding
     v = val if isinstance(val, str) else val.decode('utf-8', 'replace')
     if kind in ('hex', 'base64'):
@@ -19,7 +32,7 @@ def add(finding, findings, seen):
     elif kind in ('JWT', '命令回显', '环境/配置', '短文本响应'):
         k = ('ctx', kind, v[:220])                       # 同值跨视图合并（双份抓包常见）
     else:
-        k = (kind, v[:140], loc)
+        k = (kind, v[:140])
     if k in seen:
         return
     seen.add(k)

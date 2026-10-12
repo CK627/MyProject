@@ -8,9 +8,14 @@ from urllib.parse import unquote_plus
 
 from .blobscan import add
 from .capture import merge_stream
-from .utils import printable_ratio, try_b64
+from .utils import looks_like_text, printable_ratio, try_b64
 
 HTTP_REQ_RE = re.compile(rb'(?<![A-Za-z])(GET|POST|HEAD|PUT|OPTIONS|DELETE|PATCH) (\S{1,300}) HTTP/1\.[01]')
+
+
+def _field_text_ok(s):
+    """POST 字段是否可读。**空值保留**——`password=` 为空本身就是爆破/探测线索。"""
+    return not s or looks_like_text(s)
 
 
 def _dechunk_prefix(data, pos=0):
@@ -177,6 +182,10 @@ def http_summary(blob, ts0, http_reqs, form_fields, peer_ip=''):
                     kvs = [(str(k)[:40], str(v)[:80]) for k, v in list(obj.items())[:12]]
             except Exception:
                 pass
+        # 加密/二进制请求体（AES 后的 App 流量）按 utf-8 'replace' 解出来的是整片乱码，
+        # `[POST字段摘录]` 会印出 `��)�;��=l?�]��b` 这种一个字都读不了的"字段"。
+        # 实测 FLAG 消失之谜.pcap 的 7 行摘录里 6 行如此——纯噪音，只会把真线索顶下去。
+        kvs = [(k, v) for k, v in kvs if _field_text_ok(k) and _field_text_ok(v)]
         if kvs:
             form_fields.append((uri, kvs))
     return hits

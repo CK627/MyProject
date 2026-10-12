@@ -117,7 +117,7 @@ MetaJudge 按 `MODULE_WEIGHTS`（ad 0.95 / memory 0.90 / config 0.85 … scanner
 
 ### 噪音闸门（改扫描逻辑时先看这里）
 
-判定标准是**"这条输出对解题有没有引导价值"**，不是"看起来像不像可疑"。已经落地的十条：
+判定标准是**"这条输出对解题有没有引导价值"**，不是"看起来像不像可疑"。已经落地的十二条：
 
 - **二进制容器先抽字符串**（`core/logs.py::_extract_strings`）：`.evtx` 这类容器不能按字节
   当文本读——`\x60` 之类的字节巧合会被喂给攻击正则，刷出满屏「RCE（命令替换）」，
@@ -191,6 +191,20 @@ MetaJudge 按 `MODULE_WEIGHTS`（ad 0.95 / memory 0.90 / config 0.85 … scanner
   列表 90% 是 Microsoft/Edge/Teams 遥测，不排会把真 C2 域名挤出 15 条上限；
   `KNOWN_INFRA_SUFFIXES` 因此补了 `.msedge.net` / `.skype.com` / `.xboxlive.com` /
   `.trafficmanager.net` 等 HTTPS 服务后缀（同一份名单也让 DNS 折叠受益）。
+- **同一条结论只留一条**（`core/blobscan.py::add` 的通用分支）：通用去重键**刻意不含
+  `loc`**。历史上是 `(kind, v, loc)`，于是"同一结论在不同会话里各报一次"会全部活下来——
+  实测 `dump.pcapng` 是 50 条 FTP 会话连同一台 vsftpd 2.3.4，`漏洞利用：笑脸后门
+  （CVE-2011-2523）` 被逐字印了 **50 行**（只有端口不同），把要看的爆破口令序列顶出屏幕。
+  同值即同结论；会话级差异由 `[FTP会话]`/`[交互会话]` 这类**块**按会话呈现，不该由
+  findings 承担。同理 `session.py` 的 `⚠️ 检测到 vsftpd 后门` 按 `(服务器, 结论)` 只提示一次。
+  ⚠️ 例外要各自守住（都**不是**噪音）：`明文flag` 同值跨视图合并、`DNS查询` 在循环内已按
+  `dns_seen` 去重、`域账号`/`Kerberos票据` 在 `ad.py` 内已去重。改这个键必须重跑 golden。
+- **加密请求体的乱码字段整条丢弃**（`core/utils.py::looks_like_text` +
+  `core/http.py::_field_text_ok`）：AES 后的 App 流量按 utf-8 `'replace'` 解出来是整片乱码，
+  `[POST字段摘录]` 会印出 `��)�;��=l?�]��b` 这种一个字都读不了的"字段"。实测
+  `FLAG 消失之谜.pcap` 的 7 行摘录里 6 行如此。与 `readable_window` 分工：那是"从混合串里
+  **切出**一段可读文本"（证据串用），这是"整串算不算文本"的是/否判定（整条丢弃用），
+  共用同一份 `_text_ok` 码位白名单。**空值放行**——`password=` 为空本身就是爆破线索。
 
 ### 输入解析层
 

@@ -236,6 +236,7 @@ def analyze_sessions(tcp_streams, add_finding=None):
     lines = []
     done_pairs = set()
     mail_pair_seen = set()
+    vuln_warned = set()
 
     # ---------------- FTP ----------------
     keys = set(tcp_streams.keys())
@@ -286,7 +287,12 @@ def analyze_sessions(tcp_streams, add_finding=None):
                 detail += '：USER %s 触发，后门 shell 监听 6200' % smile_users[0]
             else:
                 detail += '：服务器为含后门版本（未观察到触发）'
-            lines.append('    ⚠️ 检测到 %s（banner=%s）' % (detail, banner[:40]))
+            # 后门版本是**服务器**的属性，不是会话的属性：同一台 2.3.4 被连 50 次，
+            # 这一行就原样重复 50 遍（实测 dump.pcapng），把真正要看的东西——每个
+            # 会话的爆破口令序列——整片顶出屏幕。同 (服务器, 结论) 只提示一次。
+            if (dst, detail) not in vuln_warned:
+                vuln_warned.add((dst, detail))
+                lines.append('    ⚠️ 检测到 %s（banner=%s）' % (detail, banner[:40]))
             if add_finding:
                 add_finding((0.95, '漏洞利用', b'',
                              '%s；banner=%s' % (detail, banner[:60]),
