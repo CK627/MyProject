@@ -116,7 +116,7 @@ ptool - 统一 Python 版本管理工具
   ptool scan                          扫描 Python 路径，更新配置
   ptool config                        显示配置
   ptool install                       完整安装（从源码目录）
-  ptool setup                         只做用户级配置（shims/补全/shell）
+  ptool setup                         生成 shims/补全 并写入 shell 配置
   ptool uninstall [-y]                卸载（-y 跳过确认）
   ptool update                        检查并更新 ptool 到最新版本
   ptool shim                          重建 shim 脚本
@@ -266,10 +266,19 @@ case "$1" in
         ;;
     shim)
         install_dir=$(get_install_dir) || exit 1
-        do_create_shims "$install_dir/config/ptool.conf"
+        do_create_shims "$install_dir" "$CONFIG_FILE"
         exit $?
         ;;
-    setup)    do_setup_user "$PROJECT_DIR" "$CONFIG_FILE"; exit $? ;;
+    setup)
+        # --files-only / --shell-only 供 pkg 的 postinstall 拆开用：产物要 root 写
+        # （安装目录属 root），shell rc 要登录用户写，一个身份做不完两件事。
+        shift
+        case "${1:-}" in
+            --files-only) do_setup_files "$PROJECT_DIR" "$CONFIG_FILE"; exit $? ;;
+            --shell-only) do_setup_shell "$PROJECT_DIR"; exit $? ;;
+            *)            do_setup_user  "$PROJECT_DIR" "$CONFIG_FILE"; exit $? ;;
+        esac
+        ;;
     uninstall) shift; do_uninstall "$@"; exit $? ;;
 esac
 

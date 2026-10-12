@@ -12,6 +12,9 @@ Thumbs.db
 dist/
 build/
 
+# Windows repo 布局下 `ptool shim` 生成的包装脚本（安装后布局里它在 {app}\shims）
+shims/
+
 # Claude Code 本地配置
 .claude/
 

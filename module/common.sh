@@ -23,6 +23,20 @@ get_install_dir() {
 }
 
 # ============================================
+# 以 root 身份执行
+# ============================================
+# 安装目录（含 shims / completions / config）属 root，而本脚本是以普通用户身份
+# 运行的（install.sh 就是这么调的，只有需要写系统目录的单条命令才 sudo）。所以
+# 凡是要往安装目录落盘的步骤都得过这里；pkg 的 postinstall 本身是 root，直接用。
+run_root() {
+    if [ "$(id -u)" -eq 0 ]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
+# ============================================
 # 国内镜像源
 # ============================================
 # update 也默认先问镜像：raw.githubusercontent.com 与 api.github.com 在国内不保证
@@ -252,7 +266,7 @@ do_update_via_curl() {
     echo "${version_key}=\"$remote_version\"" | sudo tee -a "$config_file" > /dev/null
 
     # Step 7: 刷新补全与 shell 配置
-    do_create_completions "$install_dir" "$config_file"
+    do_create_completions "$install_dir" "$src" "$config_file"
     do_setup_shell "$install_dir"
 
     rm -rf "$tmp"
@@ -262,36 +276,37 @@ do_update_via_curl() {
 }
 
 do_update_via_git() {
-    local tool_name="$1"
-    local branch="$2"
-    local remote_url="$3"
-    local install_dir="$4"
-    local config_file="$5"
+    # 克隆到临时目录、用完就删，不再留 ~/.devtools/<tool>/repo。
+    # 持久缓存当时是为了增量 fetch，但它把「装了一个工具」变成「家里多一个隐藏
+    # 目录」，卸载还得记着清；省下的不过是 curl+tar 不可用时的兜底路径里的一次
+    # 浅克隆。包一层是为了保证每条 return 路径都会清理（用 RETURN trap 不够稳）。
+    local repo_dir
+    repo_dir=$(mktemp -d)
+    _do_update_via_git_inner "$repo_dir" "$@"
+    local rc=$?
+    rm -rf "$repo_dir"
+    return $rc
+}
 
-    local repo_dir="$HOME/.devtools/${tool_name}/repo"
+_do_update_via_git_inner() {
+    local repo_dir="$1"
+    local tool_name="$2"
+    local branch="$3"
+    local remote_url="$4"
+    local install_dir="$5"
+    local config_file="$6"
+
     local version_key
     version_key=$(echo "${tool_name}_VERSION" | tr 'a-z' 'A-Z')
 
-    # Step 1: 确保仓库存在
-    local fresh_clone=0
-    if [ ! -d "$repo_dir/.git" ]; then
-        echo "首次更新，正在克隆仓库..."
-        mkdir -p "$(dirname "$repo_dir")"
-        git clone --branch "$branch" --single-branch --depth 1 "$remote_url" "$repo_dir" || { echo "克隆失败"; return 1; }
-        fresh_clone=1
-    fi
+    # Step 1: 克隆（浅克隆；临时目录里不做增量，直接克隆当前分支）
+    echo "正在克隆仓库..."
+    git clone --branch "$branch" --single-branch --depth 1 "$remote_url" "$repo_dir" >/dev/null 2>&1 \
+        || { echo "克隆失败，请检查网络"; return 1; }
 
-    # Step 2: 获取远程版本号
+    # Step 2: 获取远程版本号（刚克隆完，直接读文件）
     local remote_version=""
-    if [ "$fresh_clone" -eq 1 ]; then
-        # 刚克隆完，直接读本地文件
-        remote_version=$(cat "$repo_dir/VERSION" 2>/dev/null | tr -d '[:space:]')
-    else
-        # 已有仓库，fetch 后读远程
-        echo "正在检查更新..."
-        git -C "$repo_dir" fetch origin "$branch" 2>/dev/null || { echo "获取更新失败，请检查网络"; return 1; }
-        remote_version=$(git -C "$repo_dir" show "origin/$branch:VERSION" 2>/dev/null | tr -d '[:space:]')
-    fi
+    remote_version=$(cat "$repo_dir/VERSION" 2>/dev/null | tr -d '[:space:]')
 
     if [ -z "$remote_version" ]; then
         echo "错误: 无法获取版本号"
@@ -316,13 +331,7 @@ do_update_via_git() {
 
     echo "发现新版本: v${local_version:-未知} → v$remote_version"
 
-    # Step 4: 拉取最新代码（非首次克隆时需要）
-    if [ "$fresh_clone" -eq 0 ]; then
-        git -C "$repo_dir" checkout "$branch" 2>/dev/null
-        git -C "$repo_dir" pull origin "$branch" || { echo "拉取更新失败"; return 1; }
-    fi
-
-    # Step 5: 复制文件到安装目录（保留用户配置）
+    # Step 4: 复制文件到安装目录（保留用户配置）
     do_install_entry "$tool_name" "$install_dir" "$repo_dir"
     sudo cp "$repo_dir/module/common.sh" "$install_dir/module/"
 
@@ -344,32 +353,37 @@ do_update_via_git() {
         sudo cp "$repo_dir/config/${tool_name}.conf" "$config_file"
     fi
 
-    # Step 6: 记录版本到配置文件
+    # Step 5: 记录版本到配置文件
     sudo sed -i.bak "/^${version_key}/d" "$config_file" 2>/dev/null
     sudo rm -f "${config_file}.bak" 2>/dev/null
     echo "${version_key}=\"$remote_version\"" | sudo tee -a "$config_file" > /dev/null
 
-    # Step 7: 刷新补全脚本与 shell 配置（老版本安装的机器也会补上）
-    do_create_completions "$repo_dir" "$config_file"
+    # Step 6: 刷新补全脚本与 shell 配置（老版本安装的机器也会补上）
+    do_create_completions "$install_dir" "$repo_dir" "$config_file"
     do_setup_shell "$install_dir"
 
-    # Step 8: 输出结果
+    # Step 7: 输出结果
     echo "更新完成！"
     echo "  版本: v${local_version:-未知} → v$remote_version"
 }
 
 do_create_shims() {
-    local config_file="$1"
-    local shims_dir="$HOME/.devtools/ptool/shims"
+    local install_dir="$1"
+    local config_file="$2"
+    local shims_dir="$install_dir/shims"
 
-    mkdir -p "$shims_dir"
+    # shim 放在安装目录里（与 Windows 的 {app}\shims 一致），不再落到 ~/.devtools：
+    # 装完之后系统上只有 <安装目录> 一处，卸载也就是删一个目录。
+    # 代价是这个目录属 root，普通用户写不进去，所以先在临时目录里生成、再整体搬。
+    local tmp
+    tmp=$(mktemp -d)
 
     # python3 -> python, pip3 -> pip（拼接版本号时避免 python33.13）
     local tools=("python" "python3" "pip" "pip3")
     for tool in "${tools[@]}"; do
         local bin_name
         bin_name=$(echo "$tool" | sed 's/3$//')
-        cat > "$shims_dir/$tool" << SHIM
+        cat > "$tmp/$tool" << SHIM
 #!/bin/bash
 # ptool shim - auto generated
 CONFIG_FILE="$config_file"
@@ -399,8 +413,16 @@ if [ ! -f "\$BIN" ]; then
 fi
 exec "\$BIN" "\$@"
 SHIM
-        chmod +x "$shims_dir/$tool"
+        chmod 755 "$tmp/$tool"
     done
+
+    # 整体替换而不是逐个覆盖：上一版留下、这一版不再生成的 shim 也得消失，
+    # 否则它仍躺在 PATH 上、仍能被调用。
+    run_root rm -rf "$shims_dir"
+    run_root mkdir -p "$shims_dir"
+    run_root cp -R "$tmp/." "$shims_dir/"
+    run_root chmod 755 "$shims_dir"
+    rm -rf "$tmp"
 
     echo "Shim 已创建: $shims_dir"
 }
@@ -410,23 +432,32 @@ SHIM
 # 模板里的 @CONFIG_FILE@ 会被替换成实际配置路径
 # ============================================
 do_create_completions() {
-    local script_dir="$1"
-    local config_file="$2"
-    local comp_dir="$HOME/.devtools/ptool/completions"
+    local install_dir="$1"
+    local script_dir="$2"
+    local config_file="$3"
+    local comp_dir="$install_dir/completions"
 
     if [ ! -d "$script_dir/completions" ]; then
         echo "跳过补全脚本（未找到 completions 目录）"
         return 0
     fi
 
-    mkdir -p "$comp_dir"
+    # 和 shim 一样：生成不需要 root，落盘到安装目录才需要
+    local tmp
+    tmp=$(mktemp -d)
     local f dest
     for f in "$script_dir/completions/ptool.zsh" "$script_dir/completions/ptool.bash"; do
         [ -f "$f" ] || continue
         dest="$comp_dir/$(basename "$f")"
         # @SELF@ 是生成文件自身的路径，包装函数据此重新加载自己
-        sed -e "s|@CONFIG_FILE@|$config_file|g" -e "s|@SELF@|$dest|g" "$f" > "$dest"
+        sed -e "s|@CONFIG_FILE@|$config_file|g" -e "s|@SELF@|$dest|g" "$f" > "$tmp/$(basename "$f")"
     done
+
+    run_root rm -rf "$comp_dir"
+    run_root mkdir -p "$comp_dir"
+    run_root cp -R "$tmp/." "$comp_dir/"
+    run_root chmod 755 "$comp_dir"
+    rm -rf "$tmp"
 
     echo "补全脚本已创建: $comp_dir"
 }
@@ -446,6 +477,9 @@ _strip_rc_block() {
     local rc_file="$1"
     local install_dir="$2"
     local tool_name="$3"
+    # 老布局（<= 2.2.18）把 shim / 补全放在 ~/.devtools/<tool>/ 下，PATH 行也指着
+    # 那里。这两个变量只为清理老 rc 存在，新布局的路径都在 $install_dir 里、已被
+    # 下面的 -e "$install_dir" 覆盖。不要删——删了老安装升级时会留一行悬空 PATH。
     local shims_dir="$HOME/.devtools/$tool_name/shims"
     local comp_dir="$HOME/.devtools/$tool_name/completions"
 
@@ -471,8 +505,8 @@ _strip_rc_block() {
 do_setup_shell() {
     local install_dir="$1"
     local bin_dir="$install_dir/bin"
-    local shims_dir="$HOME/.devtools/ptool/shims"
-    local comp_dir="$HOME/.devtools/ptool/completions"
+    local shims_dir="$install_dir/shims"
+    local comp_dir="$install_dir/completions"
 
     local shell_rc
     shell_rc=$(get_shell_rc)
@@ -506,12 +540,11 @@ do_setup_shell() {
 }
 
 # ============================================
-# 用户级安装（供安装包的 postinstall 以登录用户身份调用）
-# 只处理 ~/.devtools 与 shell 配置，不碰系统目录，全程非交互。
-# 调用方必须保证配置文件已存在——bin/ptool.sh 的 load_config 在分发子命令
-# 之前就会检查它，配置缺失时 `ptool setup` 根本走不到这里。
+# 生成安装目录里的产物（供安装包的 postinstall 以 root 调用）
+# 全程非交互。调用方必须保证配置文件已存在——bin/ptool.sh 的 load_config 在分发
+# 子命令之前就会检查它，配置缺失时 `ptool setup` 根本走不到这里。
 # ============================================
-do_setup_user() {
+do_setup_files() {
     local install_dir="$1"
     local config_file="$2"
 
@@ -521,9 +554,19 @@ do_setup_user() {
         return 1
     fi
 
-    do_create_shims "$config_file"
+    do_create_shims "$install_dir" "$config_file"
     # 补全模板从安装目录取（安装包已随包分发 completions/）
-    do_create_completions "$install_dir" "$config_file"
+    do_create_completions "$install_dir" "$install_dir" "$config_file"
+}
+
+# 全套（产物 + shell rc）。因为 rc 一定属于登录用户、安装目录一定属于 root，
+# 它只在「同一个人既能 sudo 又是那个登录用户」时才成立——一键安装属于这种情况；
+# pkg 的 postinstall 跑在 root 下，就要拆成 do_setup_files + do_setup_shell 两步。
+do_setup_user() {
+    local install_dir="$1"
+    local config_file="$2"
+
+    do_setup_files "$install_dir" "$config_file" || return 1
     do_setup_shell "$install_dir"
 }
 
@@ -559,13 +602,20 @@ do_repair_artifacts() {
     local install_dir="$2"
     local source_dir="$3"
     local config_file="$4"
-    local comp_dir="$HOME/.devtools/${tool_name}/completions"
+    local comp_dir="$install_dir/completions"
     local repaired=0
 
     # lib 缺失说明安装损坏，无法 repair
     if [ ! -f "$install_dir/lib/${tool_name}.sh" ]; then
         echo "  警告: 缺少 $install_dir/lib/${tool_name}.sh，请重新安装"
         return 1
+    fi
+    # shim 现在也在安装目录里，缺了 PATH 上就是一串死命令（2.2.18 之前它们放在
+    # ~/.devtools 下，从老布局 update 上来的机器不会有这个目录）
+    if [ ! -e "$install_dir/shims/python" ]; then
+        do_create_shims "$install_dir" "$config_file" >/dev/null
+        echo "  已重建 shim: $install_dir/shims"
+        repaired=1
     fi
     # 入口缺失，或仍是旧布局（bin/ 下还留着 .sh）
     # 无 git 方案下没有源仓库目录，脚本已在 lib/，只需重建软链接
@@ -578,7 +628,7 @@ do_repair_artifacts() {
     fi
 
     if [ ! -f "$comp_dir/${tool_name}.zsh" ]; then
-        do_create_completions "$source_dir" "$config_file" >/dev/null
+        do_create_completions "$install_dir" "$source_dir" "$config_file" >/dev/null
         echo "  已补建补全脚本: $comp_dir"
         repaired=1
     fi
@@ -663,8 +713,8 @@ do_install() {
     echo ""
 
     echo "[4/5] 创建 shim 与补全..."
-    do_create_shims "$config_file"
-    do_create_completions "$script_dir" "$config_file"
+    do_create_shims "$install_dir" "$config_file"
+    do_create_completions "$install_dir" "$script_dir" "$config_file"
     echo ""
 
     echo "[5/5] 配置 PATH..."
@@ -711,26 +761,16 @@ do_uninstall() {
         echo "安装目录不存在"
     fi
 
-    # 清理 shims
-    local shims_dir="$HOME/.devtools/ptool/shims"
-    if [ -d "$shims_dir" ]; then
-        rm -rf "$shims_dir"
-        echo "已删除: $shims_dir"
-    fi
-
-    # 清理补全脚本
-    local comp_dir="$HOME/.devtools/ptool/completions"
-    if [ -d "$comp_dir" ]; then
-        rm -rf "$comp_dir"
-        echo "已删除: $comp_dir"
-    fi
-
-    # 清理 .repo 目录
-    local repo_dir="$HOME/.devtools/ptool/repo"
-    if [ -d "$repo_dir" ]; then
-        rm -rf "$repo_dir"
-        echo "已删除: $repo_dir"
-    fi
+    # 下面三处是 2.2.18 之前的布局：shim、补全、更新用的 git 克隆缓存都放在
+    # ~/.devtools/<tool>/ 下。新布局把它们收进了安装目录（上面那条 rm -rf 已经
+    # 连带删掉），这里只为清干净从老版本升上来的机器——对全新安装是空操作。
+    local legacy_dir
+    for legacy_dir in shims completions repo; do
+        if [ -d "$HOME/.devtools/ptool/$legacy_dir" ]; then
+            rm -rf "$HOME/.devtools/ptool/$legacy_dir"
+            echo "已删除: $HOME/.devtools/ptool/$legacy_dir"
+        fi
+    done
 
     # 清理 shell 配置中的 ptool 配置块。
     # 这里遍历 3 个 rc 文件（do_setup_shell 只写 get_shell_rc() 那一个）是刻意的：

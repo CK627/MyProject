@@ -29,7 +29,10 @@ case "${1:-}" in
 esac
 
 # ---------------------------------------------------------------
-# 用户级产物：以控制台登录用户身份清理
+# 用户级清理：以控制台登录用户身份处理 shell 配置
+#   shim 与补全现在都在 $INSTALL 里（下面 rm -rf 一并删掉），这里处理的是
+#   - 2.2.18 之前遗留在 ~/.devtools/$TOOL 下的老目录
+#   - rc 里指向老路径的那几行
 # ---------------------------------------------------------------
 TARGET="$(/usr/bin/stat -f%Su /dev/console 2>/dev/null)"
 case "$TARGET" in
@@ -40,9 +43,8 @@ if [ -n "$TARGET" ] && /usr/bin/id -u "$TARGET" >/dev/null 2>&1; then
     UHOME="$(/usr/bin/dscl . -read "/Users/$TARGET" NFSHomeDirectory 2>/dev/null | /usr/bin/awk '{print $2}')"
     [ -n "$UHOME" ] || UHOME="/Users/$TARGET"
 
-    /usr/bin/sudo -u "$TARGET" /bin/rm -rf "$UHOME/.devtools/$TOOL"
-
-    # 清掉 shell 配置里由安装程序写入的三行（标记行 + PATH 行 + 补全 source 行）
+    # 清掉 shell 配置里由安装程序写入的行（标记行 + PATH 行 + 补全 source 行）。
+    # $INSTALL 覆盖新布局；~/.devtools/$TOOL/* 覆盖老布局。
     for rc in "$UHOME/.zshrc" "$UHOME/.bashrc" "$UHOME/.bash_profile"; do
         [ -f "$rc" ] || continue
         /usr/bin/sed -i '' "/^# $TOOL$/d" "$rc"
@@ -51,10 +53,16 @@ if [ -n "$TARGET" ] && /usr/bin/id -u "$TARGET" >/dev/null 2>&1; then
         done
         /bin/echo "已清理: $rc"
     done
-    /bin/echo "已删除: $UHOME/.devtools/$TOOL"
+
+    if [ -d "$UHOME/.devtools/$TOOL" ]; then
+        /usr/bin/sudo -u "$TARGET" /bin/rm -rf "$UHOME/.devtools/$TOOL"
+        /bin/echo "已删除老布局残留: $UHOME/.devtools/$TOOL"
+    fi
+    # 只在空的时候删（rmdir 非空会失败），别人的东西不受影响
+    /usr/bin/sudo -u "$TARGET" /bin/rmdir "$UHOME/.devtools" 2>/dev/null
 else
-    /bin/echo "未检测到登录用户，跳过用户级清理"
-    /bin/echo "如需清理，请手动删除 ~/.devtools/$TOOL，并移除 shell 配置中 $TOOL 相关的行"
+    /bin/echo "未检测到登录用户，跳过 shell 配置清理"
+    /bin/echo "如需清理，请手动编辑 rc 文件，移除 $TOOL 相关的行"
 fi
 
 # ---------------------------------------------------------------

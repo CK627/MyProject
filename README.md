@@ -83,8 +83,7 @@ cd /path/to/ptool
 
 ---
 
-> 卸载会删除安装目录（含配置文件与 Windows 的 `shims\`）、`~/.devtools/ptool/` 下的
-> shim / 补全脚本 / repo 缓存，并清理 PATH 中由 ptool 写入的项：
+> 卸载会删除安装目录（含配置文件、`shims/`、`completions/`），并清理 PATH 中由 ptool 写入的项：
 > Windows 上是机器级的 `{app}\bin` 与 `{app}\shims` 两条，macOS / Linux 上是 shell 配置里
 > 的 PATH 行与补全 source 行（不触碰其他配置）。
 > 确认后会立即执行，请提前备份自定义配置。
@@ -192,7 +191,7 @@ ptool run 3.11 <TAB> # .py 文件
 > 例外：**首次安装**时函数还没被定义（`.zshrc` 正在被写入），所以第一次仍需
 > 重开终端或 `source ~/.zshrc`。之后的每次 update 都是自动的。
 
-补全脚本位于 `~/.devtools/ptool/completions/`，由 `ptool install` / `ptool update` 自动刷新，
+补全脚本位于安装目录的 `completions/` 下（见下方「跨平台支持」表格），由 `ptool install` / `ptool update` 自动刷新，
 不需要手动维护。修改过 `PYTHON_BASE_DIR` 后补全列表会自动跟着变（每次补全都重新读取配置）。
 
 ## 配置文件
@@ -235,13 +234,17 @@ PTOOL_VERSION="2.2.17"
 
 | 系统 | 主脚本 | 安装路径 | 配置文件 | shim 目录 | 入口 |
 |------|--------|----------|----------|-----------|------|
-| macOS | `ptool` | `/Library/devtools/ptool/` | `/Library/devtools/ptool/config/ptool.conf` | `~/.devtools/ptool/shims` | `installer/` |
-| Linux | `ptool` | `/usr/local/devtools/ptool/` | `/usr/local/devtools/ptool/config/ptool.conf` | `~/.devtools/ptool/shims` | `installer/` |
+| macOS | `ptool` | `/Library/devtools/ptool/` | `/Library/devtools/ptool/config/ptool.conf` | `/Library/devtools/ptool/shims` | `installer/` |
+| Linux | `ptool` | `/usr/local/devtools/ptool/` | `/usr/local/devtools/ptool/config/ptool.conf` | `/usr/local/devtools/ptool/shims` | `installer/` |
 | Windows | `ptool.bat` | `C:\Program Files\devtools\ptool\` | `C:\Program Files\devtools\ptool\config\ptool.conf` | `C:\Program Files\devtools\ptool\shims` | `installer/windows/` |
 
-macOS / Linux 会在 `~/.devtools/ptool/shims` 下生成 `python` / `python3` / `pip` / `pip3` 包装脚本，
-它们优先于系统 Python，并按当前默认版本转发调用。Windows 的 shim 生成在安装目录下的 `shims\`，
-由安装程序**前置**到**机器级** PATH 上（不是用户级）。
+macOS / Linux 会在安装目录的 `shims/` 下生成 `python` / `python3` / `pip` / `pip3` 包装脚本，
+并按当前默认版本转发调用；这几个目录写进用户自己的 shell PATH（`shims` 在前、`bin` 在后）。
+Windows 的 shim 同样生成在安装目录下的 `shims\`，由安装程序**前置**到**机器级** PATH 上。
+
+> **2.2.19 起，shim 与补全也收进安装目录**（此前 macOS / Linux 把它们放在 `~/.devtools/ptool/`）。
+> 装完之后系统上只有 `<安装目录>` 一处，卸载就是删一个目录；`~/.devtools` 不再创建。
+> 从旧版升级时，指向老路径的 rc 行与老目录会在 `ptool install` / `ptool update` / 卸载时自动清掉。
 
 > **为什么必须是机器级、且必须排在最前**：Windows 的生效 PATH 是「机器级 `Path` + `;` +
 > 用户级 `Path`」，机器级整体在前——用户级目录排得再靠前也压不过任何一个机器级目录。
@@ -259,15 +262,15 @@ macOS / Linux 会在 `~/.devtools/ptool/shims` 下生成 `python` / `python3` / 
 > `cannot write ...\config\ptool.conf`。
 >
 > **macOS / Linux 侧不做同样的收紧**：那边 `config` 仍是 `666`（普通用户直接 `ptool use` 就能改）。
-> 因为 unix 的 shim 落在每用户的 `~/.devtools/ptool/shims`、不是机器级 PATH 上的全局命令，
-> 可写配置最多影响「本机其他用户自己」执行的解释器，提权面比 Windows 小得多。若你的机器需要
+> 因为 unix 的 shim 虽然也在安装目录里，却只被加进**每个用户自己的** shell PATH、不是全机器的
+> 全局命令，可写配置最多影响「同机其他用户自己」执行的解释器，提权面比 Windows 小得多。若你的机器需要
 > 与 Windows 同级的姿态，可自行 `sudo chmod 644` 配置并改为 `sudo ptool use`。
 >
 > **`py` 不在 shim 名单里**（只有 `python` / `python3` / `pip` / `pip3`），所以 `py -3.11` 走的仍是
 > 官方 launcher 自己的版本表，与 `ptool use` 设的默认版本无关。这是刻意的：ptool 内部就靠裸 `py`
 > 来定位解释器路径，给 `py` 生成 shim 会形成自我递归。要用 ptool 的默认版本请敲 `python`。
 
-`ptool update` 使用的仓库缓存在 `~/.devtools/ptool/repo`。
+`ptool update` 在 curl + tar 不可用时会退回 git：仓库克隆到临时目录，复制完即删，不留缓存。
 
 ## 在脚本中使用
 

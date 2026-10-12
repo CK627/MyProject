@@ -30,7 +30,7 @@ source "$PROJECT_DIR/module/common.sh"
 
 case "${1:-install}" in
     install)   do_install "$PROJECT_DIR" ;;
-    uninstall) do_uninstall ;;
+    uninstall) shift; do_uninstall "$@" ;;
     scan)      do_scan "$CONFIG" ;;
     config)    do_config "$CONFIG" ;;
     help)      echo "用法: $0 [install|uninstall|scan|config|help]" ;;
