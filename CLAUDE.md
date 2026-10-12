@@ -115,6 +115,23 @@ MetaJudge 按 `MODULE_WEIGHTS`（ad 0.95 / memory 0.90 / config 0.85 … scanner
 置信度分级由 `core/utils.py` 的 `level_of()` 决定：`>=0.85` 高 / `>=0.55` 中 / 其余 低。
 分数含义表在 `cli.HELP` 和 README 里同步维护（0.97 明文 flag → 0.40 关键词上下文）。
 
+### 噪音闸门（改扫描逻辑时先看这里）
+
+判定标准是**"这条输出对解题有没有引导价值"**，不是"看起来像不像可疑"。已经落地的两条：
+
+- **二进制容器先抽字符串**（`core/logs.py::_extract_strings`）：`.evtx` 这类容器不能按字节
+  当文本读——`\x60` 之类的字节巧合会被喂给攻击正则，刷出满屏「RCE（命令替换）」，
+  证据本身就是乱码。现在按 **UTF-16LE 两种对齐**（EVTX 里的字符串常相对文件头错位 1 字节，
+  即 `\x00f\x00l\x00a\x00g`）+ ASCII 抽可读片段后再分析。
+- **常规域名折叠**（`core/utils.py::dns_lead_reason` + `scanner.py` 的 DNS 循环）：只逐条列出
+  **结构异常**的查询名（超长标签 / DGA 主机名 / 动态 DNS / 滥用高发 TLD / WPAD·`_msdcs`
+  等服务发现），其余折叠成一行。判据刻意**不是**"厂商域名白名单"——那盖不住中文流量
+  （qq.com、g-fox.cn 一条都不匹配），而中文 CDN/门户的常规查询会把真线索挤出屏幕。
+  `KNOWN_INFRA_SUFFIXES`（厂商遥测/CDN，含国内 CDN）只用于**豁免随机主机名判定**
+  （`d15krst4gi8g86.cloudfront.net` 是正常的），`dns.py` 与 `dns_lead_reason` 共用这一份名单。
+  ⚠️ 折叠行的分数必须 `>= cli` 的 `MIN_SCORE` 默认值（0.40），否则会被静默滤掉——
+  折叠是"少占屏"，不是"隐瞒"。
+
 ### 输入解析层
 
 `core/capture.py` 是纯 Python 的 pcap/pcapng 解析器（无 scapy/dpkt/Wireshark），
@@ -123,6 +140,7 @@ MetaJudge 按 `MODULE_WEIGHTS`（ad 0.95 / memory 0.90 / config 0.85 … scanner
 行为，见 `lab/analysis/case12`）。`core/extract.py` 负责文件雕刻、口令池、zip 假加密绕过。
 `core/utils.py` 集中了所有共享正则（`FLAG_RE`/`JWT_RE`/`B64_RUN`/`HEX_RUN`/`SECRET_LINE_RE`）
 与 `kw_boundary_ok()`（词内误报闸门：`FolderValueFlags`、`create_pdo_flag`、`msctf_`）。
+DNS 相关的 `KNOWN_INFRA_SUFFIXES` / `dns_lead_reason` 也在这里（见上文「噪音闸门」）。
 
 ### 判断核（本地 MLP，可训练）
 

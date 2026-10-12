@@ -10,6 +10,47 @@
 import re
 from .router import Finding, AnalysisResult
 
+
+# ---------------------------------------------------------------------------
+# 二进制日志容器（.evtx 等）的字符串抽取
+# ---------------------------------------------------------------------------
+
+# 可读片段的判定：ASCII 可见字符 + CJK
+_STR_WIDE_RE = re.compile(r"[\x20-\x7e　-〿一-鿿＀-￯]{4,}")
+_STR_NARROW_RE = re.compile(rb"[\x20-\x7e]{4,}")
+
+
+def _looks_binary(raw: bytes) -> bool:
+    """靠 NUL 字节判断是不是二进制容器（文本日志不会有 NUL）。"""
+    return b"\x00" in raw
+
+
+def _extract_strings(raw: bytes) -> str:
+    """从二进制容器里抽可读字符串。
+
+    Windows 事件日志是 UTF-16LE：直接按字节当文本读，会把 0x60 这类字节的巧合
+    喂给攻击正则，产出「RCE（命令替换）」这种高置信乱码误报——证据行本身是乱码，
+    对解题毫无引导价值，还会把真正的 flag 片段挤下去。所以先把可读部分捞出来，
+    后续分析只在真实文本上做。
+
+    两种对齐都要试：EVTX 里的字符串常常相对文件头**错位 1 字节**
+    （`\\x00f\\x00l\\x00a\\x00g`），只按偏移 0 解会把整段文本解成 CJK 乱码。
+    scanner 的 UTF-16LE 关键字扫描同样是从字符本身起匹配，这里与之对齐。
+    """
+    out, seen = [], set()
+
+    def take(s):
+        if s not in seen:
+            seen.add(s)
+            out.append(s)
+
+    for off in (0, 1):
+        for m in _STR_WIDE_RE.finditer(raw[off:].decode("utf-16-le", "replace")):
+            take(m.group(0))
+    for m in _STR_NARROW_RE.finditer(raw):
+        take(m.group(0).decode("ascii"))
+    return "\n".join(out)
+
 # ---------------------------------------------------------------------------
 # 攻击模式匹配（正则 → 描述 → 置信度）
 # ---------------------------------------------------------------------------
@@ -81,15 +122,20 @@ def analyze(filepath: str) -> AnalysisResult:
     - Nginx/Apache Access Log
     - syslog
     - auth.log
-    - Windows Event Log（.evtx）
+    - Windows Event Log（.evtx，二进制：先抽 UTF-16LE/ASCII 字符串再分析）
     """
     result = AnalysisResult("logs")
 
-    with open(filepath, "r", errors="replace") as f:
-        content = f.read()
+    with open(filepath, "rb") as f:
+        raw = f.read()
 
-    # 检测日志类型
-    _detect_and_analyze(content, filepath, result)
+    if _looks_binary(raw):
+        content = _extract_strings(raw)
+    else:
+        content = raw.decode("utf-8", "replace")
+
+    if content:
+        _detect_and_analyze(content, filepath, result)
 
     return result
 

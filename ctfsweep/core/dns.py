@@ -10,6 +10,7 @@
 import re
 import collections
 from .router import Finding, AnalysisResult
+from .utils import KNOWN_INFRA_SUFFIXES
 
 # GUID 标签（AD 的 _ldap._tcp.<GUID>.domains._msdcs 等查询）→ 长域名判定豁免
 _GUID_RE = re.compile(
@@ -65,21 +66,8 @@ def _dga_score(domain: str) -> float:
     return min(score, 1.0)
 
 
-# 知名基础设施后缀：系统遥测/更新/CDN 域名的超长标签是正常现象（如
-# amd-keyid-…-v2.microsoftaik.azure.net、Akamai/Cloudflare 边缘名），
-# 不在"DNS 外带"讨论范围内 → 长域名判定豁免。
-_BENIGN_SUFFIXES = (
-    ".microsoft.com", ".microsoftaik.azure.net", ".azure.net", ".azure.com",
-    ".windowsupdate.com", ".windows.com", ".msftncsi.com", ".msftconnecttest.com",
-    ".office.net", ".office.com", ".live.com", ".msn.com", ".bing.com",
-    ".google.com", ".googlevideo.com", ".gstatic.com", ".googleapis.com",
-    ".youtube.com", ".apple.com", ".icloud.com", ".mzstatic.com",
-    ".adobe.com", ".akamai.net", ".akamaized.net", ".akamaihd.net", ".edgekey.net",
-    ".cloudfront.net", ".cloudflare.com", ".cloudflare.net", ".fastly.net",
-    ".amazonaws.com", ".digicert.com", ".sectigo.com", ".verisign.com",
-    ".mozilla.org", ".mozilla.net", ".firefox.com", ".yahoo.com",
-    ".footprintdns.com", ".opendns.com", ".umbrella.com",
-)
+# 知名基础设施后缀见 utils.KNOWN_INFRA_SUFFIXES（与 dns_lead_reason 的随机主机名
+# 判定共用同一份名单，避免两处白名单漂移）。
 
 
 # ---------------------------------------------------------------------------
@@ -218,7 +206,7 @@ def _analyze_domain_stats(domain_counts: collections.Counter, result: AnalysisRe
         max_label = max((len(x) for x in domain.split(".")), default=0)
         if max_label < 25:
             continue
-        if any(domain.endswith(s) for s in _BENIGN_SUFFIXES):
+        if any(domain.endswith(s) for s in KNOWN_INFRA_SUFFIXES):
             continue
         if _GUID_RE.match(max(domain.split("."), key=len)):
             continue  # AD SRV 查询（GUID 标签），非外带

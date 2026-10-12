@@ -18,6 +18,121 @@ BAND_HIGH = 0.85
 BAND_MID = 0.55
 
 
+# ---------------------------------------------------------------------------
+# DNS 查询线索判定
+# ---------------------------------------------------------------------------
+#
+# 判定"这个域名值不值得逐条列出"。正常上网与系统遥测（含中文互联网的 CDN、门户）
+# 一条都不匹配 → 折叠；外带 / DGA / 动态 DNS / AD 服务发现 / WPAD 投毒逐条保留。
+#
+# 为什么按"结构异常"而不是"白名单厂商域名"：白名单是针对英文互联网的，中文流量
+# （qq.com、g-fox.cn、wp.com）一条都盖不住，而逐条列举这类常规域名会把真正的线索
+# 挤出屏幕——正是"与答案无关的噪音"。结构异常则与语言、地区无关。
+
+# 知名基础设施后缀：系统遥测/更新/CDN 域名的随机标签是正常现象
+# （`d15krst4gi8g86.cloudfront.net`、`cp601-prod.do.dsp.mp.microsoft.com`、
+# `adsh.wagbridge.taobao.alimama.com.gds.alibabadns.com`），不算"结构异常"。
+# 供 dns.py 的长域名判定与 dns_lead_reason 的随机主机名判定共用。
+KNOWN_INFRA_SUFFIXES = (
+    ".microsoft.com", ".microsoftaik.azure.net", ".azure.net", ".azure.com",
+    ".windowsupdate.com", ".windows.com", ".msftncsi.com", ".msftconnecttest.com",
+    ".office.net", ".office.com", ".live.com", ".msn.com", ".bing.com",
+    ".google.com", ".googlevideo.com", ".gstatic.com", ".googleapis.com",
+    ".youtube.com", ".apple.com", ".icloud.com", ".mzstatic.com",
+    ".adobe.com", ".akamai.net", ".akamaized.net", ".akamaihd.net", ".edgekey.net",
+    ".cloudfront.net", ".cloudflare.com", ".cloudflare.net", ".fastly.net",
+    ".amazonaws.com", ".digicert.com", ".sectigo.com", ".verisign.com",
+    ".mozilla.org", ".mozilla.net", ".firefox.com", ".yahoo.com",
+    ".footprintdns.com", ".opendns.com", ".umbrella.com",
+    # 国内 CDN / 云（中文流量抓包里这些随机名同样是正常现象）
+    ".alicdn.com", ".aliyun.com", ".aliyuncs.com", ".myqcloud.com", ".qcloud.com",
+    ".bdydns.com", ".baidubce.com", ".jomodns.com", ".ourdvsss.com",
+    ".kunlunca.com", ".wswebpic.com", ".jiashule.com", ".qiyipic.com",
+    ".hdslb.com", ".biliapi.net", ".douyucdn.cn", ".pstatp.com", ".bytedns.net",
+    ".ourdvsss.cn", ".lxdns.com", ".gslb.com", ".mmtrix.com",
+)
+
+
+def under_known_infra(name):
+    """域名是否落在已知基础设施（厂商遥测/CDN/云）之下。"""
+    s = name.decode('latin-1') if isinstance(name, bytes) else str(name)
+    s = s.lower().rstrip('.')
+    return any(s == suf[1:] or s.endswith(suf) for suf in KNOWN_INFRA_SUFFIXES)
+
+
+_ABUSED_TLDS = frozenset("""
+    cyou casa club top pw xyz icu tk gq ml cf ga ws buzz click link online site
+    live store fun space website monster quest rest bar bond cfd sbs cyber mom
+    lol best shop work men loan download stream gdn bid win review country kim
+    party science racing date faith trade webcam accountant cricket
+""".split())
+
+# 动态 DNS / 内网穿透服务：C2 回连的常见落脚点，域名本身就是线索
+_DYNDNS_SUFFIXES = (
+    '.ddns.net', '.no-ip.org', '.no-ip.com', '.noip.com', '.dyndns.org',
+    '.dynu.com', '.dynu.net', '.hopto.org', '.zapto.org', '.sytes.net',
+    '.duckdns.org', '.3utilities.com', '.myftp.org', '.myvnc.com',
+    '.serveftp.com', '.redirectme.net', '.dnsalias.com', '.dnsalias.net',
+    '.chickenkiller.com', '.mooo.com', '.strangled.net', '.ignorelist.com',
+    '.jumpingcrab.com', '.linkpc.net', '.dynalias.com',
+    '.ngrok.io', '.ngrok-free.app', '.trycloudflare.com', '.serveo.net',
+)
+
+# 名字里直接带服务发现/投毒语义
+_DISCOVERY_PREFIXES = ('wpad.', 'isatap.', '_ldap._tcp', '_kerberos._tcp',
+                       '_gc._tcp', '_vlmcs._tcp', '_kpasswd._tcp')
+_DISCOVERY_MARKS = ('_msdcs', '_sites')
+
+_VOWELS = frozenset('aeiou')
+
+
+def dns_lead_reason(name):
+    """域名是否值得逐条列出；返回原因字符串（None = 常规域名，交由调用方折叠）。"""
+    s = name.decode('latin-1') if isinstance(name, bytes) else str(name)
+    s = s.lower().rstrip('.')
+    if not s or ' ' in s:
+        return None
+
+    labels = s.split('.')
+    if max(len(x) for x in labels) >= 20:
+        return '超长标签（编码外带/隧道特征）'
+    if len(s) > 60:
+        return '域名超长（多段拼接外带特征）'
+
+    for suf in _DYNDNS_SUFFIXES:
+        if s == suf[1:] or s.endswith(suf):
+            return '动态 DNS / 内网穿透域名'
+    for pre in _DISCOVERY_PREFIXES:
+        if s.startswith(pre):
+            return '服务发现/投毒相关查询'
+    if any(m in s for m in _DISCOVERY_MARKS):
+        return '服务发现/投毒相关查询'
+
+    tld = labels[-1]
+    if tld in _ABUSED_TLDS:
+        return '滥用高发顶级域 .%s' % tld
+
+    # 随机二级/主机名：逐个标签看，任一像 DGA 就算（kamuchehddhgfgf.ddns.net
+    # 这类左侧随机名的落脚点）。落在已知 CDN/遥测之下的随机名是正常现象，跳过。
+    if under_known_infra(s):
+        return None
+    for lb in labels[:-1]:
+        if len(lb) < 10:
+            continue
+        digits = sum(1 for c in lb if c.isdigit()) / float(len(lb))
+        alpha = [c for c in lb if c.isalpha()]
+        vowel = (sum(1 for c in alpha if c in _VOWELS) / float(len(alpha))
+                 if alpha else 1.0)
+        if len(lb) >= 12 and (digits >= 0.15 or vowel < 0.25):
+            return '主机名随机（疑似 DGA）'
+        # 纯字母 + 结尾一长串数字（opsbox8097 / hostjob3862 / globalcert8618）——
+        # 要求数字**连成尾串**且 >=3 位，避开 cp601-prod、b28-yk-w2 这类正常编号
+        tail = len(lb) - len(lb.rstrip('0123456789'))
+        if tail >= 3 and alpha and digits >= 0.25:
+            return '主机名尾部数字串（疑似 DGA）'
+    return None
+
+
 def level_of(score):
     return '高' if score >= BAND_HIGH else ('中' if score >= BAND_MID else '低')
 

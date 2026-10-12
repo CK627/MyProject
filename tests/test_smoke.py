@@ -398,6 +398,11 @@ def main():
         check('create_pdo_flag' not in out, '噪音闸门：标识符内部（create_pdo_flag）已剔除')
         check('msctf' not in out, '噪音闸门：标识符内部（msctf_）已剔除')
         check('【中置信（需人工确认）】' in out, '报告分级：中置信小标题（换行分区）')
+        # EVTX 是二进制容器：早期按字节当文本读，`\x60` 这类字节的巧合会被喂给
+        # 攻击正则，刷出满屏「RCE（命令替换）」乱码（证据本身就是乱码，对解题零帮助）。
+        # 现在先抽 UTF-16 字符串再分析 → 命中真实的 flag 行，且不再有乱码误报。
+        check('日志中的 flag' in out, 'evtx 二进制容器：抽字符串后命中真实 flag 行')
+        check('RCE（命令替换）' not in out, 'evtx 二进制容器：乱码不再触发攻击正则误报')
         check('【扫描统计】' in out and '高（≥0.85）：' in out, '统计：换行分区输出')
         check('统计: 高置信' not in out, '旧版单行统计已移除')
         check('片段池（按文件标注来源）' in out and '←' in out, '全局片段池：按行标注来源')
@@ -459,6 +464,25 @@ def main():
         check('wagbridge' not in seg, '良性长域名（多短标签拼接）不报外带')
         check('ms17-010' not in out, 'HTTP 文件名串不被当"长域名"（旧误报已修）')
         check('f2f2f2' not in out and 'fff9ec' not in out, 'CSS 颜色值不被当片段（旧误报已修）')
+        # 常规域名折叠：一次正常上网抓包里有几十条 CDN/门户查询，逐条列出会把
+        # 真正的外带/DGA 线索挤出屏幕。折叠成一行且**不丢信息**——外带的
+        # tunnel-domain 仍逐条列出并标注原因，常规的 alibabadns 进折叠行。
+        check('DNS查询（常规域名，已折叠）' in out, 'DNS：常规域名折叠成一行（不逐条刷屏）')
+        check('alibabadns.com' in out, 'DNS：折叠只是少占屏，常规域名仍在报告里可见')
+        check('（超长标签（编码外带/隧道特征））' in out, 'DNS：逐条列出的线索标注了判定原因')
+
+        print('== DNS 线索判定（dns_lead_reason）==')
+        from ctfsweep.core.utils import dns_lead_reason
+        for name in ('college.usatoday.com', 's2.wp.com', 'jqmt.qq.com',
+                     'cp601-prod.do.dsp.mp.microsoft.com',
+                     'd15krst4gi8g86.cloudfront.net', 'b28-yk-w2.youku.com',
+                     'v10.events.data.microsoft.com', 'addons.g-fox.cn'):
+            check(dns_lead_reason(name) is None, '常规域名不报线索：%s' % name)
+        for name in ('Zm9vYmFy' * 6 + '.exfil.tunnel-domain.com',
+                     'kamuchehddhgfgf.ddns.net',
+                     'ubbifeder.cyou', 'opsbox8097.com', 'wpad.wokemountain.com',
+                     '_ldap._tcp.pdc._msdcs.enemywatch.net', 'isatap.corp.local'):
+            check(dns_lead_reason(name) is not None, '异常域名报线索：%s' % name[:40])
 
         print('== t10-ftp.pcap：FTP 证据 / 二进制关键词闸门 ==')
         rc, out = run_cli([os.path.join(tmp, 't10-ftp.pcap')])

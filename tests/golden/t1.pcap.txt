@@ -21,7 +21,7 @@
     [0.62 中] 环境/配置: PWD=/AstrBot   @10.9.9.10:40001 -> 10.9.9.20:8080 (会话拼接 292B)
     [0.62 中] 环境/配置: WEBUI_SK=Advanced_System_for_Text   @10.9.9.10:40001 -> 10.9.9.20:8080 (会话拼接 292B)
   【低置信（线索参考）】
-    [0.45 低] DNS查询: ZmxhZ3tkbnMtc21va2Utb2t9.exfil.smoke   @10.9.9.10 -> 10.9.9.20
+    [0.45 低] DNS查询: ZmxhZ3tkbnMtc21va2Utb2t9.exfil.smoke   @10.9.9.10 -> 10.9.9.20（超长标签（编码外带/隧道特征））
     [0.45 低] 关键词[flag]: ...zk5OTk5OTk5fQ.smoke-signature plain: flag{plain-smoke-ok} hex: 666c61677b6833782d736d6f6b652d6f6b7d PWD=/AstrBot WEBUI_SK=Advanced_System_for_Text...   @10.9.9.10:40001 -> 10.9.9.20:8080 (会话拼接 292B)
 
 [留存区] 已记录本次扫描（6 条候选）：<TMP>/work/t1.pcap

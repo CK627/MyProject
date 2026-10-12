@@ -12,7 +12,8 @@ from .extract import (PWD_POOL, carve_base64_blobs, carve_files,
                       collect_pwds_from_blob, extract_scan)
 from .http import build_http_transactions, http_summary, jwt_summary
 from .utils import (FLAG_RE, JWT_RE, SECRET_LINE_RE, SENSITIVE_NAME_RE,
-                    decode_score, kw_boundary_ok, printable_ratio, try_b64, ts_str)
+                    decode_score, dns_lead_reason, kw_boundary_ok,
+                    printable_ratio, try_b64, ts_str)
 
 
 def _is_tls_stream(blob):
@@ -118,6 +119,7 @@ def scan_capture(data, keywords, do_decode, depth, extract=None, ctx=None):
             udp_payloads.append((num, src, sport, dst, dport, payload))
 
     dns_seen = set()
+    dns_routine = []
     for num, src, sport, dst, dport, payload in udp_payloads:
         if 53 not in (sport, dport):
             continue
@@ -125,12 +127,31 @@ def scan_capture(data, keywords, do_decode, depth, extract=None, ctx=None):
         if not q or q in dns_seen:
             continue
         dns_seen.add(q)
-        add((0.45, 'DNS查询', b'', q, '%s -> %s' % (src, dst)), findings, seen)
+        loc = '%s -> %s' % (src, dst)
+        # 逐条列出所有查询名会把常规上网域名刷满屏幕（中文流量的 CDN/门户一条都不
+        # 在"厂商白名单"里），真正的外带/DGA/动态DNS/AD发现线索反而被挤下去。
+        # 所以只逐条列出结构异常的，其余折叠成一行——折叠**不丢信息**，base64 外带
+        # 检测对所有域名照跑（长标签里塞数据才是线索，域名本身不是）。
+        reason = dns_lead_reason(q)
+        if reason is None:
+            dns_routine.append(q)
+        else:
+            add((0.45, 'DNS查询', b'', q, '%s（%s）' % (loc, reason)), findings, seen)
         for label in q.split(b'.'):
             if len(label) >= 12:
                 dec = try_b64(label)
                 if dec and printable_ratio(dec) > 0.8 and (b'{' in dec or any(k.encode() in dec.lower() for k in keywords)):
                     add((decode_score(dec, keywords), 'base64', label, dec, 'DNS子域名 %s -> %s' % (src, dst)), findings, seen)
+
+    if dns_routine:
+        uniq = sorted(set(dns_routine))
+        # 0.42 是"折叠后仍然可见"的最低档：低于默认 --min-score(0.40) 就会被静默
+        # 滤掉，等于把整批查询藏起来——折叠的目的是少占屏，不是隐瞒。
+        # 只举 6 个样例：渲染层对非具名 kind 收 v[:230]，多列会被拦腰截断且没有省略号。
+        add((0.42, 'DNS查询（常规域名，已折叠）', b'',
+             '%d 个：%s%s' % (len(uniq), ' '.join(x.decode('latin-1') for x in uniq[:6]),
+                              ' …' if len(uniq) > 6 else ''),
+             '共 %d 条 UDP/53 查询' % len(dns_routine)), findings, seen)
 
     for dirkey, segs, blob in ctx.stream_blobs():
         if len(blob) < 16:

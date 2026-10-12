@@ -12,8 +12,8 @@
     10.9.9.10       02:00:00:00:00:02
     10.9.9.20       02:00:00:00:00:02
   【低置信（线索参考）】
-    [0.45 低] DNS查询: Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFy.exfil.tunnel-domain.com   @10.9.9.10 -> 10.9.9.20
-    [0.45 低] DNS查询: adsh.wagbridge.taobao.alimama.com.gds.alibabadns.com   @10.9.9.10 -> 10.9.9.20
+    [0.45 低] DNS查询: Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFy.exfil.tunnel-domain.com   @10.9.9.10 -> 10.9.9.20（超长标签（编码外带/隧道特征））
+    [0.42 低] DNS查询（常规域名，已折叠）: 1 个：adsh.wagbridge.taobao.alimama.com.gds.alibabadns.com   @共 1 条 UDP/53 查询
 
 ==============================================================================
 
@@ -33,9 +33,9 @@
      模块: scanner
      证据: b'Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFy.exfil.tunnel-domain.com'
 
-  3. [低 0.45] DNS查询
+  3. [低 0.42] DNS查询（常规域名，已折叠）
      模块: scanner
-     证据: b'adsh.wagbridge.taobao.alimama.com.gds.alibabadns.com'
+     证据: 1 个：adsh.wagbridge.taobao.alimama.com.gds.alibabadns.com
 
 ==============================================================================
 【扫描统计】
