@@ -86,7 +86,28 @@ _DISCOVERY_PREFIXES = ('wpad.', 'isatap.', '_ldap._tcp', '_kerberos._tcp',
                        '_gc._tcp', '_vlmcs._tcp', '_kpasswd._tcp')
 _DISCOVERY_MARKS = ('_msdcs', '_sites')
 
+def is_service_discovery(name):
+    """域名是否为**服务发现类**查询（SRV `_ldap._tcp` / `_msdcs` / `_sites` / `wpad.`）。
+
+    这类名字在每个 Windows 域环境里都是查询量最大的，却和题目答案毫无关系。
+    `【dns】` 块的"高频查询域名"排名必须跳过它们——实测 mta 那道题，
+    `wpad.bepositive.com`（20 次）靠"查询最多"坐上【dns】块与【前 10 项发现】第一名，
+    把真正要看的受害主机信息挤到后面。判定口径与 `dns_lead_reason` 的
+    「服务发现/投毒相关查询」共用同一份常量，避免两处漂移。
+    """
+    s = name.decode('latin-1') if isinstance(name, bytes) else str(name)
+    s = s.lower().rstrip('.')
+    if any(x.startswith('_') for x in s.split('.')):
+        return True
+    return any(s == p.rstrip('.') or s.startswith(p) for p in _DISCOVERY_PREFIXES) \
+        or any(m in s for m in _DISCOVERY_MARKS)
+
+
 _VOWELS = frozenset('aeiou')
+
+# Windows 自动生成的计算机名：`DESKTOP-RNVO9AT` / `WIN-CTL9XBQ9Y19` / `LAPTOP-XXXX`.
+# 前缀是固定词，后缀那串随机字符由系统分配——统计特征与 DGA 无异，但它是域内正常主机。
+_WIN_MACHINE_RE = re.compile(r'^(?:desktop|win|laptop|srv|pc|server)-[a-z0-9]{5,15}$')
 
 
 def _encoded_label(lb):
@@ -97,6 +118,14 @@ def _encoded_label(lb):
     混排、要么几乎没有元音。三者都不占的长标签就是词，不是线索。
     """
     if len(lb) < 20:
+        return False
+    # 连字符分词的短语（`Default-First-Site-Name`）是自然语言，不是 base64：
+    # 每一段都是正常单词长度且含元音。base64url 里的 `-` 只会零星出现，
+    # 不会把整串切成 ≥3 个词。AD 的 SRV 查询名里这个标签必然出现，
+    # 不豁免的话每条域加入流量都会报一次"编码外带"。
+    parts = lb.split('-')
+    if (len(parts) >= 2 and all(len(p) >= 3 for p in parts)
+            and all(any(c in _VOWELS for c in p.lower()) for p in parts)):
         return False
     if any(c.isdigit() for c in lb):
         return True
@@ -112,6 +141,14 @@ def dns_lead_reason(name):
     s = s.rstrip('.')
     if not s or ' ' in s:
         return None
+
+    # SRV 定位记录（RFC 2782 的 `_ldap._tcp...` / `_msdcs` / `_sites`）**必须先于长度判定**：
+    # 这类名字普遍 70+ 字符，会先撞上下面的"域名超长（多段拼接外带特征）"。
+    # 它们不折叠（查 `_ldap._tcp.pdc._msdcs.enemywatch.net` 这类陌生域仍是线索，
+    # 见 test_smoke 的断言），但原因要如实标成"服务发现"，不能报成外带隧道。
+    # 实测 bepositive.com 那道题，DNS 段 7 条线索里 4 条是这种错标。
+    if any(x.startswith('_') for x in s.split('.')):
+        return '服务发现/投毒相关查询'
 
     labels = s.lower().split('.')
     # 编码外带看原串（大小写混排是 base64 的特征，lower() 之后就看不出来了）
@@ -140,6 +177,11 @@ def dns_lead_reason(name):
         return None
     for lb in labels[:-1]:
         if len(lb) < 10:
+            continue
+        # Windows 自动生成的机器名（DESKTOP-RNVO9AT / WIN-CTL9XBQ9Y19 / LAPTOP-XXXX）：
+        # 尾部那串随机字符本就是系统随机分配的，和 DGA 长得一样但是域内正常主机。
+        # 实测 bepositive.com 那道题的域控 `win-ctl9xbq9y19` 被判成 DGA，排进前 10。
+        if _WIN_MACHINE_RE.match(lb):
             continue
         digits = sum(1 for c in lb if c.isdigit()) / float(len(lb))
         alpha = [c for c in lb if c.isalpha()]

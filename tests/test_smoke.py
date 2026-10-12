@@ -243,11 +243,20 @@ def check_report_equivalence():
     check(Finding.from_tuple(cases[15]).to_tuple() == cases[15],
           'Finding.to_tuple()：原样回吐 5 元组（bytes 不解码）')
 
-    # to_meta_dict 是 MetaJudge 的输入契约：不 round、evidence 取 str(val)[:300]
+    # to_meta_dict 是 MetaJudge 的输入契约：不 round、evidence 走 evidence_text()
     d = Finding.from_tuple((0.975, '明文flag', b't', b'v', 'l')).to_meta_dict()
     check(d == {'kind': '明文flag', 'confidence': 0.975,
-                'evidence': "b'v'", 'module': 'scanner'},
-          'Finding.to_meta_dict()：与 scanner 结构化输出同形（confidence 不 round）')
+                'evidence': 'v', 'module': 'scanner'},
+          'Finding.to_meta_dict()：confidence 不 round、bytes 证据解码成可读串')
+    # bytes 证据必须解码：str(b'\\xe6\\x9c\\x8d') 是转义 repr，读不了；utf-8 非法字节
+    # 用 replace 兜底（与 report() 对 val 的口径一致），不能抛异常。
+    from ctfsweep.core.router import evidence_text
+    check(evidence_text('服务票据'.encode('utf-8')) == '服务票据',
+          'evidence_text()：UTF-8 字节解码为中文')
+    check(evidence_text(b'A\xffB') == 'A�B',
+          'evidence_text()：非法字节替换而非抛异常')
+    check(evidence_text(b'x' * 400) == 'x' * 300, 'evidence_text()：截断到 300 字符')
+    check(evidence_text('纯文本') == '纯文本', 'evidence_text()：str 原样返回')
 
 
 def check_meta_judge():

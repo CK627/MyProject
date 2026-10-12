@@ -38,15 +38,15 @@
 【前 10 项发现】
   1. [高 0.97] 明文flag
      模块: scanner
-     证据: b'flag{plain-smoke-ok}'
+     证据: flag{plain-smoke-ok}
 
   2. [高 0.95] hex
      模块: scanner
-     证据: b'flag{h3x-smoke-ok}'
+     证据: flag{h3x-smoke-ok}
 
   3. [高 0.95] base64
      模块: scanner
-     证据: b'flag{dns-smoke-ok}'
+     证据: flag{dns-smoke-ok}
 
   4. [中 0.81] DGA 域名: zmxhz3tkbnmtc21va2utb2t9.exfil.smoke
      模块: dns
@@ -67,11 +67,11 @@
 
   8. [低 0.50] DNS查询
      模块: scanner
-     证据: b'ZmxhZ3tkbnMtc21va2Utb2t9.exfil.smoke'
+     证据: ZmxhZ3tkbnMtc21va2Utb2t9.exfil.smoke
 
   9. [低 0.50] 关键词
      模块: scanner
-     证据: b'zk5OTk5OTk5fQ.smoke-signature plain: flag{plain-smoke-ok} hex: 666c61677b6833782d736d6f6b652d6f6b7d PWD=/AstrBot WEBUI_SK=Advanced_System_for_Text'
+     证据: zk5OTk5OTk5fQ.smoke-signature plain: flag{plain-smoke-ok} hex: 666c61677b6833782d736d6f6b652d6f6b7d PWD=/AstrBot WEBUI_SK=Advanced_System_for_Text
 
 ==============================================================================
 【flag 候选汇总】（可直接核验/提交）

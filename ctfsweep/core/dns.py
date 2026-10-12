@@ -10,7 +10,7 @@
 import re
 import collections
 from .router import Finding, AnalysisResult
-from .utils import KNOWN_INFRA_SUFFIXES
+from .utils import KNOWN_INFRA_SUFFIXES, is_service_discovery
 
 # GUID 标签（AD 的 _ldap._tcp.<GUID>.domains._msdcs 等查询）→ 长域名判定豁免
 _GUID_RE = re.compile(
@@ -163,9 +163,12 @@ def _analyze_dns_log(text: str, result: AnalysisResult):
 
 def _analyze_domain_stats(domain_counts: collections.Counter, result: AnalysisResult):
     """分析域名统计（仅接受真实 DNS 查询名；各分类有输出上限，防刷屏）。"""
-    # 高频查询域名
+    # 高频查询域名。跳过服务发现类（`wpad.` / `_ldap._tcp` / `_msdcs`）：
+    # 它们在每个 Windows 域环境里都是查询量最大的名字，却和题目答案毫无关系。
+    # 实测 bepositive.com 那道题，`wpad.bepositive.com`（20 次）靠"查询最多"坐上
+    # 【dns】块和第 1 项发现，把真正要看的受害主机信息挤在后面。
     for domain, count in domain_counts.most_common(15):
-        if count > 10:
+        if count > 10 and not is_service_discovery(domain):
             result.findings.append(
                 Finding(
                     kind=f"高频查询域名: {domain}",
@@ -181,6 +184,10 @@ def _analyze_domain_stats(domain_counts: collections.Counter, result: AnalysisRe
     for domain, count in domain_counts.items():
         if dga_hits >= 10:
             break
+        # 服务发现类（`_ldap._tcp.WIN-CTL9XBQ9Y19._sites...`）里的机器名标签
+        # 是系统随机分配的，`_dga_score` 必然给高分，但它是域控不是 C2。
+        if is_service_discovery(domain):
+            continue
         score = _dga_score(domain)
         if score > 0.6:
             dga_hits += 1

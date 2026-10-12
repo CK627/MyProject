@@ -37,11 +37,11 @@
 
   3. [低 0.45] 关键词
      模块: scanner
-     证据: b'notes: the ctf challenge starts at noon second line mentions ctf again'
+     证据: notes: the ctf challenge starts at noon second line mentions ctf again
 
   4. [低 0.45] 关键词
      模块: scanner
-     证据: b'ge starts at noon second line mentions ctf again'
+     证据: ge starts at noon second line mentions ctf again
 
 ==============================================================================
 【证据汇总】（未发现 flag 形状候选；以下为 ≥0.85 的非 flag 证据）

@@ -117,7 +117,7 @@ MetaJudge 按 `MODULE_WEIGHTS`（ad 0.95 / memory 0.90 / config 0.85 … scanner
 
 ### 噪音闸门（改扫描逻辑时先看这里）
 
-判定标准是**"这条输出对解题有没有引导价值"**，不是"看起来像不像可疑"。已经落地的五条：
+判定标准是**"这条输出对解题有没有引导价值"**，不是"看起来像不像可疑"。已经落地的七条：
 
 - **二进制容器先抽字符串**（`core/logs.py::_extract_strings`）：`.evtx` 这类容器不能按字节
   当文本读——`\x60` 之类的字节巧合会被喂给攻击正则，刷出满屏「RCE（命令替换）」，
@@ -135,6 +135,15 @@ MetaJudge 按 `MODULE_WEIGHTS`（ad 0.95 / memory 0.90 / config 0.85 … scanner
   （pisos y recubrimientos）。判据走 `_encoded_label()`——带数字 / 大小写混排 / 几乎无元音，
   三者都不占的长标签是词，不是编码外带。`dns_lead_reason` 因此**保留原串大小写**做这一步
   （`lower()` 之后就分不出 base64 了）。
+  ⚠️ **两类 AD 常态名词必须豁免**（都来自 `2024-09-04` 那道域渗透题）：
+  ① `_` 前缀的 SRV 定位名（`_ldap._tcp.Default-First-Site-Name._sites.dc._msdcs...`，74 字符）
+  在 `dns_lead_reason` 里**先于长度判定**返回"服务发现/投毒相关查询"——不先挡就会被
+  「域名超长」误报成外带隧道；`_encoded_label` 另加"连字符分词的短语"豁免，
+  否则 `Default-First-Site-Name`（22 字符驼峰）会被判成 base64。
+  ② Windows 自动生成的机器名（`DESKTOP-RNVO9AT` / `WIN-CTL9XBQ9Y19`）走
+  `_WIN_MACHINE_RE` 跳过 DGA 判定——尾串本就是系统随机分配的。
+  `dns.py` 的「高频查询域名」与「DGA 域名」两个循环也过 `utils.is_service_discovery()`，
+  否则 `wpad.bepositive.com`（20 次）会靠"查询最多"坐上【dns】块与【前 10 项发现】第一名。
 - **同一证据不占满"前 10 项发现"**（`meta_judge.MetaJudge.get_top_findings`）：FTP 爆破的 11 次
   登录会产出 11 条一模一样的"成功凭据"，按分数排序后把前 10 项全部占满，其余线索一条都看不见
   （实测 FTP-malware.pcap 正是如此）。前 N 项按 `(kind, 证据)` 去重；`get_summary` 与分带报告
@@ -156,6 +165,12 @@ MetaJudge 按 `MODULE_WEIGHTS`（ad 0.95 / memory 0.90 / config 0.85 … scanner
 - **证据行必须单行渲染**（`core/meta_judge.py::print_report`）：含换行的证据（命令回显整段
   输出、多行响应体）要压成一行再打印。实测 `challenge.pcap` 的一条 `cmd=ls` 回显撑开 14 行，
   前 10 项里其余 9 条线索全被顶出屏幕。只在**确实含换行**时压，单行证据（含制表符）逐字节不动。
+- **证据必须是可读文本，不能是 bytes 的 repr**（`core/router.py::evidence_text`，
+  `Finding.to_meta_dict`/`from_tuple` 共用）：`str(b'\xe6\x9c\x8d\xe5\x8a\xa1')` 得到的是
+  `b'\xe6\x9c\x8d...'` 这样的转义串，元判断核的"证据"行满屏反斜杠读不了。实测 AD 那道题
+  前 10 项全部退化成 `b'TGS-REP \xe6\x9c\x8d...'`——而这一行正是"解不出答案也要给出的
+  关键信息引导"。改成 `val.decode('utf-8', 'replace')`，与 `report()` 对 `val` 的口径一致；
+  **`tok` 仍走 latin-1 且只给 `report()` 用，不在此处解码**（见 `Finding` 的两条约定）。
 
 ### 输入解析层
 

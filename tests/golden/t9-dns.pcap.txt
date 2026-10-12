@@ -31,7 +31,7 @@
 
   2. [低 0.45] DNS查询
      模块: scanner
-     证据: b'Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFy.exfil.tunnel-domain.com'
+     证据: Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFy.exfil.tunnel-domain.com
 
   3. [低 0.42] DNS查询（常规域名，已折叠）
      模块: scanner

@@ -16,6 +16,19 @@ from .utils import level_of
 # 统一输出结构
 # ---------------------------------------------------------------------------
 
+def evidence_text(val, limit: int = 300) -> str:
+    """findings 的值 → **给人看的**证据串（元判断核"证据"行专用）。
+
+    `bytes` 必须**解码**而不是 `str()`：`str(b'\\xe6\\x9c\\x8d\\xe5\\x8a\\xa1\\xe7\\xa5\\xa8')`
+    得到的是 `b'\\xe6\\x9c\\x8d...'` 这样的转义 repr，满屏反斜杠读不了。元判断核的
+    证据行是"即使解不出答案也要给出的关键信息引导"，不可读就等于没给——
+    实测 AD 题的 Kerberos 票据线索因此退化成一行 `b'TGS-REP \\xe6\\x9c\\x8d...'`。
+    解码口径与 `report()` 对 `val` 的处理一致（utf-8 + replace）。
+    """
+    s = val.decode('utf-8', 'replace') if isinstance(val, bytes) else str(val)
+    return s[:limit]
+
+
 class Finding:
     """单个发现项——全项目的统一候选货币。
 
@@ -68,13 +81,11 @@ class Finding:
 
         刻意不用 `to_dict()`：`to_dict()` 会 round confidence，而元判断核的排序与
         加成吃的是**未 round** 的原始值，换成 round 值会改掉并列项顺序与加分。
-        `evidence` 取 `str(val)[:300]`——bytes 会带 `b'…'` repr，与流扫描模块内部
-        的结构化输出同形。
         """
         return {
             "kind": self.kind,
             "confidence": self.confidence,
-            "evidence": str(self.val)[:300],
+            "evidence": evidence_text(self.val),
             "module": self.module,
         }
 
@@ -84,9 +95,9 @@ class Finding:
 
     @classmethod
     def from_tuple(cls, t, module: str = "scanner"):
-        """从 5 元组构造。`evidence` 与旧版结构化输出同形：`str(val)[:300]`。"""
+        """从 5 元组构造（`evidence` 走 `evidence_text()`，与 `to_meta_dict` 同口径）。"""
         score, kind, tok, val, loc = t
-        return cls(kind=kind, confidence=score, evidence=str(val)[:300],
+        return cls(kind=kind, confidence=score, evidence=evidence_text(val),
                    module=module, tok=tok, loc=loc, val=val)
 
 

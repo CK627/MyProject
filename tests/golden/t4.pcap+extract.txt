@@ -27,11 +27,11 @@
 【前 10 项发现】
   1. [高 0.97] 明文flag
      模块: scanner
-     证据: b'flag{zip-carve-ok}'
+     证据: flag{zip-carve-ok}
 
   2. [低 0.50] 关键词
      模块: scanner
-     证据: b'flag{zip-carve-ok} padding line padding line padding line padding line padding line padding line padding line'
+     证据: flag{zip-carve-ok} padding line padding line padding line padding line padding line padding line padding line
 
 ==============================================================================
 【flag 候选汇总】（可直接核验/提交）

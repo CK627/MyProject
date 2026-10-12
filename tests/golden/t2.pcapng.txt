@@ -24,11 +24,11 @@
 【前 10 项发现】
   1. [高 0.97] 明文flag
      模块: scanner
-     证据: b'flag{pcapng-smoke-ok}'
+     证据: flag{pcapng-smoke-ok}
 
   2. [低 0.50] 关键词
      模块: scanner
-     证据: b'GET / HTTP/1.1 flag{pcapng-smoke-ok}'
+     证据: GET / HTTP/1.1 flag{pcapng-smoke-ok}
 
 ==============================================================================
 【flag 候选汇总】（可直接核验/提交）
