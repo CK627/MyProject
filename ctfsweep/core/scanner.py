@@ -13,7 +13,7 @@ from .extract import (PWD_POOL, carve_base64_blobs, carve_files,
 from .http import build_http_transactions, http_summary, jwt_summary
 from .utils import (FLAG_RE, JWT_RE, SECRET_LINE_RE, SENSITIVE_NAME_RE,
                     decode_score, dns_lead_reason, kw_boundary_ok,
-                    printable_ratio, try_b64, ts_str)
+                    printable_ratio, readable_window, try_b64, ts_str)
 
 
 def _is_tls_stream(blob):
@@ -367,7 +367,11 @@ def scan_rawfile(data, keywords, do_decode, depth, limit):
     findings, seen = [], set()
 
     def push(kw, seg, score):
+        # 先净化再入库：`isprintable()` 拦不住二进制按 UTF-16 解码出来的乱码
+        # （Ā Ѐ ఀ ᄀ ⨀ 全是 printable），见 utils.readable_window 的说明。
+        # 净化放在**源头**：val 干净了，下游的 report()/MetaJudge 证据行自动干净。
         seg = ' '.join(''.join(ch if ch.isprintable() or ch in '\r\n\t' else '.' for ch in seg).split())
+        seg = readable_window(seg)
         if not seg:
             return
         add((score, '关键词', kw.encode(), seg.encode('utf-8', 'replace'), '(原始字节)'), findings, seen)

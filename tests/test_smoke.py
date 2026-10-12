@@ -346,6 +346,34 @@ def check_stream_merge():
     check(merge_stream(segs) == b'AB\x00\x00CD', '重组：真实小空洞仍补 0x00（Wireshark 一致）')
 
 
+def check_readable_window():
+    """二进制上下文净化：乱码尾巴必须被截掉，正常文本逐字不动（纯离线）。
+
+    回归目标：`isprintable()` 拦不住"二进制按 UTF-16 解码"出来的乱码——
+    Ā(U+0100) Ѐ(U+0400) ఀ(U+0C00) ᄀ(U+1100) ⨀(U+2A00) 全是 printable。
+    实测 Security.evtx 有 9 条 `关键词[flag]` 命中，有效线索只在开头约 30 字节，
+    其余几十字符是乱码，把 4 个 flag 片段挤出了可视范围。
+    """
+    from ctfsweep.core.utils import readable_window
+
+    # 真实形态：可读线索 + 乱码尾巴 → 只留线索
+    evtx = ('"C:\\Windows\\system32\\cmd.exe" /c echo flag{sol > C:\\Windows\\Temp'
+            '\\test.txt.n桧.⨀*㠀.㤀...谀߹.�༁āఀ渁ꭚ☿.ሀ.ĀЀĀЀȀ.Ȁ...')
+    got = readable_window(evtx)
+    check('flag{sol' in got and '⨀' not in got and 'Ā' not in got,
+          '净化：evtx 乱码尾巴被截掉，flag 线索保留')
+
+    # 正常文本逐字不动（含中文/箭头/乘号/填充点——golden 基线断言着这些）
+    for s in ('PWD=/AstrBot',
+              '客户端自报主机名: neo-7ffc721bcc1 → 3 个服务器 ×2',
+              '................cmd.exe /c echo flag{evtx-smoke-ok}........reg add HKLM'):
+        check(readable_window(s) == s, '净化：正常文本不被改动（%s）' % s[:18])
+
+    # 全乱码 / 太短的片段 → 返回空（调用方丢弃该命中，而不是印一堆乱码）
+    check(readable_window('ĀЀఀᄀ⨀⎬☿' * 4) == '', '净化：纯乱码返回空串（丢弃命中）')
+    check(readable_window('ĀЀఀ' + 'abc') == '', '净化：可读片段过短也丢弃')
+
+
 def check_router_dispatch(tmp):
     """文件类型模块必须真的被调度到（防"签名不匹配 → 静默空转"）。
 
@@ -634,6 +662,9 @@ def main():
 
         print('== TCP 重组（merge_stream）==')
         check_stream_merge()
+
+        print('== 二进制上下文净化（readable_window）==')
+        check_readable_window()
 
         print('== 路由分派 ==')
         check_router_dispatch(tmp)

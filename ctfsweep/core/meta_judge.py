@@ -284,7 +284,13 @@ class MetaJudge:
             conf_label = level_of(finding["score"])
             print(f"  {i}. [{conf_label} {finding['score']:.2f}] {finding['kind']}")
             print(f"     模块: {finding.get('module', 'scanner')}")
-            print(f"     证据: {finding.get('evidence', '')[:200]}")
+            # 含换行的证据（命令回显的整段输出、多行响应体）压成一行：不压的话
+            # 一条 `ls` 回显能撑开 14 行，前 10 项里其余 9 条线索全被顶出屏幕。
+            # 只在**确实含换行**时压，单行证据（含制表符）逐字节不动——golden 断言着。
+            ev = str(finding.get('evidence', '') or '')
+            if '\n' in ev or '\r' in ev:
+                ev = ' '.join(ev.split())
+            print(f"     证据: {ev[:200]}")
             if finding.get("suggestion"):
                 print(f"     建议: {finding['suggestion']}")
             print()

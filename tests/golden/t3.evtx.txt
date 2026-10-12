@@ -15,7 +15,7 @@
   【低置信（线索参考）】
     [0.45 低] 关键词[flag]: ...................cmd.exe /c echo flag{evtx-smoke-ok}........reg add HKLM\Software\Run /v flag1 /d "cmd.exe /c echo {krjl424...   @(原始字节)
     [0.45 低] 关键词[flag]: ...ok}........reg add HKLM\Software\Run /v flag1 /d "cmd.exe /c echo {krjl424"........sc description flag3 "Service Key: zlmqu458xktq...   @(原始字节)
-    [0.45 低] 关键词[flag]: .../c echo {krjl424"........sc description flag3 "Service Key: zlmqu458xktq}"........㩃坜湩潤獷獜獹整㍭尲敳畴数睴搮汬㔵㍥䩽K嬀䠀䬀䔀夀开䌀䰀䄀匀匀䔀匀开刀伀伀吀尀䌀䰀匀䤀䐀尀笀㌀....   @(原始字节)
+    [0.45 低] 关键词[flag]: .../c echo {krjl424"........sc description flag3 "Service Key: zlmqu458xktq}"........㩃坜湩潤獷獜獹整...   @(原始字节)
   [拼接建议] 本文件检出 2 个片段（供人工确认）：
     {krjl424 | zlmqu458xktq}
     启发式拼接尝试（人工确认）：flag{krjl424zlmqu458xktq}

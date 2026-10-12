@@ -186,6 +186,52 @@ def text_like_window(b, ascii_thresh=0.8):
     return ok >= len(s) * 0.9
 
 
+def _text_ok(ch):
+    """单字符是否像"人写的文本"。
+
+    白名单刻意收窄：ASCII 可打印 + Latin-1 补充（×）+ 通用标点（… —）+ 箭头（→）
+    + CJK 标点/扩展A/基本区 + 谚文 + 全角。其余码位一律算二进制——
+    它们在真实文本里几乎不出现，却是"二进制按 UTF-16 解码"的必经之地。
+    """
+    o = ord(ch)
+    return (32 <= o < 127 or 0xa0 <= o < 0x100 or 0x2000 <= o < 0x2070
+            or 0x2190 <= o < 0x2200 or 0x3000 <= o < 0x3040
+            or 0x3400 <= o < 0x4dc0 or 0x4e00 <= o < 0xa000
+            or 0xac00 <= o < 0xd7a4 or 0xff00 <= o < 0xfff0)
+
+
+def readable_window(s, min_len=16):
+    """从混进二进制字节的上下文里取出**最长的连续可读文本**（取不到则返回 ''）。
+
+    为什么 `isprintable()` 不够：evtx / .reg 这类二进制里嵌的 UTF-16LE 字符串，
+    按对解码后会大量落在 U+0100–U+2FFF（Ā Ѐ ఀ ᄀ ⨀ ⎬ ☿）——**它们全是 printable**，
+    现有的"非可打印换点号"处理一律放行。实测 Security.evtx 的 9 条 `关键词[flag]`
+    命中里，有效线索只有开头那 30 来个字节
+    （`.../c echo flag{sol > C:\\Windows\\Temp\\test.txt`），尾巴几十字符全是乱码：
+    零信息量，还把 4 个 flag 片段挤出了可视范围。
+
+    规则：**整串都像文本就原样返回**（不做长度门槛，短凭据 `PWD=/AstrBot` 也得留）；
+    混了二进制才按码位切段取最长一段，且要求 >= `min_len`，否则视为无可用文本。
+    切段时不做首尾裁剪——填充点号是既有约定，golden 基线逐字断言着它。
+    """
+    if not s:
+        return ''
+    if all(_text_ok(ch) for ch in s):
+        return s
+    best, cur = [], []
+    for ch in s:
+        if _text_ok(ch):
+            cur.append(ch)
+        else:
+            if len(cur) > len(best):
+                best = cur
+            cur = []
+    if len(cur) > len(best):
+        best = cur
+    out = ''.join(best)
+    return out if len(out) >= min_len else ''
+
+
 def kw_boundary_ok(text, i, kw):
     """关键词命中位置边界检查（str 文本）：区分独立词与词内误报。
 
