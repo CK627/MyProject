@@ -553,6 +553,49 @@ def _client_hello(sni=None, hs_type=1):
     return b'\x16\x03\x01' + struct.pack('>H', len(hs)) + hs
 
 
+def check_dns_highfreq_gate():
+    """「高频查询域名」必须跳过反向解析 / 服务发现 / 已知基础设施（纯离线）。
+
+    回归目标：`B.pcap` 的【前 10 项发现】第 7–9 席曾被
+    `1.10.168.192.in-addr.arpa`（948 次，反向解析——它是 IP 不是域名）、
+    `teredo.ipv6.microsoft.com`（微软 Teredo 隧道）、`ns1.mediatemple.net`
+    占满，而它们的建议文案是"可能是 C2 或 DGA"。同一份抓包的高位全是
+    Web 攻击载荷——真正要看的线索被这三条挤在下面。
+    """
+    import collections
+    from ctfsweep.core.dns import _analyze_domain_stats
+    from ctfsweep.core.router import AnalysisResult
+    from ctfsweep.core.utils import dns_lead_reason, is_reverse_dns
+
+    # 反向解析名在两条链路上都要被当作常规流量：高频榜跳过 + 不逐条列出
+    check(is_reverse_dns('1.10.168.192.in-addr.arpa')
+          and is_reverse_dns('1.0.0.ip6.arpa')
+          and not is_reverse_dns('in-addr.arpa.example.com'),
+          '反向解析：只认 arpa 后缀，不误伤同名普通域名')
+    long_v6 = '.'.join(['0'] * 32) + '.ip6.arpa'
+    check(dns_lead_reason(long_v6) is None,
+          '反向解析：IPv6 反向名不再被当成"多段拼接外带"')
+
+    counts = collections.Counter({
+        '1.10.168.192.in-addr.arpa': 948,     # 反向解析（PTR）
+        'teredo.ipv6.microsoft.com': 23,      # 已知厂商基础设施
+        'wpad.bepositive.com': 20,            # 服务发现
+        '9.9.9.9.in-addr.arpa': 12,           # 反向解析
+        'evil-c2-domain.com': 15,             # 真的高频陌生域名 → 必须保留
+        'once.example.com': 3,                # 低于 count>10 阈值
+    })
+    res = AnalysisResult('dns')
+    _analyze_domain_stats(counts, res)
+    hi = [f.kind for f in res.findings if f.kind.startswith('高频查询域名')]
+    check(hi == ['高频查询域名: evil-c2-domain.com'],
+          '高频查询域名：只留真正陌生的高频域名%s'
+          % ('（实际：%s）' % hi if hi != ['高频查询域名: evil-c2-domain.com'] else ''))
+
+    sugg = [f.suggestion for f in res.findings if f.kind.startswith('高频查询域名')]
+    check(sugg and '可能是 C2 或 DGA' not in sugg[0],
+          '高频查询域名：建议文案不再断言"C2 或 DGA"（AD 域会被带偏）')
+
+
 def check_kw_boundary_gate():
     """关键词必须是独立词，不能是词内子串（纯离线）。
 
@@ -1003,6 +1046,9 @@ def main():
 
         print('== 重复结论去重 / 文本闸门 ==')
         check_dedup_and_text_gate()
+
+        print('== DNS 高频榜的噪音闸门 ==')
+        check_dns_highfreq_gate()
 
         print('== 关键词边界（词内子串不算命中）==')
         check_kw_boundary_gate()

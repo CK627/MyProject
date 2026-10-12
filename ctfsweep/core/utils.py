@@ -90,6 +90,20 @@ _DISCOVERY_PREFIXES = ('wpad.', 'isatap.', '_ldap._tcp', '_kerberos._tcp',
                        '_gc._tcp', '_vlmcs._tcp', '_kpasswd._tcp')
 _DISCOVERY_MARKS = ('_msdcs', '_sites')
 
+# 反向解析（PTR）名：`1.10.168.192.in-addr.arpa` / `…ip6.arpa` 是把 IP 倒着拼出来的
+# 名字，结构上根本不是域名。实测 B.pcap 里 `1.10.168.192.in-addr.arpa` 被查了 948 次，
+# 稳坐"高频查询域名"第一名，还会被配上"可能是 C2 或 DGA"的建议；而 IPv6 反向名有
+# 32 个单字符标签、总长必然过 60，又会被 `dns_lead_reason` 当成"多段拼接外带"列出。
+# 两者对解题都是零引导。
+_REVERSE_DNS_SUFFIXES = ('.in-addr.arpa', '.ip6.arpa')
+
+
+def is_reverse_dns(name):
+    """是否为反向解析名（PTR 查询）。"""
+    s = name.decode('latin-1') if isinstance(name, bytes) else str(name)
+    return s.lower().rstrip('.').endswith(_REVERSE_DNS_SUFFIXES)
+
+
 def is_service_discovery(name):
     """域名是否为**服务发现类**查询（SRV `_ldap._tcp` / `_msdcs` / `_sites` / `wpad.`）。
 
@@ -144,6 +158,11 @@ def dns_lead_reason(name):
     s = name.decode('latin-1') if isinstance(name, bytes) else str(name)
     s = s.rstrip('.')
     if not s or ' ' in s:
+        return None
+
+    # 反向解析（PTR）名排在最前：IPv6 反向名必然撞上下面的"域名超长"（32 个单字符
+    # 标签），in-addr.arpa 撞不上长度判定但它是 IP 不是域名，同样不该逐条列出。
+    if is_reverse_dns(s):
         return None
 
     # SRV 定位记录（RFC 2782 的 `_ldap._tcp...` / `_msdcs` / `_sites`）**必须先于长度判定**：

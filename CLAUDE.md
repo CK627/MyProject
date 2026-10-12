@@ -117,7 +117,7 @@ MetaJudge 按 `MODULE_WEIGHTS`（ad 0.95 / memory 0.90 / config 0.85 … scanner
 
 ### 噪音闸门（改扫描逻辑时先看这里）
 
-判定标准是**"这条输出对解题有没有引导价值"**，不是"看起来像不像可疑"。已经落地的十六条：
+判定标准是**"这条输出对解题有没有引导价值"**，不是"看起来像不像可疑"。已经落地的十七条：
 
 - **二进制容器先抽字符串**（`core/logs.py::_extract_strings`）：`.evtx` 这类容器不能按字节
   当文本读——`\x60` 之类的字节巧合会被喂给攻击正则，刷出满屏「RCE（命令替换）」，
@@ -256,6 +256,21 @@ MetaJudge 按 `MODULE_WEIGHTS`（ad 0.95 / memory 0.90 / config 0.85 … scanner
   ⚠️ 这条**会改分数**：`tests/golden/t1.pcap.txt` 两条与 `t12-web.pcap.txt` 一条各降 0.05
   （全是 `c2` 的误命中），已随改动重录——重录前逐行核对过，不是"改测试让它过"。
   `tests/test_smoke.py::check_kw_boundary_gate()` 端到端守着。
+- **反向解析名不是域名，高频榜必须跳过**（`core/utils.py::is_reverse_dns` +
+  `dns.py::_analyze_domain_stats`）：`1.10.168.192.in-addr.arpa` 是把 IP 倒着拼出来的
+  PTR 名，IPv6 版（`….ip6.arpa`）必然有 32 个单字符标签、总长必然过 60。实测 `B.pcap`
+  里 `1.10.168.192.in-addr.arpa` 被查了 **948 次**，稳坐「高频查询域名」第一名，
+  还配上建议"检查该域名是否可疑（**可能是 C2 或 DGA**）"——把 IP 当域名报，还扣了顶
+  最误导的帽子；同一榜的第 8、9 席是 `teredo.ipv6.microsoft.com`（微软隧道）与
+  `ns1.mediatemple.net`，三条合起来把真正的 Web 攻击载荷挤出【前 10 项发现】。
+  现在两处同时挡：① `dns_lead_reason` 开头就返回 `None`（IPv6 反向名不再被误报成
+  "多段拼接外带"）；② 高频榜跳过反向解析名 + `under_known_infra()` 命中项。
+  ⚠️ 建议文案同时**去掉了"C2 或 DGA"的断言**——`sunnystation.com` 是那道 AD 题的域，
+  说成 C2 只会把解题人往反方向带；改成"确认是否为本环境已知域名（业务/AD）"。
+  `tests/test_smoke.py::check_dns_highfreq_gate()` 守着（含"不误伤同名普通域名"
+  `in-addr.arpa.example.com` 的反向断言）。
+  ⚠️ 折叠行（`DNS查询（常规域名，已折叠）`）**不改**：它本来就只占一行、承认自己被折叠，
+  把反向解析名列在里面是如实陈述，且 golden 逐字断言着那一行的形态。
 
 ### 输入解析层
 

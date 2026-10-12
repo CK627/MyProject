@@ -10,7 +10,8 @@
 import re
 import collections
 from .router import Finding, AnalysisResult
-from .utils import KNOWN_INFRA_SUFFIXES, is_service_discovery
+from .utils import (KNOWN_INFRA_SUFFIXES, is_reverse_dns, is_service_discovery,
+                    under_known_infra)
 
 # GUID 标签（AD 的 _ldap._tcp.<GUID>.domains._msdcs 等查询）→ 长域名判定豁免
 _GUID_RE = re.compile(
@@ -167,17 +168,28 @@ def _analyze_domain_stats(domain_counts: collections.Counter, result: AnalysisRe
     # 它们在每个 Windows 域环境里都是查询量最大的名字，却和题目答案毫无关系。
     # 实测 bepositive.com 那道题，`wpad.bepositive.com`（20 次）靠"查询最多"坐上
     # 【dns】块和第 1 项发现，把真正要看的受害主机信息挤在后面。
+    # ⚠️ 三类名字**查询量再大也不是线索**，必须跳过（实测 B.pcap 的前十被它们占了
+    # 第 7–9 席，把 Web 攻击载荷挤下去）：
+    #   ① 服务发现类（`wpad.` / `_ldap._tcp` / `_msdcs`）
+    #   ② 反向解析名（`1.10.168.192.in-addr.arpa`，查了 948 次——它是 IP 不是域名）
+    #   ③ 已知厂商/CDN 基础设施之下的名字（`teredo.ipv6.microsoft.com`）
+    # 建议文案也不再说死"可能是 C2 或 DGA"：`sunnystation.com` 是那道 AD 题的域，
+    # 判成 C2 只会把解题人往反方向带。
     for domain, count in domain_counts.most_common(15):
-        if count > 10 and not is_service_discovery(domain):
-            result.findings.append(
-                Finding(
-                    kind=f"高频查询域名: {domain}",
-                    confidence=0.65,
-                    evidence=f"查询次数: {count}",
-                    suggestion="检查该域名是否可疑（可能是 C2 或 DGA）",
-                    module="dns",
-                )
+        if count <= 10 or is_service_discovery(domain):
+            continue
+        if is_reverse_dns(domain) or under_known_infra(domain):
+            continue
+        result.findings.append(
+            Finding(
+                kind=f"高频查询域名: {domain}",
+                confidence=0.65,
+                evidence=f"查询次数: {count}",
+                suggestion="该域名查询次数最多，确认是否为本环境已知域名（业务/AD）；"
+                           "陌生域名再留意 C2 或外带通道",
+                module="dns",
             )
+        )
 
     # DGA 域名检测（封顶 10 条）
     dga_hits = 0
