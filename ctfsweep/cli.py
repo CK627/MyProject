@@ -889,9 +889,19 @@ def main():
         if not _meta_high:
             print('【重点候选】未发现高（≥%s）候选' % BAND_HIGH)
     print('【扫描统计】')
-    print('  高（≥%s）：%d 条' % (BAND_HIGH, n_high))
-    print('  中（%s–%s）：%d 条' % (BAND_MID, BAND_HIGH, n_mid))
-    print('  低（<%s）：%d 条' % (BAND_MID, n_low))
+    # 两条管线分别报，且**不给合计**：线路（分带报告）与模块（【dns】/【logs】等类型块）
+    # 常常是同一批证据的两个视角，加起来会重复计数；只报线路那一半又会自相矛盾
+    # （"统计说高 0 条"，而上面的【logs】块明明有一条 0.97），用户据此以为没找到东西。
+    _m = {'high': 0, 'medium': 0, 'low': 0}
+    try:
+        if meta.findings:
+            _m = meta.get_summary(min_score)
+    except Exception:
+        pass
+    print('  线路报告（抓包/原始文件）：高 %d 条 / 中 %d 条 / 低 %d 条'
+          % (n_high, n_mid, n_low))
+    print('  模块报告（类型块）：高 %d 条 / 中 %d 条 / 低 %d 条'
+          % (_m['high'], _m['medium'], _m['low']))
 
     if brief:
         _brief_stack.close()
