@@ -2,12 +2,12 @@
 # ctfsweep 补全（zsh）：安装时由 installer/shell-setup.sh 接进 ~/.zshrc 的
 # `# >>> ctfsweep >>>` 块（source 安装目录里的这一份）。手工使用也可直接 source 本文件。
 #
-# 候选为手写清单（不依赖 _arguments）：
-#   ctf <TAB>             → 子命令 + 全部选项 + 文件（不敲 "-" 也能看到 --选项）
+# 候选为手写清单（不依赖 _arguments），位置驱动（对齐 jtool/ptool）：
+#   ctf <TAB>             → 子命令 + 文件；**不列选项**（选项在敲 "-" 之后出现）
 #   ctf -<TAB> / --<TAB>  → 全部选项；同义短/长选项合并为一行显示（如 "-f --file"）
 #   ctf -f<TAB>           → 直接补全 -f（短形式仍可按前缀补全；--f<TAB> → --file）
 #   ctf -f <TAB>          → 补全文件；-F <TAB> → 补全文件夹；--extract-dir <TAB> → 补全目录
-#   ctf -q <TAB>          → 只补文件（选项只在 "-" 开头或第一个参数位出现）
+#   ctf -q <TAB>          → 只补文件（选项只在当前词以 "-" 开头时出现）
 #   ctf --min-score <TAB> → 0.40 / 0.55 / 0.85 / 0.95
 #   ctf -q               → 精简输出（控制台只打汇总块，明细在数据目录 cache/）
 #   ctf uninstall <TAB>   → -y / --yes
@@ -109,17 +109,11 @@ _ctfsweep() {
       ;;
   esac
 
-  # 选项只在这两种位置作为候选出现：
-  #   ① 当前词以 "-" 开头 —— 标准补全时机；
-  #   ② 第一个参数位（CURRENT == 2）—— 保留「不敲 - 也能看到 --选项」的既有约定。
-  # 其余位置一律只补文件。缺失这道闸门时 `ctf -q <TAB>` 会把除 --brief 外的
-  # 全部 14 个选项连 --config 一起铺出来（按显示串排序，--config 恰好第一，最扎眼），
-  # 与 jtool/ptool 那种位置驱动的补全行为也不一致。
-  local show_opts=0
-  [[ "$cur" == -* ]] && show_opts=1
-  (( CURRENT == 2 )) && show_opts=1
-
-  if (( show_opts )); then
+  # 选项只在当前词以 "-" 开头时作为候选出现（对齐 jtool/ptool 的位置驱动补全：
+  # 第一个参数位只出「子命令 + 文件」，不铺选项墙）。缺失这道闸门时
+  # `ctf -q <TAB>` 会把除 --brief 外的全部 14 个选项连 --config 一起铺出来
+  # （按显示串排序，--config 恰好第一，最扎眼）。
+  if [[ "$cur" == -* ]]; then
     # 收集已用过的选项（空格分隔串；-f / -k / -h 归一为对应长选项；--x=y 截到 --x）
     used_str=' '
     for (( i = 2; i < CURRENT; i++ )); do
@@ -182,9 +176,7 @@ _ctfsweep() {
     fi
 
     # 光标在选项区：到此为止（选项场景不补文件）
-    if [[ "$cur" == -* ]]; then
-      return 0
-    fi
+    return 0
   fi
 
   # 其他位置：子命令（仅第二个词）+ 文件
@@ -194,9 +186,44 @@ _ctfsweep() {
   _files
 }
 
-if (( $+functions[compdef] )); then
-  compdef _ctfsweep ctfsweep
+# compinit 未初始化时（例如 .zshrc 里没有 compinit）先初始化，否则 compdef 不存在，
+# 补全会**静默**不注册——用户只看到"TAB 没反应"，无从排查（与 jtool/ptool 同规）
+if (( ! $+functions[compdef] )); then
+  autoload -Uz compinit && compinit
 fi
+compdef _ctfsweep ctfsweep
+
+# ============================================
+# 包装函数（与 jtool/ptool 同规）
+# 函数在**父 shell** 里执行，所以 ctfsweep update 跑完后可以立刻重载本文件，
+# 不必手动 source ~/.zshrc 或重开终端——更新是**就地**替换安装目录里的这一份，
+# 而 shell 认的是已加载进内存的那份定义。（脚本本身是子进程，改不了父 shell
+# 的环境，只有 shell 函数做得到。）
+#   · update 后就地重载（重装会把本文件换成新版，sourced 的旧定义得跟着换）；
+#   · uninstall 后本文件已不在，改为重载 rc 让 PATH 接线一起消失，并清掉本函数；
+#   · install 不在此列：ctfsweep install 只**打印安装方式**，不落地任何文件。
+# ⚠️ 加 sudo 会绕过本函数（sudo 按 PATH 找可执行文件，不看 shell 函数），
+#    届时仍需手动 source —— 更新本身会按需提权，正常敲 `ctfsweep update` 即可。
+# ============================================
+# 本文件自身的路径（source 时取当前文件路径）；重装后重载指向的仍是安装目录那一份
+_ctfsweep_self="${(%):-%x}"
+
+ctfsweep() {
+  command ctfsweep "$@"
+  local ret=$?
+  case "$1" in
+    update)
+      [ -f "$_ctfsweep_self" ] && source "$_ctfsweep_self"
+      hash -r 2>/dev/null
+      ;;
+    uninstall)
+      source ~/.zshrc 2>/dev/null
+      unfunction ctfsweep 2>/dev/null
+      hash -r 2>/dev/null
+      ;;
+  esac
+  return $ret
+}
 
 # ============================================
 # 说明（devtools 安装形态）

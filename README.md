@@ -441,27 +441,28 @@ source <项目根>/completions/ctfsweep.zsh
 
 ```bash
 ctfs<TAB>              # 补全命令名 → ctfsweep（ctf<TAB> 会同时列出系统自带的 ctf_insert）
-ctf <TAB>              # 子命令 + 全部选项 + 文件（不敲 "-" 也能直接看到 --extract 等）
+ctf <TAB>              # 子命令 + 文件（不列选项，与 jtool/ptool 的位置驱动一致）
 ctf -<TAB> / --<TAB>   # 全部选项；同义短/长合并为一行显示（如 "-f --file"，只出现一次）
 ctf --ex<TAB>          # 按前缀补全（--extract / --extract-dir ...）
 ctf -f<TAB>            # 补全短选项 → -f（--f<TAB> 同理 → --file）
 ctf -f <TAB>           # 补全文件路径（--extract-dir <TAB> 补全目录）
 ctf -F <TAB>           # 补全文件夹路径（-F/--folder；目录递归扫描整个项目）
 ctf --min-score <TAB>  # 补全取值（0.40 / 0.55 / 0.85 / 0.95）
-ctf -q <TAB>           # 只补文件（选项只在 "-" 开头或第一个参数位出现）
+ctf -q <TAB>           # 只补文件（选项只在敲 "-" 之后出现）
 ctf uninstall <TAB>    # → -y / --yes
 ```
 
 说明：
 
-- **不敲 `-` 也能看到选项**：zsh 的 `_describe -t options` 有默认门禁（prefix-needed，
-  光标不以 `-` 开头就不列出选项）；本项目改用「`compadd -l -d` + 手写显示串」直接列出，
-  第一个参数位 TAB 即见全部选项；bash 版行为一致。
-- **选项只出现在两种位置**：当前词以 `-` 开头，或**第一个参数位**。其余位置（`ctf -q <TAB>`、
-  `ctf a.pcap <TAB>`）只补文件——否则 `-q` 之后会把全部选项连 `--config` 一起铺出来
-  （按显示串排序，`--config` 恰好第一，最扎眼），且与 `ls -l <TAB>` 的直觉相悖。
+- **位置驱动，选项在敲 `-` 之后出现**（与同仓库的 jtool/ptool 同规）：第一个参数位只出
+  「子命令 + 文件」——`ctf <TAB>` 一屏就是 5 条子命令加文件候选，不铺选项墙。
+  `ctf -q <TAB>`、`ctf a.pcap <TAB>` 因而只补文件；想知道有哪些选项就敲 `ctf -<TAB>`。
 - **同义短/长选项合并显示**（如 `-f --file`，只出现一次）；`-f<TAB>` 与 `--f<TAB>` 均按前缀补全。
 - 已输入过的选项不会重复列出（`-f` 与 `--file` 视为同一个）。
+- **`update` 后补全自动生效**：补全文件里带一个包装函数（与 jtool/ptool 同规），
+  `ctfsweep update` 跑完就在当前 shell 里重载它，不必手动 source 或重开终端。
+  ⚠️ 别写成 `sudo ctfsweep update`——sudo 按 PATH 找可执行文件、不看 shell 函数，
+  会绕过包装函数（更新本身会按需提权，直接敲 `ctfsweep update` 即可）。
 
 > 手动接线：zsh 直接 `source <项目根>/completions/ctfsweep.zsh`（需已启用 compinit）；
 > bash source 同目录下的 `ctfsweep.bash` 即可。

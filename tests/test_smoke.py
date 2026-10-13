@@ -8,9 +8,10 @@
   * CLI：--version / --help / 无参数 / 路径不存在
   * VERSION 文件与包版本一致性
   * shell 脚本体检：$VAR 后不得紧跟全角字符（bash 变量名解析坑）
-  * 补全体检：选项列表经 compadd -l -d 添加并合并显示同义短/长选项（"-f --file"）；
-    不得回退为 _describe -t options（prefix-needed 门禁会拦截，不敲 "-" 就补不出选项）；
-    另在真 shell 里驱动补全函数，断言选项只出现在「- 开头」或「第一个参数位」
+  * 补全体检：位置驱动（对齐 jtool/ptool）——选项只在敲 "-" 之后出现，第一个参数位
+    只出「子命令 + 文件」；选项列表经 compadd -l -d 添加并合并显示同义短/长（"-f --file"）；
+    不得回退为 _describe -t options；包装函数在 update 后自动重载（免手动 source）；
+    以上在真 shell 里驱动补全函数逐字断言，静态字面量体检只作兜底
   * t1.pcap：明文 flag / hex 解码 / DNS base64 外带 / JWT / 环境变量回显 / --min-score 过滤
   * t2.pcapng：pcapng 封装 + -f/--file 参数
   * t3.evtx：UTF-16 明文 + 花括号片段 + 启发式拼接 + 噪音闸门（dll 后缀 / GUID / 乱码区剔除）
@@ -88,13 +89,14 @@ def check_completions():
     """补全静态体检（防回退）：
 
     选项列表经 compadd -l -d 添加：手写显示串、同义短/长选项合并为一行（如 "-f --file"）。
-    不得回退为 _describe -t options —— 其 prefix-needed 门禁会在光标不以 - 开头时不列出
-    选项（即历史上「不敲 - 就看不到 --选项」的根因）。
+    不得回退为 _describe -t options —— 它一个条目只能给一个匹配词，合并显示做不出来
+    （早期同义短/长会各占一行）。候选结构是位置驱动的：选项只在敲 "-" 之后出现，
+    第一个参数位只出「子命令 + 文件」——这条静态查不出，由 _check_completion_behavior() 守。
     """
     zsh = open(os.path.join(ROOT, 'completions', 'ctfsweep.zsh'), encoding='utf-8').read()
     code = '\n'.join(l for l in zsh.splitlines() if not l.lstrip().startswith('#'))
     check('compadd -l -d' in code, 'zsh 补全：选项经 compadd -l -d 添加（一屏一行显示串）')
-    check('_describe -t options' not in code, 'zsh 补全：未回退为 -t options（会被 prefix-needed 拦截）')
+    check('_describe -t options' not in code, 'zsh 补全：未回退为 -t options（合并显示做不出来）')
     check('-f --file' in code and '-k --keywords' in code, 'zsh 补全：配对选项以 "-f --file" 合并显示')
     check('-F --folder' in code and '--folder:' in code, 'zsh 补全：含 -F --folder（指定文件夹）')
     check('-q --brief' in code, 'zsh 补全：含 -q --brief（精简输出）')
@@ -110,18 +112,29 @@ def check_completions():
     check('--judge' in code, 'zsh 补全：含 --judge（保留打分）')
     check(not any(s in code for s in _REMOVED_SUBCOMMANDS),
           'zsh 补全：无自学习子命令（%s）' % '/'.join(_REMOVED_SUBCOMMANDS))
+    # 安装形态约定（对齐 jtool/ptool 的同名补全文件）：
+    #   · compinit 未跑时自己 bootstrap —— 否则 compdef 不存在，补全**静默**不注册；
+    #   · 包装函数让 update 后在父 shell 里重载本文件（免手动 source / 重开终端），
+    #     内部必须走 `command` 调真命令，否则自我递归。
+    check('autoload -Uz compinit' in code and 'compdef _ctfsweep ctfsweep' in code,
+          'zsh 补全：compinit 未初始化时自己 bootstrap（否则补全静默不注册）')
+    check('command ctfsweep "$@"' in code and 'unfunction ctfsweep' in code,
+          'zsh 补全：包装函数 command 调用真命令 + uninstall 后自我清理')
     bash = open(os.path.join(ROOT, 'completions', 'ctfsweep.bash'), encoding='utf-8').read()
     check('--extract' in bash and '--folder' in bash, 'bash 补全：含主要选项')
     check('--brief' in bash, 'bash 补全：含 --brief（精简输出）')
     check('--judge' in bash, 'bash 补全：含 --judge')
     check(not any(s in bash for s in _REMOVED_SUBCOMMANDS),
           'bash 补全：无自学习子命令')
-    # 反向断言：兜底分支不得再「选项 + 文件」并列（history: 旧语句下面这一行
-    # 让 `ctf -q <TAB>` 把全部选项连 --config 一起倒出来——按字母排第一，最扎眼）。
-    # 注意别误伤第一个参数位那条 `$subcmds + $opts + 文件`：它是既有约定，保留。
+    # 反向断言：兜底分支不得再「选项 + 文件」并列（history: 旧语句让
+    # `ctf -q <TAB>` 把全部选项连 --config 一起倒出来——按字母排第一，最扎眼）。
+    # 也顺带守住第一个参数位：它现在只出「子命令 + 文件」，不该再出现这条并列。
     check('COMPREPLY=( $(compgen -W "$opts" -- "$cur") $(compgen -f -- "$cur") )' not in bash,
-          'bash 补全：兜底分支不再铺选项（仅第一个参数位列选项）')
+          'bash 补全：无「选项 + 文件」并列（位置驱动：选项只在敲 "-" 后出现）')
+    check('command ctfsweep "$@"' in bash and 'unset -f ctfsweep' in bash,
+          'bash 补全：包装函数 command 调用真命令 + uninstall 后自我清理')
     _check_completion_behavior()
+    _check_completion_wrapper()
 
 
 # 驱动补全函数、把它要加的候选打出来：覆写补全原语，不需要真实补全上下文。
@@ -139,7 +152,7 @@ _COMPLETION_STUB_ZSH = r'''compadd() {
   print -r -- "opts: ${(j: :)got}"
 }
 _files() { print -r -- "files" }
-_describe() { print -r -- "cmds: $3" }
+_describe() { print -r -- "cmds: ${(P)4}" }
 source "$1"; shift
 words=("$@"); CURRENT=$#words
 _ctfsweep
@@ -189,9 +202,10 @@ def _completion_candidates(shell, words):
 
 
 def _check_completion_behavior():
-    """补全行为体检：选项只出现在「- 开头」或「第一个参数位」，其余位置只补文件。
+    """补全行为体检：位置驱动——选项只在当前词以「-」开头时出现。
 
-    缺失这道闸门时 `ctf -q <TAB>` 仍会把除 --brief 外的全部选项（含 --config）铺出来。
+    第一个参数位只出「子命令 + 文件」（对齐 jtool/ptool，不铺选项墙）；缺失这道
+    闸门时 `ctf -q <TAB>` 仍会把除 --brief 外的全部选项（含 --config）铺出来。
     zsh 缺失的机器（如纯 bash 的 CI 镜像）跳过，不因此判失败。
     """
     for shell in ('bash', 'zsh'):
@@ -199,8 +213,10 @@ def _check_completion_behavior():
             check(True, '%s 补全：本机无该 shell，跳过行为体检' % shell)
             continue
         first = _completion_candidates(shell, ['ctfsweep', ''])
-        check('--config' in first, '%s 补全：第一个参数位仍列出选项（不敲 - 也能看到）' % shell)
-        check('cmds' in first or 'update' in first, '%s 补全：第一个参数位仍列出子命令' % shell)
+        check('--config' not in first and '-f' not in first,
+              '%s 补全：第一个参数位不列选项（选项留给敲 "-"）' % shell)
+        check('update' in first, '%s 补全：第一个参数位列出子命令' % shell)
+        check('files' in first, '%s 补全：第一个参数位补文件（第一个参数常常就是抓包）' % shell)
 
         dash = _completion_candidates(shell, ['ctfsweep', '-'])
         check('--config' in dash, '%s 补全：裸 "-" 后列出选项' % shell)
@@ -216,6 +232,39 @@ def _check_completion_behavior():
         after_file = _completion_candidates(shell, ['ctfsweep', 'a.pcap', ''])
         check('--config' not in after_file and 'files' in after_file,
               '%s 补全：文件参数之后只补文件' % shell)
+
+
+def _check_completion_wrapper():
+    """包装函数体检：update 后自动重载补全文件（对齐 jtool/ptool）。
+
+    补全是 source 进父 shell 的，而 update 是就地替换安装目录里的那一份——
+    shell 认的是内存里的旧定义，只有 shell 函数能在父 shell 里重载它。
+    做法：假 ctfsweep 命令（证明实参真的透传）+ 调用前改写补全文件
+    （重载即会执行到新追加的那行），两头都对上才算过。
+    """
+    if not shutil.which('zsh'):
+        check(True, 'zsh 补全：本机无 zsh，跳过包装函数体检')
+        return
+    tmp = tempfile.mkdtemp(prefix='ctfsweep-wrap-')
+    try:
+        bindir = os.path.join(tmp, 'bin')
+        os.makedirs(bindir)
+        fake = os.path.join(bindir, 'ctfsweep')
+        with open(fake, 'w', encoding='utf-8') as fh:
+            fh.write('#!/bin/sh\nprintf "FAKE %s\\n" "$*"\n')
+        os.chmod(fake, 0o755)
+        comp = os.path.join(tmp, 'ctfsweep.zsh')
+        shutil.copy(os.path.join(ROOT, 'completions', 'ctfsweep.zsh'), comp)
+        script = ('PATH=%s:$PATH; source %s; '
+                  'printf "\\nprint -r -- RELOADED-OK\\n" >> %s; ctfsweep update'
+                  % (bindir, comp, comp))
+        proc = subprocess.run(['zsh', '-f', '-c', script],
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        text = proc.stdout.decode('utf-8', 'replace')
+        check('FAKE update' in text, 'zsh 补全：包装函数把实参透传给真命令')
+        check('RELOADED-OK' in text, 'zsh 补全：update 后自动重载（免手动 source / 重开终端）')
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def _judge_samples():

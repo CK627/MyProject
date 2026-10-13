@@ -408,17 +408,23 @@ DNS 相关的 `KNOWN_INFRA_SUFFIXES` / `dns_lead_reason` 也在这里（见上�
 - **改 CLI 选项 → 同步四处**：`cli.HELP`、`completions/ctfsweep.zsh`、
   `completions/ctfsweep.bash`、README 的选项表。补全有静态体检防回退：
   必须用 `compadd -l -d` + 手写显示串，**不得**改回 `_describe -t options`
-  （其 prefix-needed 门禁会导致"不敲 `-` 就看不到选项"）；同义短/长选项合并为
-  一行显示（`-f --file` 只出现一次）。
-  ⚠️ **选项候选只在两种位置出现**：当前词以 `-` 开头，或**第一个参数位**
-  （保留"不敲 `-` 也能看到选项"的既有约定，zsh 用 `show_opts` 闸门、bash 在
-  `COMP_CWORD -eq 1` 分支里）。其余位置**只补文件**——早期两份补全都是无条件
-  铺选项，于是 `ctf -q <TAB>` 把除 `--brief` 外的 14 个选项连 `--config` 一起倒出来
-  （按显示串排序，`--config` 恰好第一，最扎眼），且与 `ls -l <TAB>` 的直觉相悖。
-  这条**静态体检看不见**（它只查字面量在场），所以 `check_completions()` 里另有一段
-  `_check_completion_behavior()`：在 `zsh -f` / `bash -f` 里覆写补全原语（`compadd` /
-  `compgen` / `_files` / `_describe`）驱动补全函数，逐字断言各位置实际给出的候选集合；
+  （一个条目只能给一个匹配词，同义短/长合并成一行 `-f --file` 做不出来）；
+  同义短/长选项合并为一行显示（`-f --file` 只出现一次）。
+  ⚠️ **候选结构是位置驱动的（对齐 jtool/ptool）**：选项**只在当前词以 `-` 开头时**出现，
+  第一个参数位只出「子命令 + 文件」。早期两份补全都无条件铺选项，于是 `ctf -q <TAB>`
+  把除 `--brief` 外的 14 个选项连 `--config` 一起倒出来（按显示串排序，`--config` 恰好
+  第一，最扎眼）；更早还一度反过来要求"不敲 `-` 也能看到选项"，两版都不是位置驱动的。
+  这条**静态体检看不见**（它只查字面量在场），由 `check_completions()` 里的
+  `_check_completion_behavior()` 守：在 `zsh -f` / `bash -f` 里覆写补全原语（`compadd` /
+  `compgen` / `_files` / `_describe`）驱动补全函数，逐字断言各位置**实际给出的候选集合**；
   本机缺 zsh 时跳过（CI 镜像不保证有 zsh）。
+  ⚠️ **两份补全文件末尾都有包装函数**（同 jtool/ptool）：`ctfsweep update` 后就地
+  `source` 本文件（父 shell 里才做得到，脚本子进程改不了调用者的 shell），`uninstall`
+  后重载 rc 并 `unfunction` 自己；`install` 不在列（只打印安装方式，不落地文件）。
+  内部必须 `command ctfsweep "$@"`，否则自我递归。文件路径靠 source 时取
+  `${(%):-%x}`（zsh）/ `${BASH_SOURCE[0]}`（bash），不是安装脚本生成的占位符——
+  本项目的补全是**静态素材**，不像 jtool/ptool 那样由安装脚本生成。
+  改这条要同步 `_check_completion_wrapper()`（假命令 + 调用前改写文件，两头验证）。
 - **安装/更新/卸载的文案被两处逐字断言**，改这五个字符串之一就要同步改测试：
   `update:拉取最新源码快照并重装`、`install:显示安装方式`（`tests/test_smoke.py:95`，另有一条
   「无 `已弃用` / `更新指引` 残留」的反向断言防旧文案漂回来）；以及 `smoke.sh` 第 7 步断言的
