@@ -73,7 +73,7 @@ HELP = """ctfsweep - CTF / 应急响应取证扫描器（零依赖，Python 3.8+
 
 说明:
   结果按置信度分档: >= 0.85 高（可直接核验）/ >= 0.55 中（需人工确认）/ 其余低
-  每次扫描都写缓存: ~/.devtools/ctfsweep/cache/（只增不减，占用见 ctfsweep config）
+  每次扫描都写缓存: ~/.devtools/ctfsweep/cache/（一次运行一个目录，只增不减）
   判断核为轻量 MLP，加 --judge 才跑；模型随版本发布，离线训练见仓库 lab/train.py
 """
 
@@ -181,9 +181,17 @@ def _cmd_config():
 
 
 # ---------------------------------------------------------------- 扫描缓存（每次都写）
-# 每个文件一份：<缓存根>/<文件名>-<路径哈希>/：
+# 一次**运行**一份：<缓存根>/<运行名>-<路径哈希6位>/：
 #   1.txt / 2.txt / 3.txt     高/中/低置信候选明细（分数 | 级别 | 类型 | 值 | 位置）
-#   <文件名>_cache.txt        该文件的完整扫描输出（**两种模式内容相同**）
+#                             ——本次运行**全部**文件的命中合在一起，目录扫描时每行带
+#                               `← <相对路径>` 标出来源（Finding 自己不带来源文件）
+#   <运行名>_cache.txt        本次运行的完整输出（**两种模式内容相同**）
+#
+# 消费单位是「一次运行」而不是「一个文件」：`-F 项目/` 扫整个项目时，一文件一目录会
+# 摊出十几个 `<文件名>-<哈希>`，同名文件（`sub1/a.pcap` 与 `sub2/a.pcap`）的目录名
+# 肉眼还分不出对应关系。运行名取扫描根目录名（单文件取文件名），哈希取**完整路径**的
+# 短哈希，所以同名不同目录的两次运行各成一份、互不覆盖；单文件时"一次运行 = 一个
+# 文件"，缓存路径与内容与旧的"每文件一份"逐字节相同。
 #
 # **默认模式也写缓存**（用户实测反馈"跑完看不到任何结果文件"）：默认模式用 tee 把
 # 报告同时送上屏与缓存；-q 只改变控制台是否上屏，缓存文件逐字节相同。
@@ -195,11 +203,11 @@ _BRIEF_TITLES = {'高': '高置信（可直接核验）',
 
 
 class _TeeStream(object):
-    """stdout 替身：把输出同时送往控制台与「当前文件」的缓存缓冲。
+    """stdout 替身：把输出同时送往控制台与本次运行的缓存缓冲。
 
-    - 缓冲**逐文件替换**（`bind`），所以 redirect 只在最外层进出一次——
-      循环里的 `continue` 不会再让捕获挂住、把后续输出写进上一个缓冲区
-      （旧实现逐文件 enter_context 的锐边）；
+    - 缓冲**整轮只绑一次**（`bind`），所以 redirect 在最外层进出一次——循环里的
+      `continue` 不会再让捕获挂住、把后续输出写进上一个缓冲区（旧实现逐文件
+      enter_context 的锐边）；只有「正文 → 汇总尾段」之间换绑一次，让尾段单独成段；
     - `passthrough=False`（-q）时只写缓冲，控制台看不到详细报告；
     - 两个模式捕获到的是**同一份文本**，所以缓存文件内容不因模式而异。
     """
@@ -210,7 +218,7 @@ class _TeeStream(object):
         self._buffer = None
 
     def bind(self, buffer):
-        """换绑当前文件的缓存缓冲。"""
+        """换绑缓存缓冲（整轮一次；正文与汇总尾段之间再换一次）。"""
         self._buffer = buffer
 
     def write(self, s):
@@ -236,17 +244,50 @@ def brief_cache_root():
     return paths.cache_root()
 
 
-def brief_cache_dir(fp):
-    """该文件的缓存子目录：`<缓存根>/<文件名>-<路径哈希6位>/`。
+def run_identity(path):
+    """本次运行的 `(运行名, 哈希输入, 是否目录扫描, 扫描根)`。
 
-    目录名带**完整路径**的短哈希，而不是只用文件名：`a/capture.pcap` 与
-    `b/capture.pcap`（以及 `capture.pcap` 与 `capture.pcapng`）各自成目录、
-    不会互相覆盖；同一文件重复扫描仍写回自己那一份。
+    - **运行名**：目录扫描取**目录名**（`-F 项目/` → `项目`），单文件取文件名去掉
+      扩展名；两边都可能取空，统一兜底 `'scan'`（如 `-F /`）。
+    - **哈希输入**：`realpath(path)` —— 同名不同目录的两次运行各成一份、互不覆盖。
+    - **扫描根**：目录扫描时是 `abspath(path)`，作为 `[文件]` 与 `← 来源` 的相对路径
+      基准；单文件时为 None（单文件没有"相对"可言，标注保持旧形态）。
+
+    ⚠️ 运行名的路径走 `abspath` 而**不是** `realpath`：单文件时 `basename(abspath(fp))`
+    与旧的 `basename(fp)` 恒等（14 个 golden 逐字节断言着旧名），而 realpath 会把软链
+    解析成目标名。`abspath` 同时把 `-F .` / `-F dir/` 规范化成真实目录名——裸
+    `basename` 会给出 `.`（建出隐藏目录 `.-abc123`）或空串。
     """
-    base = os.path.basename(fp)
-    stem = os.path.splitext(base)[0] or base
-    digest = hashlib.sha1(os.path.realpath(fp).encode('utf-8', 'replace')).hexdigest()[:6]
-    return os.path.join(brief_cache_root(), '%s-%s' % (stem, digest))
+    spec = os.path.realpath(path)
+    if os.path.isdir(path):
+        root = os.path.abspath(path)
+        return (os.path.basename(root) or 'scan'), spec, True, root
+    base = os.path.basename(path)
+    return (os.path.splitext(base)[0] or base or 'scan'), spec, False, None
+
+
+def run_cache_dir(run_name, spec):
+    """本次运行的缓存子目录：`<缓存根>/<运行名>-<路径哈希6位>/`。
+
+    哈希取**完整路径**（realpath）而不是只用运行名：`a/capture.pcap` 与
+    `b/capture.pcap`、`proj1/` 与 `proj2/` 各自成目录、不会互相覆盖；
+    同一目标重复扫描仍写回自己那一份。
+    """
+    digest = hashlib.sha1(spec.encode('utf-8', 'replace')).hexdigest()[:6]
+    return os.path.join(brief_cache_root(), '%s-%s' % (run_name, digest))
+
+
+def file_label(fp, is_dir_run, scan_root):
+    """`[文件]` / `来自 …` / 缓存 `← 来源` 用的来源标签。
+
+    目录扫描报**相对路径**：只报文件名的话，`sub1/one.pcap` 与 `sub2/one.pcap`
+    在控制台和缓存里长得一模一样（`来自 same.pcap`），归属信息就丢了。
+    分隔符统一成 `/`（`os.path.relpath` 在 Windows 上给的是 `\\`），缓存文件与
+    控制台都是给人看的文本，不该随平台变形。
+    """
+    if not is_dir_run or not scan_root:
+        return os.path.basename(fp)
+    return os.path.relpath(fp, scan_root).replace(os.sep, '/')
 
 
 def _brief_text(f):
@@ -254,40 +295,57 @@ def _brief_text(f):
     return ' '.join(v.split())
 
 
-def brief_write_files(fp, fname, run_buf, findings, written):
-    """写出 1/2/3.txt 与 <名>_cache.txt；返回 (cache_path, tiers)，失败返回 (None, tiers)。
+def tierize(collected):
+    """`[(Finding, 来源标签), …]` → `{'高': […], '中': […], '低': […]}`。
 
-    只落盘、不上屏——分档统计块由 `brief_print_tiers` 单独负责，
-    这样默认模式（tee）能复用同一份落盘逻辑而**不**多打统计块。
+    档内按置信度降序（稳定排序：同分保持入参顺序，即文件遍历顺序），
+    所以聚合后的明细顺序是确定的，与 `os.walk` 的目录顺序无关。
     """
-    stem = os.path.splitext(fname)[0] or fname
-    cdir = brief_cache_dir(fp)
     tiers = {'高': [], '中': [], '低': []}
-    for f in findings:
-        tiers[level_of(f.confidence)].append(f)
+    for f, label in collected:
+        tiers[level_of(f.confidence)].append((f, label))
     for lv in tiers:
-        tiers[lv].sort(key=lambda it: -it.confidence)
+        tiers[lv].sort(key=lambda it: -it[0].confidence)
+    return tiers
+
+
+def brief_write_run(cdir, run_name, src_label, run_buf, tiers, tagged, err_stream=None):
+    """写出本次运行的 1/2/3.txt 与 <运行名>_cache.txt；返回 cache_path，失败返回 None。
+
+    只落盘、不上屏——分档统计块由 `brief_print_tiers` / `brief_print_counts` 单独
+    负责，这样默认模式（tee）能复用同一份落盘逻辑而**不**多打统计块。
+
+    `tagged=True`（目录扫描）时每条明细追加 `← <来源标签>`：`Finding` 自己**不带**
+    来源文件（模块类 finding 的 `loc` 常为空串），归属只能由 CLI 在这里补。
+    """
     try:
         os.makedirs(cdir, exist_ok=True)
         for lv, fn in _BRIEF_LEVELS:
             with open(os.path.join(cdir, fn), 'w', encoding='utf-8') as fh:
-                fh.write('# 来源: %s\n' % fp)
+                fh.write('# 来源: %s\n' % src_label)
                 fh.write('# 级别: %s  条数: %d\n\n' % (_BRIEF_TITLES[lv], len(tiers[lv])))
-                for f in tiers[lv]:
-                    fh.write('[%.2f %s] %s: %s   @%s\n'
-                             % (f.confidence, lv, f.kind, _brief_text(f)[:300], f.loc))
-        cache_path = os.path.join(cdir, stem + '_cache.txt')
+                for f, label in tiers[lv]:
+                    line = '[%.2f %s] %s: %s   @%s' % (f.confidence, lv, f.kind,
+                                                       _brief_text(f)[:300], f.loc)
+                    if tagged:
+                        line += '   ← %s' % label
+                    fh.write(line + '\n')
+        cache_path = os.path.join(cdir, run_name + '_cache.txt')
         with open(cache_path, 'w', encoding='utf-8') as fh:
             fh.write(run_buf.getvalue())
     except Exception as ex:
-        print('[扫描缓存] 写入失败: %r' % ex)
-        return None, tiers
-    written.append(cache_path)
-    return cache_path, tiers
+        # ⚠️ 必须走**真实 stdout**：调用时 sys.stdout 仍是捕获替身，-q 下
+        # passthrough=False，这条报错会只落进缓存缓冲，控制台上什么都看不到。
+        try:
+            (err_stream or sys.stdout).write('[扫描缓存] 写入失败: %r\n' % ex)
+        except Exception:
+            pass
+        return None
+    return cache_path
 
 
-def brief_print_tiers(fname, cdir, cache_path, tiers, multi=False, stream=None):
-    """打印该文件的「分档统计块」（仅 -q 用；默认模式的详细报告已经上屏）。
+def brief_print_tiers(cdir, cache_path, tiers, stream=None):
+    """单文件运行的「分档统计块」（仅 -q 用；默认模式的详细报告已经上屏）。
 
     ⚠️ `stream` 必须传**真实 stdout**：调用时 sys.stdout 仍指着捕获用的替身，
     默认 `print()` 会把统计块也写进缓存文件，控制台上反而一片空白。
@@ -295,31 +353,66 @@ def brief_print_tiers(fname, cdir, cache_path, tiers, multi=False, stream=None):
     def _p(s):
         print(s, file=stream) if stream is not None else print(s)
 
-    if multi:
-        _p('[文件] %s' % fname)
     _p('【扫描统计】')
     for lv, fn in _BRIEF_LEVELS:
         line = '%s，具体信息：%s' % (_BRIEF_TITLES[lv], os.path.join(cdir, fn))
         if lv == '高' and tiers['高']:
-            line += ' ' + '/'.join(_brief_text(f)[:60] for f in tiers['高'][:10])[:240]
+            line += ' ' + '/'.join(_brief_text(f)[:60] for f, _l in tiers['高'][:10])[:240]
         _p(line)
     _p('扫描结果（缓存），具体信息：%s' % cache_path)
 
 
-def brief_append_tail(tail_text, written, files_total):
-    """把运行汇总区（元判断核/汇总统计）追加到各缓存文件尾部。"""
-    if not tail_text.strip() or not written:
+def brief_print_counts(label, tiers, stream=None):
+    """目录扫描 -q 的逐文件块：`[文件] <相对路径>` + 三行**条数**。
+
+    整次运行只写一个缓存目录，逐文件重复同一组路径没有信息量——路径由循环后的
+    `brief_print_run_cache` 统一报一次。高置信行仍**内联值**："哪个文件扫出了什么"
+    正是 -q 目录模式唯一的价值，只报条数就白跑了。
+    """
+    def _p(s):
+        print(s, file=stream) if stream is not None else print(s)
+
+    _p('[文件] %s' % label)
+    _p('【扫描统计】')
+    for lv, _fn in _BRIEF_LEVELS:
+        line = '%s %d 条' % (_BRIEF_TITLES[lv], len(tiers[lv]))
+        if lv == '高' and tiers['高']:
+            line += '：' + '/'.join(_brief_text(f)[:60] for f, _l in tiers['高'][:10])[:240]
+        _p(line)
+
+
+def brief_print_run_cache(cdir, run_name, files_total, is_dir_run, stream=None):
+    """「【扫描缓存】本次 N 个文件…」块（本次运行只列一个目录）。
+
+    默认模式两种运行都打（用户实测反馈"跑完看不到任何结果文件"）；
+    -q 只在**目录扫描**打——单文件 -q 的四行里已经逐条带路径，多打一块会打穿 golden。
+    """
+    def _p(s):
+        print(s, file=stream) if stream is not None else print(s)
+
+    _p('\n【扫描缓存】本次 %d 个文件，报告与分档明细已写入:' % files_total)
+    # 末尾带分隔符：读起来是"写进这个目录"，也让 golden 的归一化
+    # （`/<名>-<6位哈希>/` → `/<名>-<哈希>/`）能覆盖这一行
+    _p('  %s%s' % (cdir, os.sep))
+    if is_dir_run:
+        _p('  完整报告见 %s；占用与清理见 ctfsweep config' % (run_name + '_cache.txt'))
+    else:
+        _p('  完整报告见各目录下的 <文件名>_cache.txt；占用与清理见 ctfsweep config')
+
+
+def brief_append_tail(tail_text, cache_path, files_total):
+    """把运行汇总区（元判断核/汇总统计）追加到本次运行的缓存报告尾部。"""
+    if not tail_text.strip() or not cache_path:
         return
-    for p in written:
-        try:
-            with open(p, 'a', encoding='utf-8') as fh:
-                if not tail_text.startswith('\n'):
-                    fh.write('\n')
-                if files_total > 1:
-                    fh.write('# ↓↓↓ 本次运行汇总（共 %d 个文件，含跨文件统计）↓↓↓\n' % files_total)
-                fh.write(tail_text)
-        except Exception:
-            pass
+    try:
+        with open(cache_path, 'a', encoding='utf-8') as fh:
+            if not tail_text.startswith('\n'):
+                fh.write('\n')
+            if files_total > 1:
+                fh.write('# ↓↓↓ 本次运行汇总（共 %d 个文件，含跨文件统计）↓↓↓\n' % files_total)
+            fh.write(tail_text)
+    except Exception:
+        pass
 
 
 def main():
@@ -449,6 +542,9 @@ def main():
         else:
             print('[判断核] 未找到模型（%s）；模型随版本发布，重装或离线训练后替换' % mpath)
 
+    # 运行标识（缓存目录名 / 来源标签基准）由唯一的 path 决定，这里算一次
+    run_name, run_spec, is_dir_run, scan_root = run_identity(path)
+
     if os.path.isdir(path):
         targets = []
         for root, _dirs, files in os.walk(path):
@@ -477,36 +573,37 @@ def main():
     # 元判断核：聚合所有模块的结构化输出
     meta = MetaJudge()
 
-    brief_written = []          # 本次运行已写出的缓存报告路径
-    brief_dirs = []             # 本次运行各文件的缓存子目录（默认模式的 [缓存] 行要用）
-    # 捕获区：默认模式 tee（上屏 + 缓存），-q 只进缓存。**只进出一次**，逐文件换缓冲。
+    # 捕获区：默认模式 tee（上屏 + 缓存），-q 只进缓存。**整轮只进出一次**，
+    # 缓冲在「正文 → 汇总尾段」之间换绑一次；根因见文件头的扫描缓存说明。
+    _run_buf = io.StringIO()
+    _run_findings = []          # [(Finding, 来源标签), …] 本次运行全部文件的命中
     _real_stdout = sys.stdout
     _sink = _TeeStream(_real_stdout, passthrough=not brief)
     _brief_stack = ExitStack()
     _brief_stack.enter_context(redirect_stdout(_sink))
+    _sink.bind(_run_buf)
 
-    def _emit_cache(fp, fname, buf, findings):
-        """把本文件的扫描缓存落盘（-q 额外打「分档统计块」；默认模式报告已上屏）。"""
-        cache_path, tiers = brief_write_files(fp, fname, buf, findings, brief_written)
-        if cache_path is None:
-            return
-        cdir = brief_cache_dir(fp)
-        brief_dirs.append(cdir)
-        if brief:
-            brief_print_tiers(fname, cdir, cache_path, tiers,
-                              multi=len(targets) > 1, stream=_real_stdout)
+    def _collect_cache(label, findings):
+        """把本文件的命中并入本次运行（-q 目录模式另打逐文件计数块）。
+
+        默认模式的详细报告已经上屏，分档统计块只在收尾时打一次。
+        """
+        for f in findings:
+            _run_findings.append((f, label))
+        if brief and is_dir_run:
+            brief_print_counts(label, tierize([(f, label) for f in findings]),
+                               stream=_real_stdout)
 
     for fp in targets:
-        fname = os.path.basename(fp)
-        _brief_buf = io.StringIO()
-        _sink.bind(_brief_buf)
+        # 来源标签：目录扫描是相对路径，单文件是文件名（缓存与汇总区共用同一份）
+        label = file_label(fp, is_dir_run, scan_root)
         print('=' * 78)
-        print('[文件] %s (%.1f KB)' % (fname, os.path.getsize(fp) / 1024))
+        print('[文件] %s (%.1f KB)' % (label, os.path.getsize(fp) / 1024))
         try:
             data = open(fp, 'rb').read()
         except Exception as ex:
             print('  读取失败: %r' % ex)
-            _emit_cache(fp, fname, _brief_buf, [])
+            _collect_cache(label, [])
             continue
 
         # 解析一次，两个阶段共用（过去 Router 与旧版扫描器各解析一遍）
@@ -553,7 +650,7 @@ def main():
                     meta.add_finding(f.to_meta_dict())
         except Exception as ex:
             print('  扫描出错: %r' % ex)
-            _emit_cache(fp, fname, _brief_buf, [])
+            _collect_cache(label, [])
             continue
 
         # =========================================================================
@@ -563,8 +660,8 @@ def main():
             if f.confidence >= BAND_HIGH:
                 n_high += 1
                 v = f.val if isinstance(f.val, str) else f.val.decode('utf-8', 'replace')
-                # 值 → (kind, 来源文件)：汇总区要按 kind 区分 flag 候选与非 flag 证据
-                highs.setdefault(' '.join(v.split())[:160], (f.kind, os.path.basename(fp)))
+                # 值 → (kind, 来源标签)：汇总区要按 kind 区分 flag 候选与非 flag 证据
+                highs.setdefault(' '.join(v.split())[:160], (f.kind, label))
             elif f.confidence >= BAND_MID:
                 n_mid += 1
             else:
@@ -612,8 +709,8 @@ def main():
             if v not in global_frag_src:
                 global_frags.append(v)
                 global_frag_src[v] = []
-            if fname not in global_frag_src[v]:
-                global_frag_src[v].append(fname)
+            if label not in global_frag_src[v]:
+                global_frag_src[v].append(label)
         if len(frag_vals) >= 2:
             print('  [拼接建议] 本文件检出 %d 个片段（供人工确认）：' % len(frag_vals))
             print('    %s' % ' | '.join(frag_vals[:12]))
@@ -621,8 +718,23 @@ def main():
             if s:
                 print('    启发式拼接尝试（人工确认）：%s' % s[:200])
 
-        # 本文件报告捕获完毕 → 落盘扫描缓存（-q 另打「分档统计块」）
-        _emit_cache(fp, fname, _brief_buf, stream_findings)
+        # 本文件报告捕获完毕 → 并入本次运行的缓存（-q 目录模式另打逐文件计数块）
+        _collect_cache(label, stream_findings)
+
+    # 本次运行的缓存**先落盘**（正文），汇总尾段随后追加：汇总区若中途出错，
+    # 本次扫描的报告仍然在盘上。空目录（0 个文件）不建目录、不打块。
+    cache_path = None
+    if targets:
+        cdir = run_cache_dir(run_name, run_spec)
+        tiers = tierize(_run_findings)
+        cache_path = brief_write_run(cdir, run_name, path, _run_buf, tiers,
+                                     is_dir_run, err_stream=_real_stdout)
+        if brief and cache_path is not None:
+            if is_dir_run:
+                brief_print_run_cache(cdir, run_name, len(targets), True,
+                                      stream=_real_stdout)
+            else:
+                brief_print_tiers(cdir, cache_path, tiers, stream=_real_stdout)
 
     # 汇总区（元判断核 / 全局片段 / 汇总统计）也要进缓存：换成汇总缓冲，
     # 默认模式仍 tee 上屏。两种模式的缓存文件因此都带汇总尾段。
@@ -699,17 +811,13 @@ def main():
     print('  模块报告（类型块）：高 %d 条 / 中 %d 条 / 低 %d 条'
           % (_m['high'], _m['medium'], _m['low']))
 
-    # 汇总区捕获结束 → 追加到各缓存文件尾部；恢复真实 stdout 后再打缓存路径
+    # 汇总区捕获结束 → 追加到本次运行那份缓存尾部；恢复真实 stdout 后再打缓存路径
     _brief_stack.close()
-    brief_append_tail(_brief_tail.getvalue(), brief_written, len(targets))
+    brief_append_tail(_brief_tail.getvalue(), cache_path, len(targets))
 
-    # 默认模式新增的一行（-q 已有「扫描结果（缓存），具体信息：…」四行，保持逐字节不变）：
-    # 用户实测反馈"跑完看不到任何结果文件"——路径必须出现在控制台上。
-    if not brief and brief_written:
-        print('\n【扫描缓存】本次 %d 个文件，报告与分档明细已写入:' % len(brief_written))
-        for d in brief_dirs:
-            # 末尾带分隔符：读起来是"写进这个目录"，也让 golden 的归一化
-            # （`/<名>-<6位哈希>/` → `/<名>-<哈希>/`）能覆盖这一行
-            print('  %s%s' % (d, os.sep))
-        print('  完整报告见各目录下的 <文件名>_cache.txt；占用与清理见 ctfsweep config')
+    # 默认模式：路径必须出现在控制台上（用户实测反馈"跑完看不到任何结果文件"）。
+    # -q 单文件由 brief_print_tiers 的四行负责，此处不重复打（golden 逐字节守着）。
+    if not brief and cache_path is not None:
+        brief_print_run_cache(cdir, run_name, len(targets), is_dir_run,
+                              stream=_real_stdout)
     return 0

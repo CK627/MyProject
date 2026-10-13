@@ -18,7 +18,8 @@
   * t4.pcap --extract：文件雕刻 + zip 内容扫描 + 落盘
   * 判断核（judge）：微型数据集训练与分离、离线训练脚本 lab/train.py（留一组评估）、
     --judge 打分与无模型兜底；且**命令行不再有任何训练/标注入口**（自学习已移除）
-  * 扫描缓存：每次扫描都写（默认模式与 -q 内容相同），数据根下只有 cache/
+  * 扫描缓存：每次扫描都写（默认模式与 -q 内容相同），数据根下只有 cache/；
+    **一次运行一个目录**（目录扫描不再一文件一目录，归属靠每行的「← 相对路径」）
   * 元判断核（meta_judge）：综合分不低于模块自评（单调不降）/ 低权重模块不倒扣 /
     分档口径与 utils.level_of 一致 / 畸形 confidence 不中断报告
   * 管线边界：Finding↔5 元组往返后 report() 渲染逐字节不变（含 latin-1 token、str 型 val）
@@ -28,7 +29,8 @@
   * t8-b64.pcap：HTML 载荷页内嵌 base64 的 ZIP（saveAs 页）自动解码提取
   * t9-dns.pcap：DNS 真实解析（长查询外带）/ HTML·CSS·文件名反误报
   * t10-ftp.pcap：FTP 会话（非 flag 证据）/ 二进制关键词字节巧合闸门 / 文本关键词正例
-  * -q/--brief 精简输出：控制台只留分档块 + 缓存落盘（1/2/3.txt + <名>_cache.txt）/ 同名不覆盖
+  * -q/--brief 精简输出：控制台只留分档块 + 缓存落盘（1/2/3.txt + <名>_cache.txt）/
+    目录模式下逐文件只报条数、路径统一在运行级块出现一次
   * 目录模式
 """
 import json
@@ -375,7 +377,8 @@ def check_scan_cache(tmp):
 
     历史问题：默认模式（不加 -q）**完全不写任何结果文件**，跑完扫描用户拿不到
     可回看的报告，只得到一个自学习留存区（留存区已随自学习机制整体移除）。
-    现在数据根下只有 `cache/`：<文件名>-<路径哈希>/1.txt|2.txt|3.txt + <名>_cache.txt。
+    现在数据根下只有 `cache/`：<运行名>-<路径哈希>/1.txt|2.txt|3.txt + <运行名>_cache.txt。
+    单文件时「一次运行 = 一个文件」，与旧的"每文件一份"逐字节相同。
     """
     fp = os.path.join(tmp, 't1.pcap')
     rc, out = run_cli([fp])
@@ -405,6 +408,81 @@ def check_scan_cache(tmp):
 
     check(not os.path.exists(os.path.join(tmp, 'judge')),
           '数据根下无 judge/ 残留（自学习留存区已移除）')
+
+
+def check_dir_scan_cache(tmp):
+    """目录扫描：**一次运行一个缓存目录**，归属靠每行的「← 相对路径」。
+
+    历史问题：缓存粒度按「文件」划分（旧 `brief_cache_dir()` 的注释写着"同名不同目录
+    不互相覆盖"），而那个理由只在目录扫描下成立、`-f` 单文件时"一次运行 = 一个文件"
+    两种粒度重合，所以一直没暴露——直到 `-F 项目/` 扫整个项目：缓存摊成十几个
+    `<文件名>-<哈希>` 平铺目录，控制台连打十几行，`sub1/a.pcap` 与 `sub2/a.pcap`
+    的目录名肉眼还分不出对应关系（只有文件名相同、哈希不同）。
+    本节目录扫描回归就是那次漏网的直接补丁。
+    """
+    croot = os.path.join(tmp, 'cache')
+    proj = os.path.join(tmp, 'projdir')
+    os.makedirs(os.path.join(proj, 'sub1'), exist_ok=True)
+    os.makedirs(os.path.join(proj, 'sub2'), exist_ok=True)
+    os.makedirs(os.path.join(proj, 'empty'), exist_ok=True)
+    with open(os.path.join(tmp, 't1.pcap'), 'rb') as src:
+        blob = src.read()
+    with open(os.path.join(proj, 'sub1', 'one.pcap'), 'wb') as dst:
+        dst.write(blob)
+    with open(os.path.join(tmp, 't2.pcapng'), 'rb') as src:
+        pcapng = src.read()
+    with open(os.path.join(proj, 'sub2', 'two.pcapng'), 'wb') as dst:
+        dst.write(pcapng)
+
+    rc, out = run_cli([proj])
+    check(rc == 0 and '【扫描缓存】' in out, '目录扫描：默认模式报出缓存位置')
+
+    dirs = [d for d in os.listdir(croot) if d.startswith('projdir-')]
+    check(len(dirs) == 1,
+          '目录扫描：整次运行只建**一个**缓存目录（旧布局下这里会是 0 个）')
+    if len(dirs) != 1:
+        return
+    cdir = os.path.join(croot, dirs[0])
+
+    # 控制台只列这一个目录：旧布局打印的是 one-<h>/two-<h>/，这一行一次都不会出现
+    check(out.count(cdir + os.sep) == 1, '目录扫描：控制台只报出这一个运行目录')
+
+    check(all(os.path.isfile(os.path.join(cdir, n)) for n in ('1.txt', '2.txt', '3.txt')),
+          '目录扫描：1/2/3.txt 聚合落盘')
+    fc = os.path.join(cdir, 'projdir_cache.txt')
+    check(os.path.isfile(fc), '目录扫描：完整报告按运行名命名（projdir_cache.txt）')
+
+    f1 = os.path.join(cdir, '1.txt')
+    t1t = open(f1, encoding='utf-8').read() if os.path.isfile(f1) else ''
+    check('← sub1/one.pcap' in t1t and '← sub2/two.pcap' in t1t,
+          '聚合 1.txt：每条明细标出来源相对路径（Finding 自己不带来源文件）')
+    # 归属必须**逐行对应**：整块共用一个文件名也能让上面那条通过，那样等于没有归属
+    line_a = [l for l in t1t.splitlines() if 'flag{plain-smoke-ok}' in l]
+    line_b = [l for l in t1t.splitlines() if 'flag{pcapng-smoke-ok}' in l]
+    check(bool(line_a) and 'sub1/one.pcap' in line_a[0] and 'sub2/' not in line_a[0],
+          '归属逐行对应：t1 的命中挂在 sub1/one.pcap 上')
+    check(bool(line_b) and 'sub2/two.pcap' in line_b[0],
+          '归属逐行对应：t2 的命中挂在 sub2/two.pcap 上')
+    check(t1t.count('条数:') == 1, '聚合 1.txt：单文件头 + 全量明细（不是每文件一段）')
+
+    if os.path.isfile(fc):
+        body = open(fc, encoding='utf-8').read()
+        check('flag{plain-smoke-ok}' in body and 'flag{pcapng-smoke-ok}' in body
+              and '【扫描统计】' in body and '本次运行汇总' in body,
+              '完整报告：两个文件都在，且带运行汇总尾段（files_total > 1）')
+
+    # -q 目录模式：逐文件只报条数（路径不再逐文件重复），路径统一在运行级块出现一次
+    rc, qout = run_cli([proj, '-q'])
+    check('[文件] sub1/one.pcap' in qout and '[文件] sub2/two.pcap' in qout,
+          '-q 目录模式：逐文件标注相对路径（只报文件名就分不出是哪一个）')
+    check('，具体信息：' not in qout, '-q 目录模式：不再逐文件重复四条缓存路径')
+    check(qout.count('【扫描缓存】') == 1 and qout.count(cdir + os.sep) == 1,
+          '-q 目录模式：运行级缓存块恰好打一次')
+
+    # 空目录：不建空壳缓存目录（旧行为，防"扫了空目录就多一个空目录"回归）
+    before = sorted(os.listdir(croot))
+    run_cli([os.path.join(proj, 'empty')])
+    check(sorted(os.listdir(croot)) == before, '空目录：不产生空缓存目录')
 
 
 def check_report_equivalence():
@@ -1304,8 +1382,9 @@ def main():
             check('[FTP会话]' in t2t and '【扫描统计】' in t2t,
                   '缓存含完整详细输出（会话 + 统计区）')
 
-        # 同名不同目录必须各自成缓存目录（规格原样按文件名会互相覆盖）。
-        # CLI 只接一个路径，多文件只在**目录扫描**下发生——这正是撞名的真实场景。
+        # 同名文件（proj1/same.pcap 与 proj2/same.pcap）在目录扫描下**合进同一个**
+        # 运行目录——旧断言"两个 same-<哈希> 目录各自独立"正是被废弃的按文件分粒度；
+        # 现在守的是更强的性质：合了之后归属信息没有丢，两条命中各自带自己的相对路径。
         coll = os.path.join(tmp, 'coll')
         with open(os.path.join(tmp, 't10-ftp.pcap'), 'rb') as src:
             blob = src.read()
@@ -1314,8 +1393,13 @@ def main():
             with open(os.path.join(coll, sub, 'same.pcap'), 'wb') as dst:
                 dst.write(blob)
         run_cli([coll, '-q'])
-        same = [d for d in os.listdir(croot) if d.startswith('same-')]
-        check(len(same) == 2, '同名不同目录（目录扫描）：缓存各自独立（按完整路径散列）')
+        same = [d for d in os.listdir(croot) if d.startswith('coll-')]
+        check(len(same) == 1, '同名不同目录（目录扫描）：合进一个运行目录（不再一文件一目录）')
+        if len(same) == 1:
+            ct1 = os.path.join(croot, same[0], '1.txt')
+            body = open(ct1, encoding='utf-8').read() if os.path.isfile(ct1) else ''
+            check('← proj1/same.pcap' in body and '← proj2/same.pcap' in body,
+                  '同名文件合并不丢归属（两条命中各自带相对路径）')
 
         print('== t11-smtp.pcap：邮件会话（EHLO / STARTTLS / 明文信封）==')
         rc, out = run_cli([os.path.join(tmp, 't11-smtp.pcap')])
@@ -1347,6 +1431,9 @@ def main():
 
         print('== 扫描缓存（每次扫描都写）==')
         check_scan_cache(tmp)
+
+        print('== 扫描缓存（目录扫描：一次运行一个目录）==')
+        check_dir_scan_cache(tmp)
 
         print('== 判断核（judge）==')
         check_judge(tmp)

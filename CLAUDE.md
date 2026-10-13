@@ -56,7 +56,8 @@ python3 lab/train.py --data lab/dataset.jsonl --out models/model.ctfj
 要隔离调试某一节（如 `check_judge(tmp)`），在临时目录里 `gen_fixtures.generate(tmp)`
 后再调用该节的函数即可。定位失败项用 `python3 tests/test_smoke.py 2>&1 | grep FAIL`。
 `check_judge` 走 `subprocess` 跑 `lab/train.py`（那是它唯一的训练入口），
-`check_scan_cache` 断言两种模式的缓存内容一致、且数据根下没有 `judge/`。
+`check_scan_cache` 断言两种模式的缓存内容一致、且数据根下没有 `judge/`；
+`check_dir_scan_cache` 守目录扫描的「一次运行一个目录」（含逐行 `← 相对路径` 归属）。
 
 **测试必须隔离数据目录**，否则会污染真实缓存（`main()` 用 `try/finally` 设置）：
 
@@ -349,6 +350,7 @@ DNS 相关的 `KNOWN_INFRA_SUFFIXES` / `dns_lead_reason` 也在这里（见上�
 `core/paths.py` 是**数据目录布局的单点定义**（`data_root()` / `cache_root()`，
 `CTFSWEEP_DATA_DIR` 的语义仍是"根"）——`cli.brief_cache_root()` 与测试都调它，
 **不要在别处再拼一遍 `cache` 路径或另写一份数据根解析**。
+（目录名的运行标识由 `cli.run_identity()` / `run_cache_dir()` 决定，见下文「缓存」那条。）
 
 ⚠️ **`merge_stream()` 的缓冲区按"序号跨度"分配，跨度必须先过合理性闸门**：
 同一个客户端临时端口被多条连接复用（或序号被伪造）时，几个互不相干的 ISN 会被按
@@ -380,8 +382,9 @@ DNS 相关的 `KNOWN_INFRA_SUFFIXES` / `dns_lead_reason` 也在这里（见上�
   `judge.FEATURES / JudgeNet / JudgePredictor / param_count` 才能把 `.ctfj` 还原成网络，
   这些**一个都不能删**；`JudgeNet.train()` 也要留着（`lab/train.py` 靠它）。删掉的是数据
   生命周期那一半：`record_scan`/留存区/`save_pending`/`mark_answers`/`learning_loop` 等。
-- **数据目录只有一个语义：扫描缓存**。`~/.devtools/ctfsweep/cache/`（布局单点在
-  `core/paths.py`），**永不自动删除**——`update` 与 `uninstall` 都只覆盖功能项
+- **数据目录只有一个语义：扫描缓存**。`~/.devtools/ctfsweep/cache/<运行名>-<短哈希>/`
+  （一次运行一个目录；布局单点在 `core/paths.py`），**永不自动删除**——`update` 与
+  `uninstall` 都只覆盖功能项
   （`bin lib completions config VERSION uninstall deploy.sh shell-setup.sh`），
   **永不 `rm -rf <安装根>`**；`tests/smoke.sh` 7.4/7.6 各埋一个
   `cache/sentinel-abc123/1.txt` 哨兵守着这条契约。
@@ -463,18 +466,41 @@ DNS 相关的 `KNOWN_INFRA_SUFFIXES` / `dns_lead_reason` 也在这里（见上�
 - **行尾契约**（`.gitattributes`）：`*.bat` 用 CRLF、`*.sh` 用 LF——改这些文件别让编辑器
   自动转换，否则 Windows 版启动器会解析错位。
 - **缓存是"每次都写"，不是 `-q` 专属**：两种模式都捕获详细输出写进
-  `<数据目录>/cache/<文件名>-<路径哈希6位>/`（`1/2/3.txt` 分档明细 + `<名>_cache.txt`
-  完整报告），目录名带**完整路径**短哈希是为了同名不同目录不互相覆盖（目录扫描时才撞）。
-  实现是 `cli._TeeStream` 一个替身**逐文件 `bind`**（不是逐文件 `enter_context`）——
-  循环里的 `continue` 才不会让捕获挂住写进上一个缓冲区；`passthrough=not brief` 决定
-  是否上屏，所以**两个模式的缓存文件内容逐字节相同**（`check_scan_cache()` 断言着）。
+  `<数据目录>/cache/<运行名>-<路径哈希6位>/`（`1/2/3.txt` 分档明细 + `<运行名>_cache.txt`
+  完整报告）。
+  ⚠️ **粒度是「一次运行」，不是「一个文件」**（历史缺陷：旧 `brief_cache_dir(fp)` 的注释
+  写着按文件分是为了让 `a/capture.pcap` 与 `b/capture.pcap` 不互相覆盖——那个理由**只在
+  目录扫描下成立**，`-f` 单文件时"一次运行 = 一个文件"两种粒度重合，所以一直没暴露；等到
+  `-F 项目/` 就把缓存摊成十几个 `<文件名>-<哈希>` 平铺目录，`tests/golden/dir.txt` 尾部
+  那 15 行同一形态的目录行就是铁证）。
+  现在：`cli.run_identity()` 给出 `(运行名, 哈希输入, 是否目录扫描, 扫描根)`——
+  **运行名走 `abspath`、哈希走 `realpath`**。⚠️ 名字**不能**用 realpath：单文件时
+  `basename(abspath(fp))` 与旧的 `basename(fp)` 恒等（14 个单文件 golden 逐字节断言着旧名），
+  realpath 会把软链解析成目标名；`abspath` 同时把 `-F .` / `-F dir/` 规范化（裸 `basename`
+  会给 `.`，建出隐藏目录 `.-abc123`）。单文件时"一次运行 = 一个文件"，
+  缓存路径与内容与旧的"每文件一份"**逐字节相同**。
+  实现是 `cli._TeeStream` 一个替身**整轮只 `bind` 一次**（正文 → 汇总尾段之间换绑一次，
+  不是逐文件换绑、更不是逐文件 `enter_context`）——循环里的 `continue` 才不会让捕获挂住
+  写进上一个缓冲区；`passthrough=not brief` 决定是否上屏，所以**两个模式的缓存文件内容
+  逐字节相同**（`check_scan_cache()` 断言着）。
+  聚合后的 `1/2/3.txt` 全局按分数降序（`tierize()` 稳定排序），新增的 `← <相对路径>` 归属
+  标签**只在目录扫描时**加——`Finding` 自己不带来源文件（模块类 finding 的 `loc` 常为空串），
+  归属只能由 CLI 在 `brief_write_run()` 里补。同一个 `label`（`cli.file_label()`：目录扫描
+  相对路径、单文件文件名）也用在 `[文件]` 头与汇总区的 `来自 %s`——只报 `basename` 的话
+  `sub1/a.pcap` 与 `sub2/a.pcap` 在报告里长得一模一样。
   默认模式在**恢复真实 stdout 之后**打 `【扫描缓存】` 块（目录行末尾带 `os.sep`，否则
   `test_golden.normalize()` 的 `/<名>-<6位哈希>/` 正则匹配不上、哈希会写进基线），
-  `brief_print_tiers` 同理必须收 `stream=_real_stdout`。
+  `brief_print_tiers` / `brief_print_counts` / `brief_print_run_cache` 同理必须收
+  `stream=_real_stdout`（`brief_write_run` 的报错也走 `err_stream`——-q 下 passthrough=False，
+  走默认 `print` 会让"写入失败"只落进缓存缓冲，控制台上什么都看不到）。
+  ⚠️ 块首行「本次 N 个文件」必须用 **`len(targets)`**：换成"写出的缓存文件数"（现在是 0/1）
+  会让 15 个文件的目录扫描印出"本次 1 个文件"。
   `tests/test_golden.py::normalize()` 把该哈希归一化掉，否则基线随 `$TMPDIR` 漂移。
   该缓存**只增不减**（数据目录内的文件永不自动删除），清理入口只有
   `ctfsweep config` 里那行「扫描缓存: <路径>（N 个文件，X MB）」——改缓存布局时同步它。
-  ⚠️ `-q` 的控制台输出仍必须逐字节不变（golden `t10-ftp.pcap+brief.txt` 是回归位）。
+  ⚠️ **单文件 `-q` 的控制台输出仍必须逐字节不变**（golden `t10-ftp.pcap+brief.txt` 是回归位）；
+  目录模式 `-q` 是本次新增的形态（逐文件只报条数 + 末尾一次运行级块），`dir.txt` 之外
+  没有基线守它，由 `check_dir_scan_cache()` 断言。
 
 ## lab/ 与 models/
 
