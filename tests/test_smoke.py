@@ -535,22 +535,111 @@ def check_logs_wmi_gate():
           'SQLi：.NET 栈帧的 Execute() 不再命中')
 
 
-def _client_hello(sni=None, hs_type=1):
-    """手搓一个 TLS 记录（单个 record，测试用）。`sni=None` = 不带任何扩展。"""
-    import struct
-    exts = b''
-    if sni is not None:
-        name = sni.encode()
-        exts = (b'\x00\x00' + struct.pack('>H', 5 + len(name))   # ext: server_name
-                + struct.pack('>H', 3 + len(name)) + b'\x00'      # list_len + type
-                + struct.pack('>H', len(name)) + name)
-    body = (b'\x03\x03' + b'\x11' * 32           # version + random
-            + b'\x00'                             # session_id 长度 0
-            + struct.pack('>H', 2) + b'\x13\x01'   # cipher_suites
-            + b'\x01\x00'                          # compression_methods
-            + struct.pack('>H', len(exts)) + exts)
-    hs = bytes([hs_type]) + struct.pack('>I', len(body))[1:] + body
-    return b'\x16\x03\x01' + struct.pack('>H', len(hs)) + hs
+# 手搓 TLS ClientHello 的实现只有一份，放在 gen_fixtures（t13-sni.pcap 也要用）。
+_client_hello = gen_fixtures.client_hello
+
+
+def check_sni_render(tmp):
+    """[TLS SNI] 块的渲染：按域名聚合 / 域名不截断 / 已知厂商折叠在末尾。
+
+    回归目标：`2025-01-22-traffic-analysis-exercise.pcap`（全 mta 语料里唯一一道
+    问域名的题），答案是 `google-authenticator.burleson-appliance.net` 与
+    `authenticatoor.org`。旧版报告里：前者被 `sni[:38]` 印成 `…burleson-applianc`
+    ——**看起来像答案、照抄却核验不了**；后者一个字都没有——15 个席位被
+    `login.microsoftonline.com` 这类遥测按 (域名, IP) **逐行**占满
+    （同一域名 10 个 IP = 10 行），真域名落进"…（其余 108 个省略）"。
+    """
+    rc, out = run_cli([os.path.join(tmp, 't13-sni.pcap')])
+    check(rc == 0, 'SNI 渲染：扫描返回 0')
+
+    # 非基础设施的域名必须原样出现（截断过的域名不再是 IOC，核验不了）
+    check('evil-c2.example.net' in out, 'SNI 渲染：普通陌生域名逐条列出')
+    long_dom = 'very-long-phishing-domain-name.example.org'
+    check(long_dom in out,
+          'SNI 渲染：超长域名**不截断**（旧版 sni[:38] 会印成 …name.example.o）')
+    check(long_dom[:38] + ' ' not in out.replace(long_dom, ''),
+          'SNI 渲染：没有留下被截断的半截域名')
+
+    # 20 个已知厂商名折叠成一行计数，不占逐条席位。
+    # 逐条行 = 缩进 4 空格且以域名开头；遇到下一个 `  [块]` / `  （无命中）` 即结束。
+    body = out.split('[TLS SNI]', 1)[1].splitlines()[1:]
+    rows = []
+    for line in body:
+        if re.match(r'^    \S', line) and '已知厂商/CDN' not in line:
+            rows.append(line)
+        elif line.strip():
+            break
+    check(len(rows) == 2,
+          'SNI 渲染：2 个陌生域名各占一行、厂商遥测不占席位（实际 %d 行）' % len(rows))
+    check('已知厂商/CDN 20 个' in out, 'SNI 渲染：已知厂商折叠为一行计数')
+    check('login.microsoftonline.com' in out and 'static.edge.microsoftapp.net' in out,
+          'SNI 渲染：折叠行里仍能看到被折叠的是哪些域名')
+
+
+def check_mail_envelope_gate(tmp):
+    """明文投递信封**多**的时候只报形态，不逐封刷屏；**少**的时候逐封列出。
+
+    回归目标：`extracting-objects-from-pcap-example-04.pcap` 有 113 条 SMTP 会话，
+    旧版逐封列出 = 212 行 `[邮件投递]`，占全文 273 行的 78%；78 条 finding 里
+    76 条是这个 kind，把【前 10 项发现】10 个席位**全部**占满——而那道题
+    （题名就是 "extracting objects from pcap"）真正要找的是抓包里的被提取文件。
+    信封恰恰是最没有 IOC 的部分：113 封的发件域两两不同（随机化伪造）、
+    收件人清一色 `@yahoo.com`（受害者）。
+    """
+    rc, out = run_cli([os.path.join(tmp, 't14-mailspam.pcap')])
+    check(rc == 0, '邮件信封：扫描返回 0')
+
+    n_deliver = out.count('[邮件投递]') + out.count('[投递样例]')
+    check(n_deliver <= 8,
+          '邮件信封：12 封只展开 ≤8 行（实际 %d）' % n_deliver)
+    check('...（其余 9 封形态相同，已折叠' in out, '邮件信封：其余折叠成一行计数')
+    check('发件域 12 个' in out and '每封都不同 = 随机化伪造，不是可用 IOC' in out,
+          '邮件信封：说清发件域是随机化伪造（这正是"没有可用 IOC"的引导）')
+    check('收件域 1 个: yahoo.com×12' in out, '邮件信封：收件域分布')
+    # 折叠形态是**形态结论**，不是"可直接核验"的答案：它不该占【前 10 项发现】
+    # 第一席、更不该被汇总区当成可提交候选。实测 ex04（113 封 spam）旧版给 0.85 高，
+    # 稳坐第一席，而那道题里没有任何一封邮件是关键邮件。
+    check('[0.85 高] 邮件投递' not in out,
+          '邮件信封：折叠形态不进高置信（聚合不是可直接核验的答案）')
+    check('[0.55 中] 邮件投递形态' in out, '邮件信封：折叠形态按"形态"计中置信')
+
+    # 少的时候（t11-smtp 的 4 封）必须逐封列出——那时每封都是独立线索
+    rc, out11 = run_cli([os.path.join(tmp, 't11-smtp.pcap')])
+    check('[邮件投递] billing@example.net → victim@corp.example；主题: New Invoice 59175'
+          in out11, '邮件信封：少量（4 封）仍然逐封列出，不折叠')
+    check('形态相同，已折叠' not in out11, '邮件信封：少量时不出现折叠行')
+
+
+def check_dns_discovery_fold(tmp):
+    """服务发现类 DNS 查询折叠成**一行按域名计数**，域外域名必须显形。
+
+    回归目标：2024-09-04 域渗透那道题。它的 DNS 段逐条列出 6 条
+    `_ldap._tcp…（服务发现/投毒相关查询）`，全部是同一台主机对**本域**发起的
+    常态查询——而该题的四个答案（主机名 `DESKTOP-RNVO9AT` / IP / MAC / 账号
+    `afletcher`）与域名一个字都不沾，这 6 行对解题零引导。
+    折叠的边界是**不埋线索**：`_ldap._tcp.pdc._msdcs.enemywatch.net` 这种域外
+    域名的 SRV 查询是有效的，归组计数必须把它显形出来。
+    """
+    rc, out = run_cli([os.path.join(tmp, 't15-addns.pcap')])
+    check(rc == 0, 'DNS 服务发现：扫描返回 0')
+
+    # 旧的逐条形态必须消失：7 条查询不应产出 7 行 `DNS查询:`
+    n_lines = out.count('] DNS查询: _ldap') + out.count('] DNS查询: _kerberos') \
+        + out.count('] DNS查询: wpad.')
+    check(n_lines == 0,
+          'DNS 服务发现：不再逐条列出（旧版 7 条占 7 行，实际 %d 行）' % n_lines)
+    check('] DNS查询（服务发现类，已折叠）: 7 条' in out,
+          'DNS 服务发现：7 条折叠成一行并如实计数')
+
+    # 不埋线索：域外域名必须出现在折叠行里，且计数报成"涉及 2 个域"
+    check('涉及 2 个域: bepositive.com×6、enemywatch.net×1' in out,
+          'DNS 服务发现：按域名归组，域外域名 enemywatch.net 显形')
+    check('域外域名的 SRV 查询值得追' in out,
+          'DNS 服务发现：多域时给出"值得追"的引导，而不是当成常态')
+
+    # 纯本域的场景（没有域外域名）才说"与答案无关"
+    check('与答案无关' not in out.split('DNS查询（服务发现类，已折叠）', 1)[1][:80],
+          'DNS 服务发现：出现域外域名时不谎称"与答案无关"')
 
 
 def check_dns_highfreq_gate():
@@ -1058,6 +1147,15 @@ def main():
 
         print('== TLS SNI 提取 ==')
         check_tls_sni()
+
+        print('== TLS SNI 块的渲染（聚合 / 不截断 / 厂商折叠）==')
+        check_sni_render(tmp)
+
+        print('== 明文投递信封的展开上限 ==')
+        check_mail_envelope_gate(tmp)
+
+        print('== 服务发现类 DNS 查询的折叠 ==')
+        check_dns_discovery_fold(tmp)
 
         print('== 路由分派 ==')
         check_router_dispatch(tmp)

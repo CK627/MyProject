@@ -117,7 +117,7 @@ MetaJudge 按 `MODULE_WEIGHTS`（ad 0.95 / memory 0.90 / config 0.85 … scanner
 
 ### 噪音闸门（改扫描逻辑时先看这里）
 
-判定标准是**"这条输出对解题有没有引导价值"**，不是"看起来像不像可疑"。已经落地的十七条：
+判定标准是**"这条输出对解题有没有引导价值"**，不是"看起来像不像可疑"。已经落地的二十条：
 
 - **二进制容器先抽字符串**（`core/logs.py::_extract_strings`）：`.evtx` 这类容器不能按字节
   当文本读——`\x60` 之类的字节巧合会被喂给攻击正则，刷出满屏「RCE（命令替换）」，
@@ -131,6 +131,16 @@ MetaJudge 按 `MODULE_WEIGHTS`（ad 0.95 / memory 0.90 / config 0.85 … scanner
   （`d15krst4gi8g86.cloudfront.net` 是正常的），`dns.py` 与 `dns_lead_reason` 共用这一份名单。
   ⚠️ 折叠行的分数必须 `>= cli` 的 `MIN_SCORE` 默认值（0.40），否则会被静默滤掉——
   折叠是"少占屏"，不是"隐瞒"。
+- **服务发现类查询单独归组、折叠成一行按域名计数**（`scanner.py` 的 `dns_discovery` +
+  `utils.base_domain`；判据是 `dns_lead_reason` 返回常量 `SERVICE_DISCOVERY_REASON`）：
+  SRV `_ldap._tcp`/`_msdcs`/`_sites` 与 `wpad.` 在**每个** Windows 域环境里都成片出现，
+  名字里只有域内拓扑。实测 `2024-09-04` 那道域渗透题，DNS 段逐条列出 6 条
+  `_ldap._tcp…（服务发现/投毒相关查询）`——而该题四个答案（主机名 `DESKTOP-RNVO9AT` /
+  IP / MAC / 账号 `afletcher`）**与域名一个字都不沾**，这 6 行对解题零引导。
+  ⚠️ **折叠的边界是不埋线索**：域外域名的 SRV 查询（`_ldap._tcp.pdc._msdcs.enemywatch.net`）
+  是有效线索，所以那一行按**域名归组**——出现域外域名时计数立刻变成「涉及 2 个域: …」
+  并改口提示"域外域名的 SRV 查询值得追"，只有全是本域时才说"与答案无关"。
+  `dns_lead_reason` 对这类名字仍返回非 None（`test_smoke` 断言着），改变的是**渲染**。
   ⚠️ **"超长标签"不能只看长度**：`mail.pisosyrecubrimientos.com` 的 20 字符标签是西语单词
   （pisos y recubrimientos）。判据走 `_encoded_label()`——带数字 / 大小写混排 / 几乎无元音，
   三者都不占的长标签是词，不是编码外带。`dns_lead_reason` 因此**保留原串大小写**做这一步
@@ -153,6 +163,25 @@ MetaJudge 按 `MODULE_WEIGHTS`（ad 0.95 / memory 0.90 / config 0.85 … scanner
   僵尸网络题的关键指纹）/ 信封 / 其中多少条被 `STARTTLS` 加密。正文加密时**必须写明
   "内容不可解读"**——否则 10 MB 的 spambot 抓包会看起来"什么都没扫到"，而会话形态恰恰是
   那种题唯一可用的引导（实测修复前只有 3 条低置信 DNS 输出）。
+- **明文投递信封：多就报形态，少才逐封列**（`core/session.py` 的 `_MAIL_LIST_MAX=8`）：
+  信封是**最没有 IOC**的部分，逐封列出在群发题上是灾难。实测
+  `extracting-objects-from-pcap-example-04.pcap` 有 113 条 SMTP 会话，旧版产出 **212 行**
+  `[邮件投递]`（占全文 273 行的 78%），78 条 finding 里 **76 条**是这个 kind，
+  把【前 10 项发现】10 个席位**全部**占满——而那道题（题名就是
+  "extracting objects from pcap"）真正要找的是抓包里的被提取文件，一行都没露出来。
+  而且那 113 封本身没有可用线索：发件域 46 个（`6374.com` / `5395.com`…）、收件人清一色
+  `@yahoo.com`——前者是随机化伪造、后者是受害者。所以 `> 8 封` 时只报**形态**
+  （`发件域 46 个: …；收件域 3 个: …` + 3 个样例 + 折叠行），且在发件域数 == 信封数时
+  直接点名"每封都不同 = 随机化伪造，不是可用 IOC"——**把"这里没有 IOC"说出来才是引导**，
+  逐封罗列反而让人以为捡到了 113 个线索。`≤ 8 封`（如 `t11-smtp.pcap` 的 4 封）保持原有的
+  逐封列出与 finding 定位（`@SMTP src:port→dst:port`），14 个 golden 逐字节不变。
+  ⚠️ **折叠形态另起一个 kind 且只给 0.55 中**（`邮件投递形态`，逐封形态仍是
+  `邮件投递信封` 0.85 高）：一条"76 封"的聚合**不是"可直接核验"的答案**，它和
+  `邮件会话` 一样是形态结论。给它 0.85 会让它坐上【前 10 项发现】第一席并谎称
+  "可直接提交"——实测 ex04 正是如此，而那道题里没有哪一封邮件是关键邮件
+  （该 pcap 里 `Content-Type`/`filename=`/`PK`/`PDF`/`JPEG` 一个都没有，
+  76 封信封就是全部，不存在被漏掉的可提取对象）。
+  `tests/test_smoke.py::check_mail_envelope_gate()` 两头都守着。
 - **二进制上下文只留最长可读片段**（`core/utils.py::readable_window`，调用点在
   `scanner.py::scan_rawfile.push`）：`isprintable()` **拦不住**二进制按 UTF-16 解码出的乱码——
   `Ā`(U+0100) `Ѐ`(U+0400) `ఀ`(U+0C00) `ᄀ`(U+1100) `⨀`(U+2A00) 全是 printable。实测
@@ -202,6 +231,24 @@ MetaJudge 按 `MODULE_WEIGHTS`（ad 0.95 / memory 0.90 / config 0.85 … scanner
   列表 90% 是 Microsoft/Edge/Teams 遥测，不排会把真 C2 域名挤出 15 条上限；
   `KNOWN_INFRA_SUFFIXES` 因此补了 `.msedge.net` / `.skype.com` / `.xboxlive.com` /
   `.trafficmanager.net` 等 HTTPS 服务后缀（同一份名单也让 DNS 折叠受益）。
+- **域名块按域名聚合、不许截断、厂商折叠**（`[TLS SNI]` 与 `[HTTP服务端]` 两个块，
+  `core/scanner.py`）：光有 SNI 提取还不够，**渲染方式会把答案毁掉**。实测
+  `2025-01-22-traffic-analysis-exercise.pcap`（全 mta 语料里唯一一道问域名的题，
+  答案是 `authenticatoor.org`）三条同时踩中：
+  ① 旧版一行一个 `(域名, IP)`，`login.microsoftonline.com` 一台机器落 10 个 IP = **10 行**，
+  15 个席位里 14 个是同一家的遥测；
+  ② 旧版 `%-38s % sni[:38]` 把 41 字符的 `google-authenticator.burleson-appliance.net`
+  印成 `google-authenticator.burleson-applianc`——**看起来像答案、照抄却核验不了，
+  比不印更坏**；`[HTTP服务端]` 同病（`msedge.b.tlu.dl.delivery.mp.microsoft.`）；
+  ③ 唯一的答案域名只被查询 1 次，落进"…（其余 108 个省略）"。
+  现在是：按域名聚合成一行（`域名 → N 个 IP（…） ×次数`，`_ip_list()` 负责压 IP 列表）、
+  **不截断**、非基础设施域名逐条列出（上限 20）、基础设施折叠成一行计数
+  （`已知厂商/CDN N 个（遥测/CDN，通常不是答案）: …`）。改完这道题的 SNI 块
+  第 2、3 行就是那两个答案域名。`KNOWN_INFRA_SUFFIXES` 同步补了
+  `.microsoftonline.com` / `.microsoftapp.net` / `.sfx.ms` 与成片的广告/分析后缀
+  （`.demdex.net` / `.doubleclick.net` / `.liveperson.net` / `.clarity.ms` / `.owneriq.net` …）
+  ——`.microsoft.com` 盖不住 `login.microsoftonline.com`，那两条正是从"已知基础设施"
+  漏进【前 10 项发现】第 2、3 席的。`tests/test_smoke.py::check_sni_render()` 守着。
 - **同一条结论只留一条**（`core/blobscan.py::add` 的通用分支）：通用去重键**刻意不含
   `loc`**。历史上是 `(kind, v, loc)`，于是"同一结论在不同会话里各报一次"会全部活下来——
   实测 `dump.pcapng` 是 50 条 FTP 会话连同一台 vsftpd 2.3.4，`漏洞利用：笑脸后门

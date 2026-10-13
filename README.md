@@ -161,7 +161,8 @@ AD 类题目（Kerberoasting / AS-REP Roasting / NetNTLM 中继 / LDAP 明文绑
   | 0.93 | 高 | LDAP 明文绑定口令 |
   | 0.90 | 高 | 可离线爆破的 RC4 Kerberos 票据（AS-REP / TGS） |
   | 0.85 | 高 | NetNTLMv1/v2 响应（可直接交给 hashcat） |
-  | 0.85 | 高 | 邮件投递信封（`MAIL FROM` → `RCPT TO` + 主题） |
+  | 0.85 | 高 | 邮件投递信封（`MAIL FROM` → `RCPT TO` + 主题；**≤8 封**时逐封列出） |
+  | 0.55 | 中 | 邮件投递形态（**>8 封**只报发件域/收件域分布 + 3 个样例，不逐封刷屏） |
   | 0.97 | 高 | 明文完整 flag |
   | 0.95 | 高 | 解码后得到完整 flag（hex/base64/DNS 等） |
   | 0.75 | 中 | 内容"加壳"候选（疑似 flag 本体） |
@@ -172,6 +173,7 @@ AD 类题目（Kerberoasting / AS-REP Roasting / NetNTLM 中继 / LDAP 明文绑
   | 0.60 / 0.55 | 中 | 裸花括号片段 `{xxx` / `xxx}` |
   | 0.55 | 中 | 邮件会话形态（会话数 / 自报主机名 / 加密会话数） |
   | 0.45 | 低 | DNS 查询名 |
+  | 0.45 | 低 | 服务发现类 DNS 查询（SRV/`wpad`；折叠成一行按域名计数，域外域名显形） |
   | 0.42 | 低 | 接口短文本响应 |
   | 0.40 | 低 | 关键词上下文 |
 

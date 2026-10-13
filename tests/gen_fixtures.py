@@ -51,6 +51,23 @@ def dns_query(name, qid=0x2026):
             + labels + b'\x00' + struct.pack('>HH', 1, 1))
 
 
+def client_hello(sni=None, hs_type=1):
+    """手搓一个 TLS 记录（单个 record，测试用）。`sni=None` = 不带任何扩展。"""
+    exts = b''
+    if sni is not None:
+        name = sni.encode()
+        exts = (b'\x00\x00' + struct.pack('>H', 5 + len(name))   # ext: server_name
+                + struct.pack('>H', 3 + len(name)) + b'\x00'      # list_len + type
+                + struct.pack('>H', len(name)) + name)
+    body = (b'\x03\x03' + b'\x11' * 32           # version + random
+            + b'\x00'                             # session_id 长度 0
+            + struct.pack('>H', 2) + b'\x13\x01'   # cipher_suites
+            + b'\x01\x00'                          # compression_methods
+            + struct.pack('>H', len(exts)) + exts)
+    hs = bytes([hs_type]) + struct.pack('>I', len(body))[1:] + body
+    return b'\x16\x03\x01' + struct.pack('>H', len(hs)) + hs
+
+
 def pcap_file(frames, linktype=1):
     out = struct.pack('<IHHiIII', 0xa1b2c3d4, 2, 4, 0, 0, 65535, linktype)
     for i, frame in enumerate(frames):
@@ -453,6 +470,98 @@ def build_t12():
     return pcap_file(frames)
 
 
+# t13-sni.pcap 用的 20 个"已知厂商/遥测"SNI：它们必须折进末尾那一行计数，
+# 不能占逐条席位。（都取自实测抓包里成片出现的那批。）
+SNI_INFRA_DOMAINS = (
+    'login.microsoftonline.com', 'static.edge.microsoftapp.net',
+    'v10.events.data.microsoft.com', 'config.edge.skype.com',
+    'www.bing.com', 'assets.msn.com', 'api.msn.com', 'c.bing.com',
+    'kv801.prod.do.dsp.mp.microsoft.com', 'edge.microsoft.com',
+    'windows.msn.com', 'azure.microsoft.com', 'clients2.google.com',
+    'www.google.com', 'g.live.com', 'officeclient.microsoft.com',
+    'browser.events.data.msn.com', 'settings-win.data.microsoft.com',
+    'dpm.demdex.net', 'googleads.g.doubleclick.net',
+)
+
+# 非基础设施的 SNI：一个普通 C2 名 + 一个 >38 字符的长名（旧版 `sni[:38]` 必截断）
+SNI_PLAIN_DOMAINS = (
+    ('evil-c2.example.net', '10.9.9.21'),
+    ('very-long-phishing-domain-name.example.org', '10.9.9.22'),
+)
+
+
+def build_t13():
+    """t13-sni.pcap：[TLS SNI] 的按域名聚合 / 不截断 / 基础设施折叠。
+
+    回归目标：2025-01-22 那道题（全 mta 语料里唯一一道问域名的），答案是
+    `google-authenticator.burleson-appliance.net` 与 `authenticatoor.org`。
+    旧版报告里：前者被 `sni[:38]` 印成 `…burleson-applianc`（照抄核验不了），
+    后者连影子都没有——15 个席位被 `login.microsoftonline.com` 这类遥测按
+    (域名, IP) 逐行占满，直接落进"…（其余 108 个省略）"。
+    """
+    frames, port = [], 47000
+    for dom, ip in SNI_PLAIN_DOMAINS:
+        frames.append(eth_ipv4(tcp(port, 443, 1, client_hello(dom)), 6, dst=ip))
+        port += 1
+    for dom in SNI_INFRA_DOMAINS:
+        frames.append(eth_ipv4(tcp(port, 443, 1, client_hello(dom)), 6, dst='10.9.9.30'))
+        port += 1
+    return pcap_file(frames)
+
+
+def build_t14():
+    """t14-mailspam.pcap：明文投递信封在**多**的时候只报形态，不逐封刷屏。
+
+    回归目标：`extracting-objects-from-pcap-example-04.pcap` 有 113 条 SMTP 会话，
+    逐封列出产出 212 行 `[邮件投递]`（占全文 273 行的 78%），78 条 finding 里
+    76 条是这个 kind，把【前 10 项发现】10 个席位全部占满——而那道题（题名就是
+    "extracting objects from pcap"）真正要找的是抓包里的被提取文件。
+    """
+    frames, port = [], 51000
+    for i in range(12):                       # 12 封 > _MAIL_LIST_MAX(8)
+        sip, cport = '10.0.0.19', port
+        body = (b'220 mx.example.net ESMTP\r\n'
+                b'EHLO spamhost\r\n'
+                b'250 OK\r\n'
+                b'MAIL FROM: <bot%02d@%04d.com>\r\n'
+                b'250 OK\r\n'
+                b'RCPT TO: <victim%02d@yahoo.com>\r\n'
+                b'250 OK\r\n'
+                b'DATA\r\n'
+                b'354 Go\r\n'
+                b'Subject: Your password! - pw%02d\r\n\r\nbody\r\n.\r\n'
+                b'250 Queued\r\n' % (i, 1000 + i, i, i))
+        frames.append(eth_ipv4(tcp(cport, 25, 1, body), 6, src=sip, dst='10.9.9.53'))
+        port += 1
+    return pcap_file(frames)
+
+
+def build_t15():
+    """t15-addns.pcap：服务发现类 DNS 查询折叠成**一行按域名计数**。
+
+    回归目标：2024-09-04 域渗透那道题。它的 DNS 段是 6 条逐条列出的
+    `_ldap._tcp…（服务发现/投毒相关查询）`——全部来自同一台主机对**本域**发起，
+    而该题的四个答案（主机名 DESKTOP-RNVO9AT / IP / MAC / 账号 afletcher）与域名
+    一个字都不沾，这 6 行对解题零引导。
+    但折叠不能连真线索一起埋：`_ldap._tcp.pdc._msdcs.enemywatch.net` 这种**域外**
+    域名的 SRV 查询是有效的，归组计数必须让它显形（"涉及 2 个域"）。
+    """
+    c, dc = '10.9.9.40', '10.9.9.53'
+    names = [
+        b'_ldap._tcp.Default-First-Site-Name._sites.dc._msdcs.bepositive.com',
+        b'_ldap._tcp.Default-First-Site-Name._sites.bepositive.com',
+        b'_ldap._tcp.WIN-CTL9XBQ9Y19.bepositive.com',
+        b'_ldap._tcp.dc._msdcs.bepositive.com',
+        b'_kerberos._tcp.dc._msdcs.bepositive.com',
+        b'wpad.bepositive.com',
+        b'_ldap._tcp.pdc._msdcs.enemywatch.net',      # 域外：必须显形
+    ]
+    frames = [eth_ipv4(udp(53000 + i, 53, dns_query(n, qid=0x4400 + i)), 17,
+                       src=c, dst=dc)
+              for i, n in enumerate(names)]
+    return pcap_file(frames)
+
+
 def generate(outdir):
     os.makedirs(outdir, exist_ok=True)
     files = {
@@ -468,6 +577,9 @@ def generate(outdir):
         't10-ftp.pcap': build_t10(),
         't11-smtp.pcap': build_t11(),
         't12-web.pcap': build_t12(),
+        't13-sni.pcap': build_t13(),
+        't14-mailspam.pcap': build_t14(),
+        't15-addns.pcap': build_t15(),
     }
     for name in sorted(files):
         with open(os.path.join(outdir, name), 'wb') as f:

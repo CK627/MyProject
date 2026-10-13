@@ -8,12 +8,18 @@
 
 纯标准库。用法：analyze_sessions(tcp_streams, add_finding) → [展示行]
 """
+import collections
 import re
 
 from .capture import merge_stream
 
 # ---------------------------------------------------------------- FTP
 _FTP_CMD = re.compile(rb'^([A-Z]{3,5})(?:\s(.*))?$')
+
+# 明文投递信封逐封列出的上限。超过就只报**形态**（发件域/收件域分布 + 3 个样例）：
+# 群发题里逐封列出会占掉整份报告（实测 113 封 = 212 行，78 条 finding 里 76 条是它，
+# 【前 10 项发现】10 个席位全被占满），而信封恰恰是最没有 IOC 的部分。
+_MAIL_LIST_MAX = 8
 
 
 def _ftp_lines(blob):
@@ -349,20 +355,72 @@ def analyze_sessions(tcp_streams, add_finding=None):
             if tls:
                 detail += '；%d 条正文被 STARTTLS 加密' % tls
             add_finding((0.55, '邮件会话', b'', detail, 'SMTP %s' % ', '.join(servers[:4])))
-        # 明文完成的投递信封 = 可直接核验的收发件人（高置信）
+        # 明文完成的投递信封。先做**形态归纳**，再给样例——不逐封列。
+        #
+        # ⚠️ "每封列一行"在群发/僵尸网络题上是灾难：实测
+        # `extracting-objects-from-pcap-example-04.pcap` 有 113 条 SMTP 会话，
+        # 逐封列出 = 212 行 `[邮件投递]`，占全文 273 行的 78%；78 条 finding 里
+        # 76 条是这个 kind，把【前 10 项发现】的 10 个席位**全部**占满——
+        # 那道题（题名就是 "extracting objects from pcap"）真正要找的是抓包里的
+        # 被提取文件，一行都没露出来。
+        #
+        # 信封本身也常常不含 IOC：那道题 113 封的发件人域名（`7162.com`、
+        # `1598.com`…）两两不同、收件人清一色 `@yahoo.com`——前者是随机化伪造、
+        # 后者是受害者。**把"这里没有可用 IOC"说出来**才是引导；
+        # 逐封罗列反而会让人以为捡到了 113 个线索。
+        deliveries = []
         for _s, _sp, _d, _dp, i in mail_sessions:
             if not (i['mail_from'] and i['rcpt_to']):
                 continue
             for sender in i['mail_from'][:2]:
-                pair = '%s → %s' % (sender, ', '.join(i['rcpt_to'][:4]))
-                if pair in mail_pair_seen:
+                key = (sender, tuple(i['rcpt_to'][:4]))
+                if key in mail_pair_seen:
                     continue
-                mail_pair_seen.add(pair)
-                subj = ('；主题: %s' % i['subject'][0]) if i['subject'] else ''
-                lines.append('    [邮件投递] %s%s' % (pair, subj))
+                mail_pair_seen.add(key)
+                deliveries.append((sender, tuple(i['rcpt_to'][:4]),
+                                   i['subject'][0] if i['subject'] else '',
+                                   'SMTP %s:%d→%s:%d' % (_s, _sp, _d, _dp)))
+
+        if deliveries:
+            n = len(deliveries)
+            if n <= _MAIL_LIST_MAX:
+                # 少（十来封以内）：每封都是独立线索，"哪一封是关键邮件"要靠人看，
+                # 逐封列出就是最有用的形态——不要在这里折叠。
+                for sender, rcps, subj, loc in deliveries:
+                    pair = '%s → %s' % (sender, ', '.join(rcps))
+                    subj_s = ('；主题: %s' % subj) if subj else ''
+                    lines.append('    [邮件投递] %s%s' % (pair, subj_s))
+                    if add_finding:
+                        add_finding((0.85, '邮件投递信封', b'', pair + subj_s, loc))
+            else:
+                # 多（群发/僵尸网络）：**形态才是结论**。逐封列出等于刷屏，
+                # 而且会谎称这里有 n 个可用 IOC。
+                sdom = collections.Counter(s.split('@')[-1] for s, _r, _u, _l in deliveries)
+                rdom = collections.Counter(r.split('@')[-1]
+                                           for _s, rs, _u, _l in deliveries for r in rs)
+                shape = ['发件域 %d 个: %s%s'
+                         % (len(sdom),
+                            ', '.join('%s×%d' % (d, c) for d, c in sdom.most_common(3)),
+                            '（每封都不同 = 随机化伪造，不是可用 IOC）'
+                            if len(sdom) == n else ''),
+                         '收件域 %d 个: %s'
+                         % (len(rdom),
+                            ', '.join('%s×%d' % (d, c) for d, c in rdom.most_common(3)))]
+                lines.append('    [邮件投递] %d 封明文信封：%s' % (n, '；'.join(shape)))
+                for sender, rcps, subj, _loc in deliveries[:3]:
+                    subj_s = ('；主题: %s' % subj) if subj else ''
+                    lines.append('    [投递样例] %s → %s%s'
+                                 % (sender, ', '.join(rcps), subj_s))
+                lines.append('    ...（其余 %d 封形态相同，已折叠；信封本身不含 IOC 时'
+                             '不必逐封看）' % (n - 3))
                 if add_finding:
-                    add_finding((0.85, '邮件投递信封', b'', pair + subj,
-                                 'SMTP %s:%d→%s:%d' % (_s, _sp, _d, _dp)))
+                    # 0.55 中，**不是**逐封形态的 0.85 高：一条"76 封"的聚合不是
+                    # "可直接核验"的答案，它是一条形态结论（同 `邮件会话`）。给 0.85
+                    # 会让它坐上【前 10 项发现】第一席并谎称"可直接提交"——实测
+                    # ex04 正是如此，而那道题里没有任何一封邮件是关键邮件。
+                    add_finding((0.55, '邮件投递形态', b'',
+                                 '%d 封明文信封；%s' % (n, '；'.join(shape)),
+                                 'SMTP %s' % ', '.join(servers[:4])))
 
     # ---------------- 爆破工具输出提取（Hydra/Medusa 等）----------------
     # 特征：终端流中出现 "host: X login: Y password: Z"（常带 ANSI 颜色码）

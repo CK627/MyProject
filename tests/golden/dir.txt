@@ -78,6 +78,40 @@
   【低置信（线索参考）】
     [0.42 低] 短文本响应: GET /index.php?id=1%20AND%209418%3D3822%20UNION%20ALL%20SELECT%201%2C2 => ok   @10.9.9.30:52000 -> 10.9.9.40:80
 ==============================================================================
+[文件] t13-sni.pcap (3.3 KB)
+  格式: pcap  链路类型: Ethernet   数据包: 22 个
+  【主机表】IP ↔ MAC / 主机名（ARP+Ethernet+DHCP+NBNS）：
+    10.9.9.10       02:00:00:00:00:02
+  [TLS SNI]（HTTPS 握手明文里的服务名；已知厂商/CDN 折叠在末尾）：
+    evil-c2.example.net                    10.9.9.21          ×1
+    very-long-phishing-domain-name.example.org 10.9.9.22          ×1
+    已知厂商/CDN 20 个（遥测/CDN，通常不是答案）: login.microsoftonline.com static.edge.microsoftapp.net v10.events.data.microsoft.com config.edge.skype.com www.bing.com assets.msn.com api.msn.com c.bing.com kv801.prod.do.dsp.mp.microsoft.com edge.microsoft.com …
+  (无命中)
+==============================================================================
+[文件] t14-mailspam.pcap (3.1 KB)
+  格式: pcap  链路类型: Ethernet   数据包: 12 个
+  【主机表】IP ↔ MAC / 主机名（ARP+Ethernet+DHCP+NBNS）：
+    10.0.0.19       02:00:00:00:00:02
+  [邮件会话] 12 条 SMTP：10.0.0.19 → 1 个邮件服务器
+    客户端自报主机名(HELO/EHLO): spamhost
+    信封: MAIL FROM <bot00@1000.com, bot01@1001.com, bot02@1002.com, bot03@1003.com> → RCPT TO <victim00@yahoo.com, victim01@yahoo.com, victim02@yahoo.com, victim03@yahoo.com, victim04@yahoo.com, victim05@yahoo.com>
+    主题: Your password! - pw00 | Your password! - pw01 | Your password! - pw02 | Your password! - pw03
+    [邮件投递] 12 封明文信封：发件域 12 个: 1000.com×1, 1001.com×1, 1002.com×1（每封都不同 = 随机化伪造，不是可用 IOC）；收件域 1 个: yahoo.com×12
+    [投递样例] bot00@1000.com → victim00@yahoo.com；主题: Your password! - pw00
+    [投递样例] bot01@1001.com → victim01@yahoo.com；主题: Your password! - pw01
+    [投递样例] bot02@1002.com → victim02@yahoo.com；主题: Your password! - pw02
+    ...（其余 9 封形态相同，已折叠；信封本身不含 IOC 时不必逐封看）
+  【中置信（需人工确认）】
+    [0.55 中] 邮件会话: 12 条 SMTP 会话，目标 1 个服务器；客户端自报名 spamhost   @SMTP 10.9.9.53:25
+    [0.55 中] 邮件投递形态: 12 封明文信封；发件域 12 个: 1000.com×1, 1001.com×1, 1002.com×1（每封都不同 = 随机化伪造，不是可用 IOC）；收件域 1 个: yahoo.com×12   @SMTP 10.9.9.53:25
+==============================================================================
+[文件] t15-addns.pcap (0.8 KB)
+  格式: pcap  链路类型: Ethernet   数据包: 7 个
+  【主机表】IP ↔ MAC / 主机名（ARP+Ethernet+DHCP+NBNS）：
+    10.9.9.40       02:00:00:00:00:02
+  【低置信（线索参考）】
+    [0.45 低] DNS查询（服务发现类，已折叠）: 7 条，涉及 2 个域: bepositive.com×6、enemywatch.net×1（域外域名的 SRV 查询值得追）   @共 7 条 UDP/53 查询
+==============================================================================
 [文件] t2.pcapng (0.2 KB)
   格式: pcapng  链路类型: Ethernet   数据包: 1 个
   【主机表】IP ↔ MAC / 主机名（ARP+Ethernet+DHCP+NBNS）：
@@ -194,10 +228,10 @@
 ==============================================================================
 
 【元判断核综合评分】
-总发现项: 33
+总发现项: 36
   高置信（>=0.85）: 17
-  中置信（0.55-0.85）: 8
-  低置信（<0.55）: 8
+  中置信（0.55-0.85）: 10
+  低置信（<0.55）: 9
 
 【前 10 项发现】
   1. [高 0.97] 明文flag
@@ -267,5 +301,5 @@
   * [交互会话记录] 命令序列: whoami; ipconfig; net user   (来自 t7-tls.pcap)
   * [系统版本] 10.0.19041.1   (来自 t7-tls.pcap)
 【扫描统计】
-  线路报告（抓包/原始文件）：高 16 条 / 中 9 条 / 低 11 条
-  模块报告（类型块）：高 17 条 / 中 8 条 / 低 8 条
+  线路报告（抓包/原始文件）：高 16 条 / 中 11 条 / 低 12 条
+  模块报告（类型块）：高 17 条 / 中 10 条 / 低 9 条

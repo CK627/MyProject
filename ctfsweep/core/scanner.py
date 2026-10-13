@@ -13,9 +13,10 @@ from .extract import (PWD_POOL, carve_base64_blobs, carve_files,
                       collect_pwds_from_blob, extract_scan)
 from .http import build_http_transactions, http_summary, jwt_summary
 from .utils import (FLAG_RE, JWT_RE, SECRET_LINE_RE, SENSITIVE_NAME_RE,
-                    decode_score, dns_lead_reason, kw_boundary_ok,
-                    kw_hit_bounded, printable_ratio, readable_window, try_b64,
-                    ts_str, under_known_infra)
+                    SERVICE_DISCOVERY_REASON, base_domain, decode_score,
+                    dns_lead_reason, kw_boundary_ok, kw_hit_bounded,
+                    printable_ratio, readable_window, try_b64, ts_str,
+                    under_known_infra)
 
 
 def _is_tls_stream(blob):
@@ -38,6 +39,18 @@ def _is_tls_stream(blob):
                 return True
             pos = window.find(magic, pos + 3)
     return False
+
+
+def _ip_list(ips, limit=3):
+    """把一组 IP 压成一段短文本，供 [TLS SNI] / [HTTP服务端] 的聚合行使用。
+
+    一台机器连 `login.microsoftonline.com` 会落到 10 个不同 IP 上，
+    逐行列出就把席位吃光了——聚合行只需要说清"解析到了几个地址"。
+    """
+    ips = sorted(set(ips))
+    if len(ips) <= limit:
+        return ', '.join(ips)
+    return '%d 个 IP（%s, …）' % (len(ips), ', '.join(ips[:limit]))
 
 
 def tls_sni(blob):
@@ -171,6 +184,7 @@ def scan_capture(data, keywords, do_decode, depth, extract=None, ctx=None):
 
     dns_seen = set()
     dns_routine = []
+    dns_discovery = []
     for num, src, sport, dst, dport, payload in udp_payloads:
         if 53 not in (sport, dport):
             continue
@@ -186,6 +200,12 @@ def scan_capture(data, keywords, do_decode, depth, extract=None, ctx=None):
         reason = dns_lead_reason(q)
         if reason is None:
             dns_routine.append(q)
+        elif reason == SERVICE_DISCOVERY_REASON:
+            # 服务发现查询单独归组，循环后**折叠成一行**（见下方渲染）。这里不能逐条 add：
+            # 域渗透题里 `_ldap._tcp.…` 会成片出现，逐条列出就等于让报告前 6 行全是
+            # 同一台主机的域内 SRV 查询——实测 2024-09-04 那道题正是如此，而该题四个
+            # 答案（主机名 / IP / MAC / 账号）与域名一个字都不沾。
+            dns_discovery.append(q)
         else:
             add((0.45, 'DNS查询', b'', q, '%s（%s）' % (loc, reason)), findings, seen)
         for label in q.split(b'.'):
@@ -203,6 +223,29 @@ def scan_capture(data, keywords, do_decode, depth, extract=None, ctx=None):
              '%d 个：%s%s' % (len(uniq), ' '.join(x.decode('latin-1') for x in uniq[:6]),
                               ' …' if len(uniq) > 6 else ''),
              '共 %d 条 UDP/53 查询' % len(dns_routine)), findings, seen)
+
+    if dns_discovery:
+        # 服务发现查询折叠成**一行、按域名计数**。逐条列出是纯噪音：名字里只有域内
+        # 拓扑（哪台 DC、哪个站点），且每个域环境都长这样。
+        # 但折叠不能埋掉真线索——`_ldap._tcp.pdc._msdcs.enemywatch.net` 这类**域外**
+        # 域名的 SRV 查询是有效的（可能是攻击者控制的域/投毒目标），
+        # 所以这一行按域名归组：域外域名一出现，"涉及 N 个域"立刻会变成 ≥2。
+        groups = collections.OrderedDict()
+        for q in dns_discovery:
+            d = base_domain(q)
+            groups[d] = groups.get(d, 0) + 1
+        ranked = sorted(groups.items(), key=lambda kv: (-kv[1], kv[0]))
+        detail = '、'.join('%s×%d' % (d, c) for d, c in ranked[:4])
+        if len(ranked) > 4:
+            detail += '、…'
+        if len(ranked) == 1:
+            val = '%d 条，均属 %s（域内 SRV/WPAD 常态查询，与答案无关）' % (
+                len(dns_discovery), ranked[0][0])
+        else:
+            val = '%d 条，涉及 %d 个域: %s（域外域名的 SRV 查询值得追）' % (
+                len(dns_discovery), len(ranked), detail)
+        add((0.45, 'DNS查询（服务发现类，已折叠）', b'', val,
+             '共 %d 条 UDP/53 查询' % len(dns_discovery)), findings, seen)
 
     for dirkey, segs, blob in ctx.stream_blobs():
         if len(blob) < 16:
@@ -383,16 +426,34 @@ def scan_capture(data, keywords, do_decode, depth, extract=None, ctx=None):
     if tls_names:
         # HTTPS 正文不可读，SNI 是唯一留在明文里的名字。不给这一块，
         # 全 HTTPS 的 C2/投递域名在报告里一个字都不会出现。
-        # 排序**先按"是否已知厂商基础设施"分两段**：普通主机的 SNI 里
-        # 微软/Edge/Xbox 遥测占九成，纯按次数排会把 C2 挤到第 15 位之后
-        # （实测 2020-09-25 的 `paste.nrecom.net` 正是如此）。
-        print('  [TLS SNI]（HTTPS 握手明文里的服务名 → IP；非常见厂商域名在前）：')
-        ranked = sorted(tls_names.items(),
-                        key=lambda kv: (under_known_infra(kv[0][0]), -kv[1]))
-        for (sni, ip), c in ranked[:15]:
-            print('    %-38s %-18s ×%d' % (sni[:38], ip, c))
-        if len(ranked) > 15:
-            print('    ...（其余 %d 个省略）' % (len(ranked) - 15))
+        #
+        # 三条渲染约定，全部来自 2025-01-22 那道题（答案是两个域名：
+        # `google-authenticator.burleson-appliance.net` 与 `authenticatoor.org`）：
+        # ① **按域名聚合**，不再一行一个 (域名, IP)——旧版 `login.microsoftonline.com`
+        #    一台机器就占 10 行，15 个席位里 14 个是同一家的遥测；
+        # ② **域名不截断**。旧版 `sni[:38]` 把 41 字符的
+        #    `google-authenticator.burleson-appliance.net` 印成 `…burleson-applianc`：
+        #    看起来像答案、照抄却核验不了，比不印更坏；
+        # ③ 已知厂商/CDN 折叠成一行计数，不占逐条席位（旧版把它们和真域名混排，
+        #    只靠排序分前后，数量一多真域名照样被挤出去）。
+        by_name = collections.OrderedDict()
+        for (sni, ip), c in tls_names.items():
+            e = by_name.setdefault(sni, {'ips': [], 'n': 0})
+            e['ips'].append(ip)
+            e['n'] += c
+        plain = sorted([(s, e) for s, e in by_name.items() if not under_known_infra(s)],
+                       key=lambda kv: -kv[1]['n'])
+        infra = sorted([(s, e) for s, e in by_name.items() if under_known_infra(s)],
+                       key=lambda kv: -kv[1]['n'])
+        print('  [TLS SNI]（HTTPS 握手明文里的服务名；已知厂商/CDN 折叠在末尾）：')
+        for s, e in plain[:20]:
+            print('    %-38s %-18s ×%d' % (s, _ip_list(e['ips']), e['n']))
+        if len(plain) > 20:
+            print('    ...（其余 %d 个域名省略）' % (len(plain) - 20))
+        if infra:
+            names = ' '.join(s for s, _e in infra[:10])
+            print('    已知厂商/CDN %d 个（遥测/CDN，通常不是答案）: %s%s'
+                  % (len(infra), names, ' …' if len(infra) > 10 else ''))
 
     if http_reqs:
         # 服务端汇总（host → IP ×次数）。请求行里只有路径没有主机名，
@@ -403,10 +464,18 @@ def scan_capture(data, keywords, do_decode, depth, extract=None, ctx=None):
                 key = (host or '?', ip or '?')
                 srv[key] = srv.get(key, 0) + 1
         if srv:
+            # 与 [TLS SNI] 同理：按 Host 聚合、**不截断**。旧版 `host[:38]` 把
+            # `msedge.b.tlu.dl.delivery.mp.microsoft.com` 印成 `…mp.microsoft.`，
+            # 尾部的真实域名被切掉——域名截断后就不再是 IOC。
+            by_host = collections.OrderedDict()
+            for (host, ip), c in srv.items():
+                e = by_host.setdefault(host, {'ips': [], 'n': 0})
+                e['ips'].append(ip)
+                e['n'] += c
             print('  [HTTP服务端]（Host → IP ×请求数）：')
-            ranked = sorted(srv.items(), key=lambda kv: -kv[1])
-            for (host, ip), c in ranked[:12]:
-                print('    %-38s %-18s ×%d' % (host[:38], ip, c))
+            ranked = sorted(by_host.items(), key=lambda kv: -kv[1]['n'])
+            for host, e in ranked[:12]:
+                print('    %-38s %-18s ×%d' % (host, _ip_list(e['ips']), e['n']))
             if len(ranked) > 12:
                 print('    ...（其余 %d 个服务端省略）' % (len(ranked) - 12))
         print('  [HTTP请求序列] 共 %d 条（按时间）：' % len(http_reqs))

@@ -37,6 +37,15 @@ KNOWN_INFRA_SUFFIXES = (
     ".microsoft.com", ".microsoftaik.azure.net", ".azure.net", ".azure.com",
     ".windowsupdate.com", ".windows.com", ".msftncsi.com", ".msftconnecttest.com",
     ".office.net", ".office.com", ".live.com", ".msn.com", ".bing.com",
+    # 2025-01-22 实测补漏：`.microsoft.com` 盖不住这两家微软自有域，
+    # 于是 `login.microsoftonline.com`（10 个 IP ×17）与 `static.edge.microsoftapp.net`
+    # 从"已知基础设施"漏进【前 10 项发现】的第 2、3 席——占的是答案域名的位置。
+    ".microsoftonline.com", ".microsoftapp.net", ".sfx.ms",
+    # 广告/分析/遥测农场（SNI 与 DNS 里成片出现，且都是"每台机器都连"的常态）：
+    ".demdex.net", ".doubleclick.net", ".liveperson.net", ".lpsnmedia.net",
+    ".innovid.com", ".3lift.com", ".postrelease.com", ".reson8.com",
+    ".bttrack.com", ".clarity.ms", ".go-mpulse.net", ".vidyard.com",
+    ".adobedtm.com", ".owneriq.net", ".googleusercontent.com", ".nvidia.com",
     # Edge/Teams/Xbox/更新链路的 HTTPS 服务名（实测一台普通 Windows 主机的
     # SNI 列表里这些占 90%，不豁免就会把真正的 C2 域名挤到列表末尾）
     ".msedge.net", ".skype.com", ".xboxlive.com", ".azureedge.net",
@@ -89,6 +98,38 @@ _DYNDNS_SUFFIXES = (
 _DISCOVERY_PREFIXES = ('wpad.', 'isatap.', '_ldap._tcp', '_kerberos._tcp',
                        '_gc._tcp', '_vlmcs._tcp', '_kpasswd._tcp')
 _DISCOVERY_MARKS = ('_msdcs', '_sites')
+
+# `dns_lead_reason` 的服务发现原因串。抽成常量是因为 `scanner.py` 要按它**分流**：
+# 这类查询不再逐条列出，而是按域名归组成一行（详见 scanner 的渲染处）。
+SERVICE_DISCOVERY_REASON = '服务发现/投毒相关查询'
+
+# 需要三段才构成"注册域"的公共后缀（`.co.uk` 的注册域是 `example.co.uk` 而非 `co.uk`）。
+# 只列取证流量里常见的，不追求完整——见 base_domain 的说明。
+_MULTI_LABEL_SUFFIXES = frozenset((
+    'co.uk', 'org.uk', 'ac.uk', 'gov.uk', 'me.uk', 'net.uk', 'sch.uk',
+    'com.cn', 'net.cn', 'org.cn', 'gov.cn', 'edu.cn', 'ac.cn',
+    'com.au', 'net.au', 'org.au', 'edu.au', 'gov.au', 'co.nz',
+    'co.jp', 'or.jp', 'ne.jp', 'ac.jp', 'go.jp', 'co.kr', 'or.kr',
+    'com.tw', 'org.tw', 'com.hk', 'org.hk', 'com.sg', 'com.ph', 'com.my',
+    'co.in', 'net.in', 'org.in', 'com.br', 'com.mx', 'com.ar', 'co.za',
+    'co.th', 'com.vn', 'com.tr', 'com.ua', 'com.pl',
+))
+
+
+def base_domain(name):
+    """取域名的"注册域"部分（`_ldap._tcp.dc._msdcs.a.example.co.uk` → `example.co.uk`）。
+
+    只用于把一串服务发现查询**按域归组**，不参与任何判定——分组错了最多少列一个域
+    计数，不抬高也不压低任何分数。所以这里用"最后两段 + 少量三段后缀"的近似，
+    不引入公共后缀表：那会把"零依赖"的定位拖进一个需要持续维护的数据依赖。
+    """
+    s = name.decode('latin-1') if isinstance(name, bytes) else str(name)
+    labels = [x for x in s.lower().rstrip('.').split('.') if x]
+    if len(labels) <= 2:
+        return '.'.join(labels)
+    if '.'.join(labels[-2:]) in _MULTI_LABEL_SUFFIXES:
+        return '.'.join(labels[-3:])
+    return '.'.join(labels[-2:])
 
 # 反向解析（PTR）名：`1.10.168.192.in-addr.arpa` / `…ip6.arpa` 是把 IP 倒着拼出来的
 # 名字，结构上根本不是域名。实测 B.pcap 里 `1.10.168.192.in-addr.arpa` 被查了 948 次，
@@ -167,11 +208,11 @@ def dns_lead_reason(name):
 
     # SRV 定位记录（RFC 2782 的 `_ldap._tcp...` / `_msdcs` / `_sites`）**必须先于长度判定**：
     # 这类名字普遍 70+ 字符，会先撞上下面的"域名超长（多段拼接外带特征）"。
-    # 它们不折叠（查 `_ldap._tcp.pdc._msdcs.enemywatch.net` 这类陌生域仍是线索，
-    # 见 test_smoke 的断言），但原因要如实标成"服务发现"，不能报成外带隧道。
-    # 实测 bepositive.com 那道题，DNS 段 7 条线索里 4 条是这种错标。
+    # 原因要如实标成"服务发现"，不能报成外带隧道——实测 bepositive.com 那道题，
+    # DNS 段 7 条线索里 4 条是这种错标。返回非 None 表示"这是结构异常、值得单独成组"；
+    # 渲染端（scanner）把这一组折叠成一行并按域名计数，域外域名照样看得见。
     if any(x.startswith('_') for x in s.split('.')):
-        return '服务发现/投毒相关查询'
+        return SERVICE_DISCOVERY_REASON
 
     labels = s.lower().split('.')
     # 编码外带看原串（大小写混排是 base64 的特征，lower() 之后就看不出来了）
@@ -186,9 +227,9 @@ def dns_lead_reason(name):
             return '动态 DNS / 内网穿透域名'
     for pre in _DISCOVERY_PREFIXES:
         if s.startswith(pre):
-            return '服务发现/投毒相关查询'
+            return SERVICE_DISCOVERY_REASON
     if any(m in s for m in _DISCOVERY_MARKS):
-        return '服务发现/投毒相关查询'
+        return SERVICE_DISCOVERY_REASON
 
     tld = labels[-1]
     if tld in _ABUSED_TLDS:
