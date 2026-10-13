@@ -1106,13 +1106,22 @@ def main():
         rc, out = run_cli([])
         check(rc == 1 and '用法' in out, '无参数时打印帮助并返回 1')
         rc, out = run_cli(['--help'])
-        check(rc == 0 and '置信度模型' in out, '--help 返回 0')
+        # 帮助是 ptool 形态的薄索引（标题/用法/子命令/选项/示例/说明）；
+        # 「示例」段是这套形态的招牌，也当作"这确实是那份帮助"的锚点
+        check(rc == 0 and '用法' in out and '示例' in out, '--help 返回 0（薄索引形态）')
         check(all(s in out for s in ('update', 'install', 'uninstall', 'config', 'help')),
               '--help 含管理子命令（update/install/uninstall/config/help）')
         check(not any(re.search(r'^\s*ctfsweep\s+%s\b' % re.escape(s), out, re.M)
                       for s in _REMOVED_SUBCOMMANDS),
               '--help 无训练/标注子命令（%s）' % '/'.join(_REMOVED_SUBCOMMANDS))
-        check('扫描缓存（每次扫描自动写入）' in out, '--help 说明扫描缓存（替换原「留存区」段）')
+        # README 不随安装载荷发布，装机用户手上只有 --help，所以「说明」里
+        # 缓存在哪/是否自动写必须自足。"留存区"是被替换掉的旧段名，反向断言防它漂回来
+        check('每次扫描都写缓存' in out and '留存区' not in out,
+              '--help 说明扫描缓存（替换原「留存区」段）')
+        # 反向断言：散文墙别漂回来（history: 曾把置信度分数表 13 行 + 判断核 3 行 +
+        # 缓存 5 行整块铺进帮助，共 63 行；改薄后 45 行）。上限留 5 行余量
+        check(len(out.splitlines()) <= 50,
+              '--help 保持精简（%d 行 ≤ 50，防散文墙漂回来）' % len(out.splitlines()))
         rc, out = run_cli(['/no/such/file.pcap'])
         check(rc == 2, '路径不存在时返回 2')
         rc, out = run_cli(['config'])

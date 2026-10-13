@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ctfsweep"
-description = "CTF 流量 / 日志 / 注册表 快速扫描器（零依赖，带置信度分级）"
+description = "CTF / 应急响应取证扫描器（零依赖，带置信度分级）"
 readme = "README.md"
 requires-python = ">=3.8"
 license = { text = "MIT" }

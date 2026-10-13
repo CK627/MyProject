@@ -23,67 +23,58 @@ from .core.meta_judge import MetaJudge
 from .core.report import report
 from .core.utils import BAND_HIGH, BAND_MID, FLAG_RE, level_of
 
-HELP = """ctfsweep — CTF 流量 / 日志 / 注册表 快速扫描器（零依赖，Python 3.8+）
+# 帮助文本是**薄索引**（形态对齐同仓库的 jtool / ptool）：
+# 标题 / 用法 / 子命令 / 选项 / 示例 / 说明，六个部分各司其职，散文细节回流 README。
+# 两条排版约定（改动时别破坏）：
+#   · 每个选项、每个子命令、每条示例**严格一行**——多行续写正是"帮助太乱"的来源；
+#   · 各段的描述列按**显示宽度**对齐（CJK 占两列，与 ptool 的 `用法` 段同一算法）。
+# ⚠️ README 不随安装载荷发布（见 installer/deploy.sh 白名单），装机用户手上只有这一份，
+#    所以末尾「说明」三条必须自足，不能写成"详见 README"。
+# 改这里要同步：tests/test_smoke.py 的两条锚点断言 + 「≤50 行」上限反向断言。
+HELP = """ctfsweep - CTF / 应急响应取证扫描器（零依赖，Python 3.8+）
 
 用法:
-  ctfsweep <文件或目录> [选项]           # 已安装（PATH 中）
-  python3 -m ctfsweep <文件或目录> ...   # 未安装，项目目录内直接跑
-  ./bin/ctfsweep.sh <文件或目录> ...     # 仓库启动器（macOS / Linux）
+  ctfsweep <文件或目录> [选项]          扫描（pcap · evtx · reg · 文本 · 内存镜像 …）
+  ctfsweep <子命令> [参数]              管理子命令（见下）
+  python3 -m ctfsweep <文件或目录> ...  未安装时在项目目录内直接跑
+  ./bin/ctfsweep.sh <文件或目录> ...    仓库启动器（macOS / Linux）
 
-管理子命令:
+子命令:
   ctfsweep update [--check]   拉取最新源码快照并重装（--check 只比对版本，不落盘）
   ctfsweep install            显示安装方式（装到 devtools 目录）
   ctfsweep uninstall [-y]     卸载安装副本并摘除 shell 接线（扫描缓存保留；-y 跳过确认）
   ctfsweep config             显示运行信息与生效配置（含扫描缓存占用）
   ctfsweep help               显示本帮助
 
-支持输入: pcap / pcapng（抓包）、evtx（事件日志）、.reg / 任意文本
-
 选项:
-  -f, --file F      指定要扫描的文件（等同位置参数，两种写法都行）
-  -F, --folder D    指定要扫描的文件夹（递归扫描其中全部文件，适合整个项目目录）
-  -k, --keywords    额外关键词(逗号分隔)，默认仅 flag,ctf
-  --min-score N     只显示置信度 >= N 的结果（默认 0.40，设 0 显示全部）
+  -f --file F       指定要扫描的文件（等同位置参数）
+  -F --folder D     指定要扫描的文件夹（递归其中全部文件）
+  -k --keywords L   追加关键词（逗号分隔，默认 flag,ctf）
+  --min-score N     只显示置信度 >= N 的结果（默认 0.40，0 显示全部）
   --no-decode       关闭 hex / base64 自动解码
-  --depth N         解码链最大深度（默认 3，即 hex/base64 可反复套娃）
+  --depth N         解码链最大深度（默认 3）
   --limit N         每个文件最多输出条数（默认 50，按置信度排序后截取）
-  -q, --brief       精简输出：控制台只打「分档统计块」（高/中/低 + 缓存文件路径），
-                    详细报告不上屏（两种模式都写缓存，见下）
-  --extract         从流量中提取文件（ZIP/PNG/JPG/GIF/PDF/GZ/RAR/7Z/PE/OLE2/ELF，
-                    以及 HTML 载荷页内嵌的 base64 文件），
-                    保存到 "<抓包名>_extracted/" 并自动解压/扫描其内容；
-                    加密 zip 自动尝试：空口令→常用表→--pwd-file 字典→流量采集口令
-  --extract-dir D   指定提取输出目录（默认与抓包同目录）
+  -q --brief        精简输出：控制台只打分档统计块（两种模式都写缓存）
+  --extract         提取流量中的文件并扫其内容（加密 zip 自动尝试口令）
+  --extract-dir D   提取输出目录（默认 "<抓包名>_extracted/"，与抓包同目录）
   --pwd-file F      附加口令字典文件（每行一个，用于加密压缩包）
-  --judge           用判断核模型对候选打分（p=…，并列出重点候选；模型随版本发布）
-  --config F        指定配置文件（默认读取 ~/.devtools/ctfsweep/ctfsweep.conf）
+  --judge           用判断核模型对候选打分（p=…，模型随版本发布）
+  --config F        指定配置文件（默认 ~/.devtools/ctfsweep/ctfsweep.conf）
   --version         显示版本
-  -h, --help        显示本帮助
+  -h --help         显示本帮助
 
-置信度模型（每条结果带 [分数 级别]）:
-  0.97 高   明文完整 flag（xxx{...} 直接可见）
-  0.95 高   解码后得到完整 flag（hex/base64/DNS 子域名等）
-  0.75 中   内容"加壳"候选（疑似 flag 本体、缺 flag{} 外壳）
-  0.72 中   JWT 令牌（自动解码 header/payload，伪造身份类题）
-  0.65 中   (flag|ctf)…{ 未闭合片段（典型的分段 flag 前半截）
-  0.62 中   命令回显 / 环境变量密钥回显（webshell、取证题关键线索）
-  0.60 中   裸花括号片段 {xxxx
-  0.55 中   裸闭合片段 xxxx}
-            （evtx / reg 等原始文件自动剔除噪音：GUID / 路径后缀拼贴 / 乱码区巧合）
-  0.45 低   DNS 查询名（域名白名单一眼可辨）
-  0.42 低   接口短文本响应（HTTP 事务配对结果）
-  0.40 低   关键词上下文（普通字符串命中，需人工浏览）
+示例:
+  ctfsweep capture.pcap                  扫描一个抓包
+  ctfsweep ./logs/ -k flag1,flag2        扫整个目录并追加关键词
+  ctfsweep capture.pcap --min-score 0.85 只看高置信（直接要答案）
+  ctfsweep capture.pcap --extract        提取流量中的文件
+  ctfsweep capture.pcap --judge          判断核打分排序
+  ctfsweep update                        更新到最新版
 
-判断核（--judge）:
-  轻量判断网络（纯 Python MLP 集成，二进制 .ctfj 模型），对候选输出 p 分并按"答案相关性"排序；
-  模型随版本发布，在项目内 models/（model.ctfj；安装态落在 <安装根>/lib/models）；
-  离线训练脚本不在安装载荷内，在源码仓库 lab/（lab/train.py + lab/dataset.jsonl）
-
-扫描缓存（每次扫描自动写入）:
-  每个文件的完整报告与分档明细写入 ~/.devtools/ctfsweep/cache/<文件名>-<路径哈希>/：
-  1.txt（高置信）/ 2.txt（中置信）/ 3.txt（低置信）/ <文件名>_cache.txt（完整报告）；
-  -q 只影响控制台是否上屏详细报告，两个模式写出的缓存内容相同；
-  缓存只增不减（装/卸/更新都不碰），占用与路径见 ctfsweep config
+说明:
+  结果按置信度分档: >= 0.85 高（可直接核验）/ >= 0.55 中（需人工确认）/ 其余低
+  每次扫描都写缓存: ~/.devtools/ctfsweep/cache/（只增不减，占用见 ctfsweep config）
+  判断核为轻量 MLP，加 --judge 才跑；模型随版本发布，离线训练见仓库 lab/train.py
 """
 
 
