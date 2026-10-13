@@ -26,9 +26,6 @@
     [0.45 低] DNS查询: ZmxhZ3tkbnMtc21va2Utb2t9.exfil.smoke   @10.9.9.10 -> 10.9.9.20（超长标签（编码外带/隧道特征））
     [0.45 低] 关键词[flag]: ...zk5OTk5OTk5fQ.smoke-signature plain: flag{plain-smoke-ok} hex: 666c61677b6833782d736d6f6b652d6f6b7d PWD=/AstrBot WEBUI_SK=Advanced_System_for_Text...   @10.9.9.10:40001 -> 10.9.9.20:8080 (会话拼接 292B)
 
-[留存区] 已记录本次扫描（6 条候选）：<TMP>/work/t1.pcap
-  已知答案可回填: ctfsweep mark "<TMP>/work/t1.pcap" <真实flag>
-
 ==============================================================================
 
 【元判断核综合评分】
@@ -83,3 +80,7 @@
 【扫描统计】
   线路报告（抓包/原始文件）：高 3 条 / 中 3 条 / 低 2 条
   模块报告（类型块）：高 3 条 / 中 4 条 / 低 2 条
+
+【扫描缓存】本次 1 个文件，报告与分档明细已写入:
+  <TMP>/data/cache/<名>-<哈希>/
+  完整报告见各目录下的 <文件名>_cache.txt；占用与清理见 ctfsweep config

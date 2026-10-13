@@ -10,7 +10,7 @@
 #   系统级（默认）: /Library/devtools/ctfsweep     (macOS)
 #                   /usr/local/devtools/ctfsweep  (Linux)
 #   用户级（CTFSWEEP_USER=1，无需密码）: ~/.devtools/ctfsweep
-#   用户数据目录（扫描时惰性创建，永不删除）: ~/.devtools/ctfsweep/judge/ 等
+#   扫描缓存目录（扫描时惰性创建，永不删除）: ~/.devtools/ctfsweep/cache/
 #
 # 层级选择（与 jtool / ptool 一致：一键安装直接装系统级，脚本内提示管理员密码）:
 #   · 默认            → 系统级；需要写 /Library 时用 sudo 执行落盘（会提示输密码）
@@ -126,7 +126,7 @@ run_priv bash "$ROOT/installer/deploy.sh" "$ROOT" "$INSTALL"
 # ---- shell 接线（成对标记块，幂等；rc 不存在时创建）----
 bash "$ROOT/installer/shell-setup.sh" install "$INSTALL"
 
-# ---- sudo 场景：把用户数据目录交还登录用户（扫描时才创建，这里只处理已存在的）----
+# ---- sudo 场景：把扫描缓存目录交还登录用户（扫描时才创建，这里只处理已存在的）----
 if [ "$(id -u)" = "0" ] && [ -n "${SUDO_USER:-}" ] && [ -d "$USER_DIR" ]; then
     chown -R "$SUDO_USER" "$USER_DIR" 2>/dev/null || true
 fi

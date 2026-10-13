@@ -8,9 +8,9 @@
     素材目录（ctfsweep.sh + ctfsweep.bat），整体进 PATH 会让 zsh 的命令名补全同时列出
     ctfsweep 与 ctfsweep.bat —— 命令名补全走 $commands 哈希，而它不检查可执行位。
   · update = 读远端 VERSION 比对 → 下载源码快照 → 交给快照里的 installer/deploy.sh 重装。
-    部署只删功能项，**永不 rm -rf 安装根**：用户级安装下那里还住着 judge/ cache/ 等用户
-    数据（~/.devtools/ctfsweep/ 下的 judge/ cache/ auto_learn/），硬契约是
-    「永不自动删除，uninstall 也保留」。
+    部署只删功能项，**永不 rm -rf 安装根**：用户级安装下那里还住着数据目录
+    （~/.devtools/ctfsweep/：扫描结果缓存 cache/ 与各题图片缓存），
+    硬契约是「永不自动删除，uninstall 也保留」。
   · models 随安装部署到 <安装根>/lib/models —— judge.project_dir() 在安装态解析为
     <安装根>/lib，不装的话 --judge 会**静默**退化成「未训练」。
   · 环境变量：CTFSWEEP_USER（1 = 装用户级而非系统级）、
@@ -334,7 +334,7 @@ def _shell_setup(action, root):
 
 
 def cmd_update(argv):
-    """ctfsweep update [--check]：拉取最新源码快照并重装（用户数据保留）。"""
+    """ctfsweep update [--check]：拉取最新源码快照并重装（扫描缓存保留）。"""
     check_only = False
     for a in argv:
         if a == '--check':
@@ -423,7 +423,7 @@ def cmd_update(argv):
             print('已是最新版本 (v%s)，并补齐了缺失组件。' % snap_ver)
         else:
             print('更新完成: v%s → v%s' % (local_ver or '?', snap_ver))
-        print('  重开终端或 source 配置文件后生效；用户数据（judge/ cache/ 等）未受影响。')
+        print('  重开终端或 source 配置文件后生效；扫描缓存（数据目录）未受影响。')
         return 0
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
@@ -452,7 +452,7 @@ def cmd_install(argv):
 
 
 def cmd_uninstall(argv):
-    """ctfsweep uninstall [-y]：卸载安装副本并摘除 shell 接线（用户数据保留）。"""
+    """ctfsweep uninstall [-y]：卸载安装副本并摘除 shell 接线（扫描缓存保留）。"""
     assume_yes = False
     for a in argv:
         if a in ('-y', '--yes'):
@@ -481,7 +481,7 @@ def cmd_uninstall(argv):
             print('检测到非交互环境，请加 -y 跳过确认: ctfsweep uninstall -y')
             return 1
         try:
-            ans = input('确定要卸载 ctfsweep 吗？（用户数据会保留）(y/n): ')
+            ans = input('确定要卸载 ctfsweep 吗？（扫描缓存会保留）(y/n): ')
         except EOFError:
             ans = ''
         if ans.strip().lower() not in ('y', 'yes'):

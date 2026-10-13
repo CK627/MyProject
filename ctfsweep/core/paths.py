@@ -1,0 +1,35 @@
+# -*- coding: utf-8 -*-
+"""用户数据目录布局（单点定义，cli / 测试共用）。
+
+数据根 = $CTFSWEEP_DATA_DIR 或 ~/.devtools/ctfsweep，**下面只有 cache/**：
+
+    <数据根>/cache/<文件名>-<路径哈希6位>/
+        1.txt（高置信）/ 2.txt（中置信）/ 3.txt（低置信）
+        <文件名>_cache.txt（该文件的完整报告，含本次运行汇总尾段）
+
+每次扫描（默认模式与 -q 都是）写入这份缓存——跑完就能回看，不必重扫。
+缓存**只增不减**：装/卸/更新都不会碰它，确认不需要时由用户整体删除
+（`ctfsweep config` 会报出占用与路径）。
+
+⚠️ 布局契约改这里一处即可，不要在别处再拼 `cache` 路径或另写一份数据根解析。
+"""
+import os
+
+DATA_DIR_ENV = 'CTFSWEEP_DATA_DIR'
+
+
+def data_root():
+    """用户数据根目录（默认 ~/.devtools/ctfsweep）。
+
+    环境变量 CTFSWEEP_DATA_DIR 可覆盖（测试隔离与多环境用）；语义是**根**，
+    缓存落在其下的 cache/。
+    """
+    root = os.environ.get(DATA_DIR_ENV)
+    if root:
+        return os.path.expanduser(root)
+    return os.path.join(os.path.expanduser('~'), '.devtools', 'ctfsweep')
+
+
+def cache_root():
+    """扫描缓存根目录（<数据根>/cache）。目录不存在时不创建，调用方按需 makedirs。"""
+    return os.path.join(data_root(), 'cache')

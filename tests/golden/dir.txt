@@ -222,9 +222,6 @@
     [0.45 低] DNS查询: Zm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFyZm9vYmFy.exfil.tunnel-domain.com   @10.9.9.10 -> 10.9.9.20（超长标签（编码外带/隧道特征））
     [0.42 低] DNS查询（常规域名，已折叠）: 1 个：adsh.wagbridge.taobao.alimama.com.gds.alibabadns.com   @共 1 条 UDP/53 查询
 
-[留存区] 已记录本次扫描（21 条候选）：<TMP>/work
-  已知答案可回填: ctfsweep mark "<TMP>/work" <真实flag>
-
 ==============================================================================
 
 【元判断核综合评分】
@@ -303,3 +300,21 @@
 【扫描统计】
   线路报告（抓包/原始文件）：高 16 条 / 中 11 条 / 低 12 条
   模块报告（类型块）：高 17 条 / 中 10 条 / 低 9 条
+
+【扫描缓存】本次 15 个文件，报告与分档明细已写入:
+  <TMP>/data/cache/<名>-<哈希>/
+  <TMP>/data/cache/<名>-<哈希>/
+  <TMP>/data/cache/<名>-<哈希>/
+  <TMP>/data/cache/<名>-<哈希>/
+  <TMP>/data/cache/<名>-<哈希>/
+  <TMP>/data/cache/<名>-<哈希>/
+  <TMP>/data/cache/<名>-<哈希>/
+  <TMP>/data/cache/<名>-<哈希>/
+  <TMP>/data/cache/<名>-<哈希>/
+  <TMP>/data/cache/<名>-<哈希>/
+  <TMP>/data/cache/<名>-<哈希>/
+  <TMP>/data/cache/<名>-<哈希>/
+  <TMP>/data/cache/<名>-<哈希>/
+  <TMP>/data/cache/<名>-<哈希>/
+  <TMP>/data/cache/<名>-<哈希>/
+  完整报告见各目录下的 <文件名>_cache.txt；占用与清理见 ctfsweep config

@@ -42,12 +42,21 @@ python3 tests/test_smoke.py
 
 # 生成确定性测试样例（pcap/pcapng/evtx/内嵌 zip/AD 域流量/USB/TLS/主机表）
 python3 tests/gen_fixtures.py /tmp/fixtures
+
+# 特征化回归（16 个基线逐字节比对；不进 CI，重构期手工跑）
+python3 tests/test_golden.py            # 比对
+python3 tests/test_golden.py --record   # 重录（重录前逐行核对 diff！）
+
+# 离线训练判断核（运行时不提供训练入口，只有这条脚本）
+python3 lab/train.py --data lab/dataset.jsonl --out models/model.ctfj
 ```
 
 **单个测试怎么跑**：`tests/test_smoke.py` 是一条线性脚本，没有 pytest/测试发现机制。
 断言走 `check(cond, msg)`，失败只累加到 `FAILS` 并在末尾统一打印。
 要隔离调试某一节（如 `check_judge(tmp)`），在临时目录里 `gen_fixtures.generate(tmp)`
 后再调用该节的函数即可。定位失败项用 `python3 tests/test_smoke.py 2>&1 | grep FAIL`。
+`check_judge` 走 `subprocess` 跑 `lab/train.py`（那是它唯一的训练入口），
+`check_scan_cache` 断言两种模式的缓存内容一致、且数据根下没有 `judge/`。
 
 **测试必须隔离数据目录**，否则会污染真实缓存（`main()` 用 `try/finally` 设置）：
 
@@ -337,6 +346,10 @@ MetaJudge 按 `MODULE_WEIGHTS`（ad 0.95 / memory 0.90 / config 0.85 … scanner
 与 `kw_boundary_ok()`（词内误报闸门：`FolderValueFlags`、`create_pdo_flag`、`msctf_`）。
 DNS 相关的 `KNOWN_INFRA_SUFFIXES` / `dns_lead_reason` 也在这里（见上文「噪音闸门」）。
 
+`core/paths.py` 是**数据目录布局的单点定义**（`data_root()` / `cache_root()`，
+`CTFSWEEP_DATA_DIR` 的语义仍是"根"）——`cli.brief_cache_root()` 与测试都调它，
+**不要在别处再拼一遍 `cache` 路径或另写一份数据根解析**。
+
 ⚠️ **`merge_stream()` 的缓冲区按"序号跨度"分配，跨度必须先过合理性闸门**：
 同一个客户端临时端口被多条连接复用（或序号被伪造）时，几个互不相干的 ISN 会被按
 4 元组聚合到一起，序号之间根本没有可比性。实测 spambot.pcap：7 条"流"各有 3 个包、
@@ -346,29 +359,32 @@ DNS 相关的 `KNOWN_INFRA_SUFFIXES` / `dns_lead_reason` 也在这里（见上�
 （`tests/test_smoke.py::check_stream_merge()` 守着：正常合并 / last-wins / 巨跨度退化 /
 小空洞补零四种情形）。
 
-### 判断核（本地 MLP，可训练）
+### 判断核（本地 MLP，**运行时只推理**）
 
-`core/judge.py`（最大的模块）自成一套：140 维特征的手写 MLP 集成（5 种子），
-二进制 `.ctfj` 格式（`core/model_io.py`），以及**数据生命周期**：
+`core/judge.py`：140 维特征的手写 MLP 集成（5 种子）+ 二进制 `.ctfj` 格式
+（`core/model_io.py`）。**自学习闭环已整体移除**——运行时没有任何训练/标注入口：
 
 ```
-每次扫描 → 候选快照写入留存区 retention.jsonl（RETENTION_MIN_SCORE=0.6 以上）
-        → ctfsweep mark <路径> <真实flag>：命中答案的候选=正样本，同题其他高分候选=难负样本
-        → 累积到 dataset.jsonl
-        → ctfsweep train / learning：留一组评估 + 全量重训
-        → 模型写回 models/model.ctfj
+离线（仓库内，不随安装提供）           运行时装机后
+  lab/build_dataset.py  → lab/dataset.jsonl
+  lab/data_generator.py → 合成样本      ctfsweep <文件> --judge
+  lab/train.py          → models/model.ctfj   →  p= 分 + 【判断核·重点候选】
 ```
 
 - **模型与超参数随版本发布**：`models/model.ctfj` + `models/train_config.json`
   （改网络结构/学习率/种子改 JSON，不改代码）。⚠️ `models_dir()` 走 `judge.project_dir()`，
   而后者是 `judge.py` 上溯三级目录——**安装态下解析成 `<安装根>/lib/models`**，所以
   `deploy.sh` 必须把 `models/` 一起装（不装则 `--judge` **静默**显示「未训练」，不报错；
-  `tests/smoke.sh` 第 5 步断言 `lib/models/model.ctfj` 存在）。系统级安装下该目录属 root，
-  `train` 需 `sudo`。
-- **运行时数据在用户目录**：`~/.devtools/ctfsweep/judge/`（`retention.jsonl`/`pending.jsonl`/
-  `dataset.jsonl`）。**这些数据永不自动删除**——`update` 与 `uninstall` 都只覆盖功能项
+  `tests/smoke.sh` 第 5 步断言 `lib/models/model.ctfj` 存在）。
+- ⚠️ **`judge.py` 的删除边界由 `model_io` 反向约束**：`core/model_io.py` 要
+  `judge.FEATURES / JudgeNet / JudgePredictor / param_count` 才能把 `.ctfj` 还原成网络，
+  这些**一个都不能删**；`JudgeNet.train()` 也要留着（`lab/train.py` 靠它）。删掉的是数据
+  生命周期那一半：`record_scan`/留存区/`save_pending`/`mark_answers`/`learning_loop` 等。
+- **数据目录只有一个语义：扫描缓存**。`~/.devtools/ctfsweep/cache/`（布局单点在
+  `core/paths.py`），**永不自动删除**——`update` 与 `uninstall` 都只覆盖功能项
   （`bin lib completions config VERSION uninstall deploy.sh shell-setup.sh`），
-  **永不 `rm -rf <安装根>`**；`tests/smoke.sh` 7.4/7.6 各埋一个 `judge/dataset.jsonl` 哨兵守着。
+  **永不 `rm -rf <安装根>`**；`tests/smoke.sh` 7.4/7.6 各埋一个
+  `cache/sentinel-abc123/1.txt` 哨兵守着这条契约。
 - 环境变量可覆盖路径（测试与实验靠这些隔离）：`CTFSWEEP_DATA_DIR`、`CTFSWEEP_MODELS_DIR`、
   `CTFSWEEP_TRAIN_CONFIG`、`CTFSWEEP_JUDGE_MODEL`、`CTFSWEEP_CONF`、`CTFSWEEP_MIRROR`、
   `CTFSWEEP_GITHUB`（`none` = 只认镜像，离线验证失败路径用）、`CTFSWEEP_GITHUB_TARBALL`。
@@ -382,7 +398,8 @@ DNS 相关的 `KNOWN_INFRA_SUFFIXES` / `dns_lead_reason` 也在这里（见上�
 🚨 **负样本必须来自同题语境**。`lab/analysis/README.md` 记录了受控实验：把"真实恶意流量"
 （无 flag）题目的高分候选当负样本灌进训练集，留一组评估显示 AUC 0.956→0.779 明显退化。
 原因是同一 `kind`（如 `NetNTLM`/`命令回显`/`片段`）在 CTF 题里就是答案、在真实流量里是噪音，
-模型无法在全局特征空间区分两者。跨题样本只留在留存区（标记 skipped），**不进训练集**。
+模型无法在全局特征空间区分两者。跨题样本**不进训练集**（`lab/build_dataset.py` 按 `group`
+分组，训练时留一组评估即按此切分）。
 
 ## 改文案/接口前必看（有测试守着）
 
@@ -412,27 +429,38 @@ DNS 相关的 `KNOWN_INFRA_SUFFIXES` / `dns_lead_reason` 也在这里（见上�
   会以**字节巧合**出现，而 latin-1 视角下"貌似可打印"（JPEG 实测可打印率约 75%，旧 0.7
   闸门挡不住）。ascii 通道用严格文本判定（ASCII 占比 / 可严格 UTF-8 解码）；utf-16 通道
   维持原检查。`tests/gen_fixtures.py::build_t10()` 同时含正例与字节巧合，负样本同题。
-- **子命令名优先于文件路径**：`update`/`train`/`mark`/… 会被当子命令。要扫同名文件得用
-  `-f 文件名` 或 `./文件名`。
+- **子命令名优先于文件路径**：`update`/`install`/`uninstall`/`config`/`help` 会被当子命令。
+  要扫同名文件得用 `-f 文件名` 或 `./文件名`。
 - **行尾契约**（`.gitattributes`）：`*.bat` 用 CRLF、`*.sh` 用 LF——改这些文件别让编辑器
   自动转换，否则 Windows 版启动器会解析错位。
-- **`-q/--brief` 是开关式灰度**：默认输出必须逐字节不变（14 个 golden 里 13 个是默认模式，
-  开着它就是回归）。它靠 `redirect_stdout` **逐文件**捕获详细输出写进
+- **缓存是"每次都写"，不是 `-q` 专属**：两种模式都捕获详细输出写进
   `<数据目录>/cache/<文件名>-<路径哈希6位>/`（`1/2/3.txt` 分档明细 + `<名>_cache.txt`
   完整报告），目录名带**完整路径**短哈希是为了同名不同目录不互相覆盖（目录扫描时才撞）。
-  `tests/test_golden.py::normalize()` 会把该哈希归一化掉，否则基线随 `$TMPDIR` 漂移。
-  该缓存**只增不减**（用户数据目录内的文件永不自动删除），清理入口只有
-  `ctfsweep config` 里那行「精简缓存: <路径>（N 个文件，X MB）」——改缓存布局时同步它。
+  实现是 `cli._TeeStream` 一个替身**逐文件 `bind`**（不是逐文件 `enter_context`）——
+  循环里的 `continue` 才不会让捕获挂住写进上一个缓冲区；`passthrough=not brief` 决定
+  是否上屏，所以**两个模式的缓存文件内容逐字节相同**（`check_scan_cache()` 断言着）。
+  默认模式在**恢复真实 stdout 之后**打 `【扫描缓存】` 块（目录行末尾带 `os.sep`，否则
+  `test_golden.normalize()` 的 `/<名>-<6位哈希>/` 正则匹配不上、哈希会写进基线），
+  `brief_print_tiers` 同理必须收 `stream=_real_stdout`。
+  `tests/test_golden.py::normalize()` 把该哈希归一化掉，否则基线随 `$TMPDIR` 漂移。
+  该缓存**只增不减**（数据目录内的文件永不自动删除），清理入口只有
+  `ctfsweep config` 里那行「扫描缓存: <路径>（N 个文件，X MB）」——改缓存布局时同步它。
+  ⚠️ `-q` 的控制台输出仍必须逐字节不变（golden `t10-ftp.pcap+brief.txt` 是回归位）。
 
 ## lab/ 与 models/
 
 - `lab/` 是实验区：**脚本进库，数据产物不进库**（`.gitignore` 排除 `lab/*.jsonl`、
-  `lab/*.ctfj`、`lab/output/`）。
+  `lab/*.ctfj`、`lab/output/`）。这里的脚本**不随安装提供**（`deploy.sh` 的拷贝清单里没有
+  `lab/`），所以训练能力只存在于仓库。
+- `lab/train.py` 是判断核**唯一的训练入口**（`--data` / `--out` / `--epochs` / `--config`），
+  内含 `load_rows`/`rows_to_xy`/`run_training`；`lab/build_dataset.py` 从题库构建
+  `lab/dataset.jsonl`（本机数据，gitignore 内），`lab/data_generator.py` 合成样本。
+  运行时的 `cli.py` **不再有 train/mark/learning/label/gen-data 子命令**，也别再加回去
+  （`test_smoke.py::check_judge` 会逐个跑这些名字并断言非 0 退出）。
 - `lab/analysis/` 是**案例库**：每题一个 `.md`，头部 YAML front matter（`case_id`/`type`/
   `answer`/`detect`/`method`/`tool`），正文是完整推理链。新解出的题按此格式沉淀，
   新沉淀的工具函数回填 `tool:` 字段指向 `ctfsweep/core/*.py`。
-- `lab/auto_learning.py` 是"生成题目 → 扫描 → 分析 → 收集 → 训练"闭环，
-  `lab/task_generator.py` 靠 SSH 连远程 Windows 生成题目——两者都依赖本机环境，
+- `lab/task_generator.py` 靠 SSH 连远程 Windows 生成题目——依赖本机环境，
   不要在 CI 或无关改动里跑。
 - `models/` 不只是"项目内的模型"：`deploy.sh` 会把它复制到 `<安装根>/lib/models`，
   **它属于安装载荷**（见上文 `models_dir()`）。改 `models/` 下任何文件都要走一次

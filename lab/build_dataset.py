@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """判断核数据集构建（本机实验脚本，目录已 gitignore——含题库答案标注，不进公开仓库）。
 
-把历次解题的扫描候选 + 人工标注（真/假）导出为 dataset.jsonl：
-    ~/.devtools/ctfsweep/judge/dataset.jsonl
+把历次解题的扫描候选 + 人工标注（真/假）导出为训练语料：
+    lab/dataset.jsonl（gitignore 内；训练入口 lab/train.py）
 
 数据来源三类：
   1) 已解题目的"答案命中"候选（label=1）
@@ -202,7 +202,7 @@ def main():
 
     n_pos = sum(1 for r in rows if r['label'] == 1)
     n_neg = len(rows) - n_pos
-    out_path = judge.default_dataset_path()
+    out_path = os.path.join(ROOT, 'lab', 'dataset.jsonl')
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, 'w', encoding='utf-8') as f:
         for r in rows:
@@ -220,7 +220,7 @@ def main():
         print('  %-9s 正 %-3d / 负 %-3d' % (g, p, n))
     print('  写入: %s' % out_path)
     print('')
-    print('下一步: ctfsweep train   （留一组评估 + 全量重训 + 保存模型）')
+    print('下一步: python3 lab/train.py   （留一组评估 + 全量重训 + 保存模型）')
 
 
 if __name__ == '__main__':

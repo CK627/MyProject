@@ -14,7 +14,9 @@
   * t2.pcapng：pcapng 封装 + -f/--file 参数
   * t3.evtx：UTF-16 明文 + 花括号片段 + 启发式拼接 + 噪音闸门（dll 后缀 / GUID / 乱码区剔除）
   * t4.pcap --extract：文件雕刻 + zip 内容扫描 + 落盘
-  * 判断核（judge）：微型数据集训练与分离、train 子命令（留一组评估）、--judge 打分与无模型兜底
+  * 判断核（judge）：微型数据集训练与分离、离线训练脚本 lab/train.py（留一组评估）、
+    --judge 打分与无模型兜底；且**命令行不再有任何训练/标注入口**（自学习已移除）
+  * 扫描缓存：每次扫描都写（默认模式与 -q 内容相同），数据根下只有 cache/
   * 元判断核（meta_judge）：综合分不低于模块自评（单调不降）/ 低权重模块不倒扣 /
     分档口径与 utils.level_of 一致 / 畸形 confidence 不中断报告
   * 管线边界：Finding↔5 元组往返后 report() 渲染逐字节不变（含 latin-1 token、str 型 val）
@@ -45,6 +47,10 @@ from ctfsweep import __version__  # noqa: E402
 from ctfsweep.core import judge  # noqa: E402
 
 FAILS = []
+
+# 已从运行时移除的子命令（自学习闭环：留存 → 标注 → 训练 → 模型回写）。
+# 训练能力保留，但只存在于仓库 lab/ 的离线脚本里——装机与敲命令都看不到它们。
+_REMOVED_SUBCOMMANDS = ('train', 'label', 'auto-label', 'mark', 'learning', 'gen-data')
 
 
 def check(cond, msg):
@@ -98,11 +104,17 @@ def check_completions():
     # 别再让旧文案漂回来（history: install 曾是「已弃用」，update 曾是「更新指引」）
     check('已弃用' not in code and '更新指引' not in code and '--check' in code,
           'zsh 补全：无「已弃用 / 更新指引」残留，update 认出 --check')
-    check('train' in code and '--judge' in code, 'zsh 补全：含 train 子命令与 --judge')
+    # 反向断言：自学习/训练入口已从运行时整体移除（改由仓库 lab/ 离线脚本承担），
+    # 别再让它们以子命令形式漂回补全候选里
+    check('--judge' in code, 'zsh 补全：含 --judge（保留打分）')
+    check(not any(s in code for s in _REMOVED_SUBCOMMANDS),
+          'zsh 补全：无自学习子命令（%s）' % '/'.join(_REMOVED_SUBCOMMANDS))
     bash = open(os.path.join(ROOT, 'completions', 'ctfsweep.bash'), encoding='utf-8').read()
     check('--extract' in bash and '--folder' in bash, 'bash 补全：含主要选项')
     check('--brief' in bash, 'bash 补全：含 --brief（精简输出）')
-    check('train' in bash and '--judge' in bash, 'bash 补全：含 train 与 --judge')
+    check('--judge' in bash, 'bash 补全：含 --judge')
+    check(not any(s in bash for s in _REMOVED_SUBCOMMANDS),
+          'bash 补全：无自学习子命令')
 
 
 def _judge_samples():
@@ -131,8 +143,25 @@ def _judge_samples():
     ]
 
 
+def _rows_to_xy(rows):
+    """样本行 → (X, y)：特征维度与当前 FEATURES 不符的行跳过（与 lab/train.py 同口径）。"""
+    X, y = [], []
+    for r in rows:
+        feats = r.get('feats')
+        if not feats or len(feats) != len(judge.FEATURES):
+            continue
+        X.append([float(v) for v in feats])
+        y.append(1.0 if float(r.get('label') or 0) >= 0.5 else 0.0)
+    return X, y
+
+
 def check_judge(tmp):
-    """判断核：机制训练、CLI train、--judge 打分、无模型兜底"""
+    """判断核：机制训练、离线训练脚本、--judge 打分、无模型兜底。
+
+    运行时只做推理打分，**没有任何训练/标注入口**（模型随版本发布）；
+    训练能力整体下沉到仓库 `lab/train.py`——本函数既验打分链路，
+    也验离线脚本仍然可用（用户「保留自己训练模型」的诉求）。
+    """
     samples = _judge_samples()
     rows = []
     for s in samples:
@@ -143,23 +172,35 @@ def check_judge(tmp):
 
     # 1) 机制：微型训练能分离正负
     net = judge.JudgeNet(seed=1)
-    X, y = judge.rows_to_xy(rows)
+    X, y = _rows_to_xy(rows)
+    check(len(X) == len(rows) and X and len(X[0]) == len(judge.FEATURES),
+          '样本特征维度与 FEATURES 一致（%d 维）' % len(judge.FEATURES))
     net.train(X, y)
     p_pos = net.predict(judge.extract_features(samples[0]))
     p_neg = net.predict(judge.extract_features(samples[5]))
     check(p_pos > 0.5 > p_neg, '微型训练：正负分离（p 正 %.2f > 0.5 > 负 %.2f）' % (p_pos, p_neg))
 
-    # 2) CLI train：留一组评估 + 保存
+    # 2) 离线训练脚本（lab/train.py）：留一组评估 + 保存模型。
+    #    注意这**不是** CLI 子命令——跑的是仓库脚本，不是 `ctfsweep train`。
     ds = os.path.join(tmp, 'judge_ds.jsonl')
     mdl = os.path.join(tmp, 'judge_model.ctfj')
     with open(ds, 'w', encoding='utf-8') as f:
         for r in rows:
             f.write(json.dumps(r, ensure_ascii=False) + '\n')
-    rc, out = run_cli(['train', '--data', ds, '--model-out', mdl, '--epochs', '150'])
-    check(rc == 0 and os.path.isfile(mdl), 'train 子命令：训练并保存模型')
-    check('留一组评估' in out and 'AUC' in out, 'train 输出留一组评估信息')
+    proc = subprocess.run(
+        [sys.executable, '-B', os.path.join(ROOT, 'lab', 'train.py'),
+         '--data', ds, '--out', mdl, '--epochs', '150'],
+        cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    tout = proc.stdout.decode('utf-8', 'replace')
+    check(proc.returncode == 0 and os.path.isfile(mdl), 'lab/train.py：离线训练并保存模型')
+    check('留一组评估' in tout and 'AUC' in tout, 'lab/train.py 输出留一组评估信息')
 
-    # 3) --judge：扫描输出 p 分与重点候选
+    # 3) 命令行不再暴露训练/标注入口（离线脚本不进安装载荷，也不进子命令表）
+    for sub in _REMOVED_SUBCOMMANDS:
+        rc, out = run_cli([sub])
+        check(rc != 0, '子命令已移除：%s（当普通路径处理并报错）' % sub)
+
+    # 4) --judge：扫描输出 p 分与重点候选
     os.environ['CTFSWEEP_JUDGE_MODEL'] = mdl
     try:
         rc, out = run_cli([os.path.join(tmp, 't3.evtx'), '--judge'])
@@ -169,7 +210,7 @@ def check_judge(tmp):
     check('p=' in out, '--judge：扫描结果带 p 分')
     check('【判断核·重点候选】' in out, '--judge：重点候选区块')
 
-    # 4) 无模型兜底：提示但扫描照常
+    # 5) 无模型兜底：提示但扫描照常
     os.environ['CTFSWEEP_JUDGE_MODEL'] = os.path.join(tmp, 'no_such_model.ctfj')
     try:
         rc, out = run_cli([os.path.join(tmp, 't2.pcapng'), '--judge'])
@@ -178,22 +219,42 @@ def check_judge(tmp):
     check('未找到模型' in out and 'flag{pcapng-smoke-ok}' in out,
           '--judge 无模型：提示并正常扫描')
 
-    # 5) 留存区：扫描自动记录 + mark 回填
-    txt = os.path.join(tmp, 'marked_task.txt')
-    with open(txt, 'w', encoding='utf-8') as f:
-        f.write('the answer is flag{marked-task-ok} with some noise tail')
-    rc, out = run_cli([txt])
-    check('[留存区] 已记录本次扫描' in out, '留存区：扫描自动记录')
-    rc, out = run_cli(['mark', txt, 'flag{marked-task-ok}'])
-    check(rc == 0 and '回填' in out, 'mark：回填执行')
-    ds_path = judge.default_dataset_path()
-    rows = judge.load_rows(ds_path) if os.path.isfile(ds_path) else []
-    marked = [r for r in rows if r.get('verify_reason') == 'user_marked']
-    check(len(marked) >= 1 and any(r['label'] == 1.0 for r in marked), 'mark：正样本入集')
-    check(all(len(r['feats']) == len(judge.FEATURES) for r in marked), 'mark：特征维度正确')
-    rec = judge.find_retention_for(txt)
-    check(rec is not None and rec.get('status') == 'marked', '留存区：状态更新为 marked')
-    check(rec is not None and rec.get('answer') == 'flag{marked-task-ok}', '留存区：记录答案')
+
+def check_scan_cache(tmp):
+    """每次扫描都落缓存，两种模式产出的缓存逐字节相同。
+
+    历史问题：默认模式（不加 -q）**完全不写任何结果文件**，跑完扫描用户拿不到
+    可回看的报告，只得到一个自学习留存区（留存区已随自学习机制整体移除）。
+    现在数据根下只有 `cache/`：<文件名>-<路径哈希>/1.txt|2.txt|3.txt + <名>_cache.txt。
+    """
+    fp = os.path.join(tmp, 't1.pcap')
+    rc, out = run_cli([fp])
+    check('【扫描缓存】' in out, '默认模式：控制台报出本次扫描的缓存路径')
+
+    croot = os.path.join(tmp, 'cache')
+    cdirs = [d for d in (os.listdir(croot) if os.path.isdir(croot) else [])
+             if d.startswith('t1-')]
+    check(len(cdirs) == 1, '默认模式：缓存目录按「文件名-路径哈希」建立')
+    cdir = os.path.join(croot, cdirs[0]) if cdirs else os.path.join(croot, '不存在')
+    check(all(os.path.isfile(os.path.join(cdir, n)) for n in ('1.txt', '2.txt', '3.txt')),
+          '默认模式：1/2/3.txt 分档明细已落盘')
+    fc = os.path.join(cdir, 't1_cache.txt')
+    check(os.path.isfile(fc), '默认模式：完整报告缓存已落盘')
+    if not os.path.isfile(fc):
+        return
+    with open(fc, encoding='utf-8') as fh:
+        default_body = fh.read()
+    check('flag{plain-smoke-ok}' in default_body and '【扫描统计】' in default_body,
+          '默认模式：缓存内容为该文件完整报告')
+
+    # 缓存内容与模式无关：-q 只改变控制台是否上屏，缓存文件应逐字节相同。
+    rc, out = run_cli([fp, '-q'])
+    with open(fc, encoding='utf-8') as fh:
+        brief_body = fh.read()
+    check(default_body == brief_body, '缓存内容与模式无关（默认模式 ≡ -q）')
+
+    check(not os.path.exists(os.path.join(tmp, 'judge')),
+          '数据根下无 judge/ 残留（自学习留存区已移除）')
 
 
 def check_report_equivalence():
@@ -896,12 +957,17 @@ def main():
         check(rc == 1 and '用法' in out, '无参数时打印帮助并返回 1')
         rc, out = run_cli(['--help'])
         check(rc == 0 and '置信度模型' in out, '--help 返回 0')
-        check('update' in out and 'train' in out, '--help 含管理子命令（含 train）')
+        check(all(s in out for s in ('update', 'install', 'uninstall', 'config', 'help')),
+              '--help 含管理子命令（update/install/uninstall/config/help）')
+        check(not any(re.search(r'^\s*ctfsweep\s+%s\b' % re.escape(s), out, re.M)
+                      for s in _REMOVED_SUBCOMMANDS),
+              '--help 无训练/标注子命令（%s）' % '/'.join(_REMOVED_SUBCOMMANDS))
+        check('扫描缓存（每次扫描自动写入）' in out, '--help 说明扫描缓存（替换原「留存区」段）')
         rc, out = run_cli(['/no/such/file.pcap'])
         check(rc == 2, '路径不存在时返回 2')
         rc, out = run_cli(['config'])
-        check(rc == 0 and '精简缓存:' in out,
-              'config：报出 -q 精简缓存占用与可删路径（唯一清理入口）')
+        check(rc == 0 and '扫描缓存:' in out,
+              'config：报出扫描缓存占用与可删路径（唯一清理入口）')
 
         print('== shell 脚本体检 ==')
         check_shell_scripts()
@@ -1119,6 +1185,9 @@ def main():
         # 三种请求里只有两条是攻击：常规的 `?id=1` 若被算进去，"类数"会变成 3
         check('  [Web攻击载荷] 2 类（共 2 条请求' in out,
               '常规请求（?id=1）不被误报为攻击载荷')
+
+        print('== 扫描缓存（每次扫描都写）==')
+        check_scan_cache(tmp)
 
         print('== 判断核（judge）==')
         check_judge(tmp)

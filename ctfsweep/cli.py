@@ -16,6 +16,7 @@ from .core.capture import CaptureContext, PCAP_MAGICS, PCAPNG_MAGIC
 from .core.decode import assemble_suggestion
 from .core.extract import PWD_POOL, _pk, precollect_pwds
 from .core import judge
+from .core import paths
 from .core import selfmgr
 from .core.router import Router, Finding, ScanOptions
 from .core.meta_judge import MetaJudge
@@ -32,16 +33,8 @@ HELP = """ctfsweep — CTF 流量 / 日志 / 注册表 快速扫描器（零依�
 管理子命令:
   ctfsweep update [--check]   拉取最新源码快照并重装（--check 只比对版本，不落盘）
   ctfsweep install            显示安装方式（装到 devtools 目录）
-  ctfsweep uninstall [-y]     卸载安装副本并摘除 shell 接线（用户数据保留；-y 跳过确认）
-  ctfsweep config             显示运行信息与生效配置
-  ctfsweep train [--data F]   训练本地判断核模型（超参数读训练配置；--epochs N / --model-out F 可覆盖）
-  ctfsweep label              交互式标注未标注候选（确认/否定/跳过）
-  ctfsweep auto-label         自动标注未标注候选（强模型规则验证 → 正/负样本）
-  ctfsweep mark <路径> <flag> 用真实答案回填一道题（文件/文件夹均可）：匹配候选→正样本，
-                              同题其他高分候选→负样本（难负样本）；无记录时自动先扫描
-  ctfsweep learning [opts]    自主学习：先逐题复核留存区（题目；答案：<真实flag>），再训练
-                              （带收敛判断；超参数读训练配置；--min-auc N --min-samples N 可覆盖）
-  ctfsweep gen-data [-o F]    生成 CTF 取证训练数据集（覆盖 PCAP/内存/浏览器/日志/邮件/数据库/配置/压缩/DNS/编码；默认输出到用户数据目录）
+  ctfsweep uninstall [-y]     卸载安装副本并摘除 shell 接线（扫描缓存保留；-y 跳过确认）
+  ctfsweep config             显示运行信息与生效配置（含扫描缓存占用）
   ctfsweep help               显示本帮助
 
 支持输入: pcap / pcapng（抓包）、evtx（事件日志）、.reg / 任意文本
@@ -55,15 +48,14 @@ HELP = """ctfsweep — CTF 流量 / 日志 / 注册表 快速扫描器（零依�
   --depth N         解码链最大深度（默认 3，即 hex/base64 可反复套娃）
   --limit N         每个文件最多输出条数（默认 50，按置信度排序后截取）
   -q, --brief       精简输出：控制台只打「分档统计块」（高/中/低 + 缓存文件路径），
-                    完整报告与各档明细写入 <数据目录>/cache/<文件名>-<哈希>/：
-                    1.txt（高）/ 2.txt（中）/ 3.txt（低）/ <文件名>_cache.txt（完整输出）
+                    详细报告不上屏（两种模式都写缓存，见下）
   --extract         从流量中提取文件（ZIP/PNG/JPG/GIF/PDF/GZ/RAR/7Z/PE/OLE2/ELF，
                     以及 HTML 载荷页内嵌的 base64 文件），
                     保存到 "<抓包名>_extracted/" 并自动解压/扫描其内容；
                     加密 zip 自动尝试：空口令→常用表→--pwd-file 字典→流量采集口令
   --extract-dir D   指定提取输出目录（默认与抓包同目录）
   --pwd-file F      附加口令字典文件（每行一个，用于加密压缩包）
-  --judge           用本地判断核模型对候选打分（p=…，并列出重点候选；需先 ctfsweep train）
+  --judge           用判断核模型对候选打分（p=…，并列出重点候选；模型随版本发布）
   --config F        指定配置文件（默认读取 ~/.devtools/ctfsweep/ctfsweep.conf）
   --version         显示版本
   -h, --help        显示本帮助
@@ -83,15 +75,15 @@ HELP = """ctfsweep — CTF 流量 / 日志 / 注册表 快速扫描器（零依�
   0.40 低   关键词上下文（普通字符串命中，需人工浏览）
 
 判断核（--judge）:
-  本地训练的轻量判断网络（纯 Python MLP 集成，二进制 .ctfj 模型），对候选输出 p 分并按"答案相关性"排序；
-  模型与配置在项目内 models/（model.ctfj + train_config.json，随项目版本管理）；
-  训练数据在缓存区 ~/.devtools/ctfsweep/judge/（dataset.jsonl 累积标注 / pending.jsonl 扫描候选池）；
-  训练: ctfsweep train；超参数: 编辑 models/train_config.json（网络结构/学习率/种子等，改参数无需改代码）
+  轻量判断网络（纯 Python MLP 集成，二进制 .ctfj 模型），对候选输出 p 分并按"答案相关性"排序；
+  模型随版本发布，在项目内 models/（model.ctfj；安装态落在 <安装根>/lib/models）；
+  离线训练脚本不在安装载荷内，在源码仓库 lab/（lab/train.py + lab/dataset.jsonl）
 
-留存区（每次扫描自动记录）:
-  每次扫描的候选快照记入 ~/.devtools/ctfsweep/judge/retention.jsonl；
-  有答案: ctfsweep mark <路径> <真实flag>（立即回填正/负样本）；
-  没答案: ctfsweep learning 时逐题询问（题目；答案：<真实flag>，一个接一个，处理完再训练）
+扫描缓存（每次扫描自动写入）:
+  每个文件的完整报告与分档明细写入 ~/.devtools/ctfsweep/cache/<文件名>-<路径哈希>/：
+  1.txt（高置信）/ 2.txt（中置信）/ 3.txt（低置信）/ <文件名>_cache.txt（完整报告）；
+  -q 只影响控制台是否上屏详细报告，两个模式写出的缓存内容相同；
+  缓存只增不减（装/卸/更新都不碰），占用与路径见 ctfsweep config
 """
 
 
@@ -140,26 +132,22 @@ def _cmd_config():
     if mode == 'repo':
         print('运行模式: 源码仓库（未安装；ctfsweep install 可装成 devtools 副本）')
     elif mode == 'installed':
-        print('运行模式: devtools 安装（ctfsweep update 可更新，用户数据保留）')
+        print('运行模式: devtools 安装（ctfsweep update 可更新，扫描缓存保留）')
     else:
         print('运行模式: 未识别')
     print('程序目录: %s' % root)
     print('模型: %s（项目内；%s）' % (judge.model_path(),
                                    '已就绪' if os.path.isfile(judge.model_path()) else '未训练'))
-    tc_path = judge.train_config_path()
-    print('训练配置: %s（项目内；%s）' % (tc_path, '已就绪' if os.path.isfile(tc_path)
-                                        else '不存在，首次训练时自动生成'))
-    print('扫描缓存: %s（候选池 pending.jsonl / 数据集 dataset.jsonl）' % judge.user_dir())
 
-    # -q/--brief 的缓存只增不减（用户数据目录内的文件永不自动删除），
+    # 扫描缓存只增不减（装/卸/更新都不碰用户数据），
     # 这里把占用与可删路径一并报出来，作为唯一的清理入口。
     croot = brief_cache_root()
     if os.path.isdir(croot):
         cnum, csize = _dir_usage(croot)
-        print('精简缓存: %s（%d 个文件，%.1f MB；-q 生成，确认不需要后可整体删除）'
+        print('扫描缓存: %s（%d 个文件，%.1f MB；每次扫描自动写入，确认不需要后可整体删除）'
               % (croot, cnum, csize / 1048576.0))
     else:
-        print('精简缓存: %s（尚未使用；-q/--brief 会把明细写在这里）' % croot)
+        print('扫描缓存: %s（尚未使用；每次扫描会自动写入）' % croot)
 
     env_conf = os.environ.get('CTFSWEEP_CONF')
     conv = os.path.join(os.path.expanduser('~'), '.devtools', 'ctfsweep', 'ctfsweep.conf')
@@ -197,222 +185,64 @@ def _cmd_config():
         except Exception as ex:
             print('判断核模型: %s（加载失败: %r）' % (mp, ex))
     else:
-        print('判断核模型: %s（不存在；ctfsweep train 可训练）' % mp)
+        print('判断核模型: %s（不存在；模型随版本发布，重装或离线训练后替换）' % mp)
     return 0
 
 
-def _cmd_train(args):
-    """ctfsweep train：训练本地判断核（留一组评估 + 保存模型）。
-
-    超参数默认读取训练配置（judge/train_config.json）；--epochs 可临时覆盖。
-    """
-    data_path, model_out, epochs = None, None, None
-    i = 0
-    while i < len(args):
-        a = args[i]
-        if a == '--data' and i + 1 < len(args):
-            data_path = args[i + 1]
-            i += 2
-        elif a in ('--model-out', '--model') and i + 1 < len(args):
-            model_out = args[i + 1]
-            i += 2
-        elif a == '--epochs' and i + 1 < len(args):
-            try:
-                epochs = int(args[i + 1])
-            except Exception:
-                pass
-            i += 2
-        else:
-            i += 1
-    data_path = data_path or judge.default_dataset_path()
-    model_out = model_out or judge.model_path()
-    if not os.path.isfile(data_path):
-        print('未找到数据集: %s' % data_path)
-        print('提示: 数据集 = 本机解题标注（每行一条候选 + 真/假标签），积累后即可训练。')
-        return 2
-    rows = judge.load_rows(data_path)
-    if len(rows) < 8:
-        print('数据太少（%d 条），至少需要 8 条标注样本。' % len(rows))
-        return 2
-    judge.run_training(rows, model_out=model_out, epochs=epochs)   # epochs=None → 读训练配置
-    return 0
-
-
-def _cmd_label(args):
-    """ctfsweep label：交互式标注未标注候选。"""
-    batch_size = 10
-    i = 0
-    while i < len(args):
-        a = args[i]
-        if a == '--batch' and i + 1 < len(args):
-            try:
-                batch_size = int(args[i + 1])
-            except Exception:
-                pass
-            i += 2
-        else:
-            i += 1
-    return judge.interactive_label(batch_size=batch_size)
-
-
-def _cmd_auto_label(args):
-    """ctfsweep auto-label：自动标注未标注候选（强模型规则验证）。"""
-    pos_count, neg_count, fail_reasons = judge.auto_annotate_pending()
-    return 0
-
-
-def _scan_for_candidates(path, keywords=None):
-    """扫描文件或文件夹，收集候选快照（供留存区记录 / mark 自动补扫）。
-
-    返回 (candidates, files_count)。文件与文件夹一视同仁（目录递归展开，
-    路径取名随意无影响——如 flag.pacpng/ 这种"名字像文件实为目录"也照常处理）。
-    """
-    keywords = keywords or ['flag', 'ctf']
-    if os.path.isdir(path):
-        targets = []
-        for root, _dirs, files in os.walk(path):
-            for f in sorted(files):
-                if f != '.DS_Store':
-                    targets.append(os.path.join(root, f))
-    else:
-        targets = [path]
-    cands = []
-    for fp in targets:
-        try:
-            data = open(fp, 'rb').read()
-        except Exception:
-            continue
-        fname = os.path.basename(fp)
-        try:
-            # 与主扫描同一入口：抓包/原始字节的判别在 CaptureContext 里，不再自己嗅魔数
-            ctx = CaptureContext(data)
-            findings, _meta = Router(fp).run_stream(
-                ctx, ScanOptions(keywords=keywords, decode=True, depth=3, limit=50))
-        except Exception:
-            continue
-        for score, kind, _tok, val, _loc in findings:
-            if score >= judge.RETENTION_MIN_SCORE:
-                v = val if isinstance(val, str) else val.decode('utf-8', 'replace')
-                cands.append({'score': score, 'kind': kind, 'val': v, 'file': fname})
-    return cands, len(targets)
-
-
-def _cmd_mark(args):
-    """ctfsweep mark <文件或文件夹> <真实flag>：用真实答案回填一道题。
-
-    正样本 = 与答案匹配的候选；负样本 = 同题其他高分候选（难负样本）。
-    无扫描记录时自动先扫描一次（文件/文件夹均可）。
-    """
-    if len(args) < 2:
-        print('用法: ctfsweep mark <文件或文件夹> <真实flag>')
-        print('  示例: ctfsweep mark ./logs "flag{windows-log-answer}"')
-        print('  回填规则: 与答案匹配的候选 → 正样本；')
-        print('            同题其他高分候选 → 负样本（难负样本，最有学习价值）')
-        return 2
-    path, real_flag = args[0], args[1]
-    if not os.path.exists(path):
-        print('路径不存在: %s' % path)
-        return 2
-    rec = judge.find_retention_for(path)
-    if rec is None:
-        print('[留存区] 未找到该路径的扫描记录，自动扫描一次...')
-        cands, n_files = _scan_for_candidates(path)
-        if cands:
-            print('  扫描完成: %d 个文件 / %d 条候选' % (n_files, len(cands)))
-            judge.record_scan(path, cands, files_count=n_files)
-        else:
-            print('  扫描未产出候选（答案将直接作为正样本回填）')
-    res = judge.mark_answers(path, real_flag)
-    if res is None:
-        print('回填写入失败（留存区记录异常）')
-        return 1
-    pos, neg, dedup, matched, rec2 = res
-    print('[mark] 题目: %s' % rec2.get('path'))
-    print('  答案: %s' % real_flag)
-    print('  回填: 正样本 %d 条 / 负样本 %d 条（与已有数据重复跳过 %d）' % (pos, neg, dedup))
-    if not matched:
-        print('  [注] 候选未匹配到答案——答案已作为正样本直接入库；请确认答案与题目对应')
-    elif pos == 0:
-        print('  （答案命中但样本已在数据集中——重复跳过；负样本已补充）')
-    print('  提示: 运行 ctfsweep learning 将新数据纳入训练')
-    return 0
-
-
-def _cmd_gen_data(args):
-    """ctfsweep gen-data：生成 CTF 取证训练数据集（默认输出到用户数据目录）。"""
-    from ctfsweep.core import data_generator
-    # 默认输出到用户数据目录（与"数据集中放 .devtools"原则一致）
-    if '-o' not in args and '--output' not in args:
-        args = list(args) + ['-o', os.path.join(judge.user_dir(), 'generated_data.jsonl')]
-    _old_argv = sys.argv
-    try:
-        sys.argv = ['ctfsweep gen-data'] + list(args)
-        data_generator.main()
-    except SystemExit as e:
-        return e.code or 0
-    finally:
-        sys.argv = _old_argv
-    return 0
-
-
-def _cmd_learning(args):
-    """ctfsweep learning：自主学习（带收敛判断）。
-
-    超参数默认读取训练配置（judge/train_config.json）；命令行选项可临时覆盖。
-    """
-    min_auc, min_samples, max_epochs, epochs_per_run = None, None, None, None
-    i = 0
-    while i < len(args):
-        a = args[i]
-        if a == '--min-auc' and i + 1 < len(args):
-            try:
-                min_auc = float(args[i + 1])
-            except Exception:
-                pass
-            i += 2
-        elif a == '--min-samples' and i + 1 < len(args):
-            try:
-                min_samples = int(args[i + 1])
-            except Exception:
-                pass
-            i += 2
-        elif a == '--max-epochs' and i + 1 < len(args):
-            try:
-                max_epochs = int(args[i + 1])
-            except Exception:
-                pass
-            i += 2
-        elif a == '--epochs' and i + 1 < len(args):
-            try:
-                epochs_per_run = int(args[i + 1])
-            except Exception:
-                pass
-            i += 2
-        else:
-            i += 1
-    return judge.learning_loop(
-        min_auc=min_auc,
-        min_samples=min_samples,
-        max_epochs=max_epochs,
-        epochs_per_run=epochs_per_run,
-    )
-
-
-# ---------------------------------------------------------------- 精简输出（-q / --brief）
-# 控制台只打「分档统计块」；完整报告与各档明细写入 <数据目录>/cache/<文件名>-<哈希>/：
+# ---------------------------------------------------------------- 扫描缓存（每次都写）
+# 每个文件一份：<缓存根>/<文件名>-<路径哈希>/：
 #   1.txt / 2.txt / 3.txt     高/中/低置信候选明细（分数 | 级别 | 类型 | 值 | 位置）
-#   <文件名>_cache.txt        该文件的完整扫描输出（与详细模式控制台所见一致）
+#   <文件名>_cache.txt        该文件的完整扫描输出（**两种模式内容相同**）
 #
-# 数据根跟随 CTFSWEEP_DATA_DIR（`judge.user_dir()` 的父目录），测试隔离天然生效。
+# **默认模式也写缓存**（用户实测反馈"跑完看不到任何结果文件"）：默认模式用 tee 把
+# 报告同时送上屏与缓存；-q 只改变控制台是否上屏，缓存文件逐字节相同。
+# 缓存根由 core/paths.py 单点定义（跟随 CTFSWEEP_DATA_DIR，测试隔离天然生效）。
 _BRIEF_LEVELS = (('高', '1.txt'), ('中', '2.txt'), ('低', '3.txt'))
 _BRIEF_TITLES = {'高': '高置信（可直接核验）',
                  '中': '中置信（需人工确认）',
                  '低': '低置信（线索参考）'}
 
 
+class _TeeStream(object):
+    """stdout 替身：把输出同时送往控制台与「当前文件」的缓存缓冲。
+
+    - 缓冲**逐文件替换**（`bind`），所以 redirect 只在最外层进出一次——
+      循环里的 `continue` 不会再让捕获挂住、把后续输出写进上一个缓冲区
+      （旧实现逐文件 enter_context 的锐边）；
+    - `passthrough=False`（-q）时只写缓冲，控制台看不到详细报告；
+    - 两个模式捕获到的是**同一份文本**，所以缓存文件内容不因模式而异。
+    """
+
+    def __init__(self, primary, passthrough=True):
+        self._primary = primary
+        self._passthrough = passthrough
+        self._buffer = None
+
+    def bind(self, buffer):
+        """换绑当前文件的缓存缓冲。"""
+        self._buffer = buffer
+
+    def write(self, s):
+        if self._buffer is not None:
+            self._buffer.write(s)
+        if self._passthrough:
+            self._primary.write(s)
+        return len(s)
+
+    def flush(self):
+        try:
+            self._primary.flush()
+        except Exception:
+            pass
+
+    def __getattr__(self, name):
+        # encoding / isatty / fileno 等一律委托给真实 stdout
+        return getattr(self._primary, name)
+
+
 def brief_cache_root():
-    """精简输出缓存根目录（跟随 CTFSWEEP_DATA_DIR，便于测试与多环境隔离）。"""
-    return os.path.join(os.path.dirname(judge.user_dir()), 'cache')
+    """扫描缓存根目录（<数据根>/cache；数据根由 core/paths.py 单点解析）。"""
+    return paths.cache_root()
 
 
 def brief_cache_dir(fp):
@@ -433,8 +263,12 @@ def _brief_text(f):
     return ' '.join(v.split())
 
 
-def brief_emit(fp, fname, run_buf, findings, written, multi=False):
-    """写出 1/2/3.txt 与 <名>_cache.txt，并打印该文件的分档统计块。"""
+def brief_write_files(fp, fname, run_buf, findings, written):
+    """写出 1/2/3.txt 与 <名>_cache.txt；返回 (cache_path, tiers)，失败返回 (None, tiers)。
+
+    只落盘、不上屏——分档统计块由 `brief_print_tiers` 单独负责，
+    这样默认模式（tee）能复用同一份落盘逻辑而**不**多打统计块。
+    """
     stem = os.path.splitext(fname)[0] or fname
     cdir = brief_cache_dir(fp)
     tiers = {'高': [], '中': [], '低': []}
@@ -455,22 +289,34 @@ def brief_emit(fp, fname, run_buf, findings, written, multi=False):
         with open(cache_path, 'w', encoding='utf-8') as fh:
             fh.write(run_buf.getvalue())
     except Exception as ex:
-        print('[精简输出] 缓存写入失败: %r' % ex)
-        return
+        print('[扫描缓存] 写入失败: %r' % ex)
+        return None, tiers
     written.append(cache_path)
+    return cache_path, tiers
+
+
+def brief_print_tiers(fname, cdir, cache_path, tiers, multi=False, stream=None):
+    """打印该文件的「分档统计块」（仅 -q 用；默认模式的详细报告已经上屏）。
+
+    ⚠️ `stream` 必须传**真实 stdout**：调用时 sys.stdout 仍指着捕获用的替身，
+    默认 `print()` 会把统计块也写进缓存文件，控制台上反而一片空白。
+    """
+    def _p(s):
+        print(s, file=stream) if stream is not None else print(s)
+
     if multi:
-        print('[文件] %s' % fname)
-    print('【扫描统计】')
+        _p('[文件] %s' % fname)
+    _p('【扫描统计】')
     for lv, fn in _BRIEF_LEVELS:
         line = '%s，具体信息：%s' % (_BRIEF_TITLES[lv], os.path.join(cdir, fn))
         if lv == '高' and tiers['高']:
             line += ' ' + '/'.join(_brief_text(f)[:60] for f in tiers['高'][:10])[:240]
-        print(line)
-    print('扫描结果（缓存），具体信息：%s' % cache_path)
+        _p(line)
+    _p('扫描结果（缓存），具体信息：%s' % cache_path)
 
 
 def brief_append_tail(tail_text, written, files_total):
-    """把运行汇总区（留存区/元判断核/汇总统计）追加到各缓存文件尾部。"""
+    """把运行汇总区（元判断核/汇总统计）追加到各缓存文件尾部。"""
     if not tail_text.strip() or not written:
         return
     for p in written:
@@ -487,27 +333,14 @@ def brief_append_tail(tail_text, written, files_total):
 
 def main():
     args = sys.argv[1:]
-    # 管理子命令（update / install / uninstall / config / train / label / auto-label / mark / learning / gen-data / help）
-    if args and args[0] in ('update', 'install', 'uninstall', 'config', 'train', 'label',
-                            'auto-label', 'mark', 'learning', 'gen-data', 'help'):
+    # 管理子命令（update / install / uninstall / config / help）
+    if args and args[0] in ('update', 'install', 'uninstall', 'config', 'help'):
         sub, rest = args[0], args[1:]
         if sub == 'help':
             print(HELP)
             return 0
         if sub == 'config':
             return _cmd_config()
-        if sub == 'train':
-            return _cmd_train(rest)
-        if sub == 'label':
-            return _cmd_label(rest)
-        if sub == 'auto-label':
-            return _cmd_auto_label(rest)
-        if sub == 'mark':
-            return _cmd_mark(rest)
-        if sub == 'learning':
-            return _cmd_learning(rest)
-        if sub == 'gen-data':
-            return _cmd_gen_data(rest)
         if sub == 'update':
             return selfmgr.cmd_update(rest)
         if sub == 'install':
@@ -623,7 +456,7 @@ def main():
             except Exception as ex:
                 print('[判断核] 模型加载失败: %r' % ex)
         else:
-            print('[判断核] 未找到模型（%s），请先运行: ctfsweep train' % mpath)
+            print('[判断核] 未找到模型（%s）；模型随版本发布，重装或离线训练后替换' % mpath)
 
     if os.path.isdir(path):
         targets = []
@@ -649,27 +482,40 @@ def main():
 
     highs, n_high, n_mid, n_low = {}, 0, 0, 0
     global_frags, global_frag_src = [], {}
-    scan_cands = []   # 本次扫描的候选快照（写入留存区，供答案回填）
 
     # 元判断核：聚合所有模块的结构化输出
     meta = MetaJudge()
-    # 旧版判断核（保留兼容）
-    judge_net = judge_net  # 前面已加载
 
-    brief_written = []                              # 精简输出：本次运行已写出的缓存报告
-    _brief_stack = ExitStack() if brief else None   # 精简输出：逐文件捕获 stdout（详细输出只进缓存）
+    brief_written = []          # 本次运行已写出的缓存报告路径
+    brief_dirs = []             # 本次运行各文件的缓存子目录（默认模式的 [缓存] 行要用）
+    # 捕获区：默认模式 tee（上屏 + 缓存），-q 只进缓存。**只进出一次**，逐文件换缓冲。
+    _real_stdout = sys.stdout
+    _sink = _TeeStream(_real_stdout, passthrough=not brief)
+    _brief_stack = ExitStack()
+    _brief_stack.enter_context(redirect_stdout(_sink))
+
+    def _emit_cache(fp, fname, buf, findings):
+        """把本文件的扫描缓存落盘（-q 额外打「分档统计块」；默认模式报告已上屏）。"""
+        cache_path, tiers = brief_write_files(fp, fname, buf, findings, brief_written)
+        if cache_path is None:
+            return
+        cdir = brief_cache_dir(fp)
+        brief_dirs.append(cdir)
+        if brief:
+            brief_print_tiers(fname, cdir, cache_path, tiers,
+                              multi=len(targets) > 1, stream=_real_stdout)
 
     for fp in targets:
         fname = os.path.basename(fp)
-        if brief:
-            _brief_buf = io.StringIO()
-            _brief_stack.enter_context(redirect_stdout(_brief_buf))
+        _brief_buf = io.StringIO()
+        _sink.bind(_brief_buf)
         print('=' * 78)
         print('[文件] %s (%.1f KB)' % (fname, os.path.getsize(fp) / 1024))
         try:
             data = open(fp, 'rb').read()
         except Exception as ex:
             print('  读取失败: %r' % ex)
+            _emit_cache(fp, fname, _brief_buf, [])
             continue
 
         # 解析一次，两个阶段共用（过去 Router 与旧版扫描器各解析一遍）
@@ -716,6 +562,7 @@ def main():
                     meta.add_finding(f.to_meta_dict())
         except Exception as ex:
             print('  扫描出错: %r' % ex)
+            _emit_cache(fp, fname, _brief_buf, [])
             continue
 
         # =========================================================================
@@ -783,55 +630,13 @@ def main():
             if s:
                 print('    启发式拼接尝试（人工确认）：%s' % s[:200])
 
-        # =========================================================================
-        # 5b. 数据收集：候选 → 留存区（每次扫描都记录）；--judge 时同步写 pending 池
-        # =========================================================================
-        for f in stream_findings:
-            if f.confidence >= judge.RETENTION_MIN_SCORE:
-                v = f.val if isinstance(f.val, str) else f.val.decode('utf-8', 'replace')
-                scan_cands.append({
-                    'score': f.confidence,
-                    'kind': f.kind,
-                    'val': v,
-                    'file': fname,
-                })
-                if do_judge:
-                    candidate = {
-                        'score': f.confidence,
-                        'kind': f.kind,
-                        'val': v,
-                        'tok': f.tok,
-                        'file_type': 'capture' if ctx.is_capture else 'raw',
-                        'module_scores': {},
-                        'meta_score': 0.0,
-                    }
-                    judge.save_pending(candidate)
+        # 本文件报告捕获完毕 → 落盘扫描缓存（-q 另打「分档统计块」）
+        _emit_cache(fp, fname, _brief_buf, stream_findings)
 
-        if brief:
-            # 本文件详细输出捕获完毕 → 写缓存文件 + 打「分档统计块」（控制台只留结论）
-            _brief_stack.close()
-            brief_emit(fp, fname, _brief_buf, stream_findings, brief_written,
-                       multi=len(targets) > 1)
-            _brief_stack = ExitStack()
-    if brief:
-        _brief_stack.close()   # 兜底：最后一轮若走 continue，上面的关闭不会执行
-
-    _brief_tail = None
-    if brief:
-        _brief_tail = io.StringIO()
-        _brief_stack.enter_context(redirect_stdout(_brief_tail))
-
-    # =========================================================================
-    # 5c. 留存区：记录本次扫描（供答案回填与 learning 复核）
-    # =========================================================================
-    try:
-        _rec = judge.record_scan(path, scan_cands, files_count=len(targets))
-        if _rec:
-            print('\n[留存区] 已记录本次扫描（%d 条候选）：%s'
-                  % (len(_rec.get('candidates') or []), path))
-            print('  已知答案可回填: ctfsweep mark "%s" <真实flag>' % path)
-    except Exception as _ex:
-        print('\n[留存区] 记录失败: %r' % _ex)
+    # 汇总区（元判断核 / 全局片段 / 汇总统计）也要进缓存：换成汇总缓冲，
+    # 默认模式仍 tee 上屏。两种模式的缓存文件因此都带汇总尾段。
+    _brief_tail = io.StringIO()
+    _sink.bind(_brief_tail)
 
     # =========================================================================
     # 6. 元判断核综合报告
@@ -903,7 +708,17 @@ def main():
     print('  模块报告（类型块）：高 %d 条 / 中 %d 条 / 低 %d 条'
           % (_m['high'], _m['medium'], _m['low']))
 
-    if brief:
-        _brief_stack.close()
-        brief_append_tail(_brief_tail.getvalue(), brief_written, len(targets))
+    # 汇总区捕获结束 → 追加到各缓存文件尾部；恢复真实 stdout 后再打缓存路径
+    _brief_stack.close()
+    brief_append_tail(_brief_tail.getvalue(), brief_written, len(targets))
+
+    # 默认模式新增的一行（-q 已有「扫描结果（缓存），具体信息：…」四行，保持逐字节不变）：
+    # 用户实测反馈"跑完看不到任何结果文件"——路径必须出现在控制台上。
+    if not brief and brief_written:
+        print('\n【扫描缓存】本次 %d 个文件，报告与分档明细已写入:' % len(brief_written))
+        for d in brief_dirs:
+            # 末尾带分隔符：读起来是"写进这个目录"，也让 golden 的归一化
+            # （`/<名>-<6位哈希>/` → `/<名>-<哈希>/`）能覆盖这一行
+            print('  %s%s' % (d, os.sep))
+        print('  完整报告见各目录下的 <文件名>_cache.txt；占用与清理见 ctfsweep config')
     return 0

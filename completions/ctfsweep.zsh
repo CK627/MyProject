@@ -10,18 +10,14 @@
 #   ctf --min-score <TAB> → 0.40 / 0.55 / 0.85 / 0.95
 #   ctf -q               → 精简输出（控制台只打汇总块，明细在数据目录 cache/）
 #   ctf uninstall <TAB>   → -y / --yes
-#   ctf train <TAB>       → --data / --epochs / --model-out
 #   已输入过的选项不会重复列出（-f 与 --file 视为同一个）
 
 # ---- 候选清单 ----
 _ctfsweep_subcmds=(
   'update:拉取最新源码快照并重装（--check 只比对版本）'
   'install:显示安装方式（装到 devtools 目录）'
-  'uninstall:卸载安装副本（保留用户数据）'
-  'config:显示运行信息与配置'
-  'train:训练本地判断核（judge）模型'
-  'label:交互式标注未标注候选'
-  'learning:自主学习（带收敛判断）'
+  'uninstall:卸载安装副本（保留扫描缓存）'
+  'config:显示运行信息与配置（含扫描缓存占用）'
   'help:显示帮助'
 )
 
@@ -34,7 +30,7 @@ _ctfsweep_opts_long=(
   '--file:指定要扫描的文件'
   '--folder:指定要扫描的文件夹（整个项目目录）'
   '--help:显示帮助'
-  '--judge:用判断核模型对候选打分（需先 train）'
+  '--judge:用判断核模型对候选打分（模型随版本发布）'
   '--keywords:追加关键词（逗号分隔）'
   '--limit:每个文件最多输出条数'
   '--min-score:只显示置信度不低于该值的结果'
@@ -58,30 +54,13 @@ _ctfsweep_opts_uninstall=(
   '--yes:跳过确认'
 )
 
-_ctfsweep_opts_train=(
-  '--data:数据集文件（默认 ~/.devtools/ctfsweep/judge/dataset.jsonl）'
-  '--epochs:训练轮数'
-  '--model-out:模型输出路径'
-)
-
-_ctfsweep_opts_label=(
-  '--batch:每批标注条数（默认 10）'
-)
-
-_ctfsweep_opts_learning=(
-  '--min-auc:最低 AUC 达标值（默认 0.85）'
-  '--min-samples:最低样本数（默认 16）'
-  '--max-epochs:最大训练轮数（默认 500）'
-  '--epochs:每轮训练轮数（默认 200）'
-)
-
 _ctfsweep() {
   local cur prev i item name used_str disp dw pshort pitem
   local use_short=0
   cur="${words[CURRENT]}"
   prev="${words[CURRENT-1]}"
 
-  # 子命令专属参数区（ctfsweep update ... / ctfsweep train ...）
+  # 子命令专属参数区（ctfsweep update ... / ctfsweep uninstall ...）
   if (( CURRENT >= 3 )); then
     case "${words[2]}" in
       update)
@@ -90,44 +69,6 @@ _ctfsweep() {
         ;;
       uninstall)
         _describe -O 'uninstall 选项' _ctfsweep_opts_uninstall
-        return 0
-        ;;
-      train)
-        case "$prev" in
-          --data|--model-out|--model)
-            _files
-            return 0
-            ;;
-          --epochs)
-            compadd -- 100 250 500 1000
-            return 0
-            ;;
-        esac
-        _describe -O 'train 选项' _ctfsweep_opts_train
-        return 0
-        ;;
-      label)
-        case "$prev" in
-          --batch)
-            compadd -- 5 10 20 50
-            return 0
-            ;;
-        esac
-        _describe -O 'label 选项' _ctfsweep_opts_label
-        return 0
-        ;;
-      learning)
-        case "$prev" in
-          --min-auc)
-            compadd -- 0.80 0.85 0.90 0.95
-            return 0
-            ;;
-          --min-samples|--max-epochs|--epochs)
-            compadd -- 8 16 32 64 100 200 500 1000
-            return 0
-            ;;
-        esac
-        _describe -O 'learning 选项' _ctfsweep_opts_learning
         return 0
         ;;
       install|config|help)

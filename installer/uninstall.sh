@@ -3,9 +3,9 @@
 #
 # 「uninstall」= 卸载安装副本 + 摘除 shell 接线：
 #   · 用户级: 只删除 ~/.devtools/ctfsweep/ 下的功能文件（bin/ lib/ completions/
-#     config/ VERSION uninstall deploy.sh shell-setup.sh），**保留用户数据**
-#     （judge/、auto_learn/ 等数据集、模型与缓存——这些是解题标注积累，永不自动删除）；
-#   · 系统级: 删除 /Library/devtools/ctfsweep（纯安装产物，无用户数据）；
+#     config/ VERSION uninstall deploy.sh shell-setup.sh），**保留数据目录**
+#     （cache/ 扫描结果缓存 + 各题图片缓存——永不自动删除）；
+#   · 系统级: 删除 /Library/devtools/ctfsweep（纯安装产物，无扫描缓存）；
 #   · 旧版软链 ~/.local/bin/ctfsweep 一并清理；
 #   · 摘除 .zshrc/.bashrc 里的 `# >>> ctfsweep >>>` 块（由 shell-setup.sh remove 负责）。
 #
@@ -35,7 +35,7 @@ if [ -f "$DIR/shell-setup.sh" ]; then
     bash "$DIR/shell-setup.sh" remove "$USR_INSTALL" || true
 fi
 
-# —— 用户级: 只删功能残留, 保留数据目录（judge/ auto_learn/ 等） ——
+# —— 用户级: 只删功能残留, 保留数据目录（cache/ 扫描结果缓存等） ——
 for item in bin lib completions config VERSION uninstall deploy.sh shell-setup.sh; do
     p="$USR_INSTALL/$item"
     [ -e "$p" ] || continue
@@ -47,15 +47,15 @@ for item in bin lib completions config VERSION uninstall deploy.sh shell-setup.s
     fi
 done
 if [ -d "$USR_INSTALL" ]; then
-    # 空壳（无用户数据）→ 直接移除；有数据（judge/ auto_learn/ 等）→ 保留
+    # 空壳（无数据）→ 直接移除；有数据（扫描缓存等）→ 保留
     if rmdir "$USR_INSTALL" 2>/dev/null; then
         echo "（空目录已移除: ${USR_INSTALL}）"
     else
-        echo "用户数据保留: ${USR_INSTALL}/（judge/、auto_learn/ 等；如需彻底删除请手动处理）"
+        echo "扫描缓存保留: ${USR_INSTALL}/（如需彻底删除请手动处理）"
     fi
 fi
 
-# —— 系统级: 安装产物整体删除（无用户数据） ——
+# —— 系统级: 安装产物整体删除（无扫描缓存） ——
 if [ -d "$SYS_INSTALL" ]; then
     if rm -rf "$SYS_INSTALL" 2>/dev/null; then
         echo "已删除系统级安装: $SYS_INSTALL"

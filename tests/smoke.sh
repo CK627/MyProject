@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ctfsweep 冒烟（macOS / Linux）：语法门 + 单元冒烟 + 启动器 + 安装/布局契约 + 引导模式 + 自管理子命令
 # （5/7 守布局契约：PATH 上只能有一个无后缀软链；7/7 用 file:// 镜像跑真更新与离线失败路径，
-#   全程无需网络与 sudo，同时守住「部署/卸载都不碰用户数据」这条硬契约）
+#   全程无需网络与 sudo，同时守住「部署/卸载都不碰扫描缓存」这条硬契约）
 #
 # ⚠️ 安装层级一律显式写 CTFSWEEP_USER=1（用户级）：默认层级是系统级 /Library/devtools
 #    （与 jtool / ptool 一致），CI 里既没有 tty 也没有免密 sudo，跑默认路径会卡在密码提示上。
@@ -146,34 +146,34 @@ case "$(cat "$_stage_home/.u1.out")" in
 esac
 
 # 7.3 抬高镜像版本 → --check 只比对、不落盘
-printf '1.9.1\n' > "$_stage/VERSION"
-printf '1.9.1\n' > "$_stage/MyProject-CtfSweep/VERSION"
+printf '1.10.1\n' > "$_stage/VERSION"
+printf '1.10.1\n' > "$_stage/MyProject-CtfSweep/VERSION"
 (cd "$_stage" && rm -f ctfsweep-src.tar.gz && tar -czf ctfsweep-src.tar.gz MyProject-CtfSweep)
 _ver_before="$(cat "$_inst/VERSION")"
 HOME="$_stage_home" CTFSWEEP_MIRROR="file://$_stage" "$_csw" update --check > "$_stage_home/.u2.out" 2>&1 \
     || _fail "update --check 失败（退出码非 0）"
 case "$(cat "$_stage_home/.u2.out")" in
-    *"远端 v1.9.1 可用"*"--check：仅比对"*) : ;;
+    *"远端 v1.10.1 可用"*"--check：仅比对"*) : ;;
     *) _fail "update --check 输出异常：$(cat "$_stage_home/.u2.out")" ;;
 esac
 [ "$(cat "$_inst/VERSION")" = "$_ver_before" ] || _fail "update --check 竟然改动了 VERSION"
 echo "update --check OK（仅比对、不落盘）"
 
-# 7.4 真更新：埋一个用户数据哨兵，更新后它必须还在（R2：部署永不 rm -rf 安装根）
-mkdir -p "$_inst/judge"
-printf 'sentinel\n' > "$_inst/judge/dataset.jsonl"
+# 7.4 真更新：埋一个扫描缓存哨兵，更新后它必须还在（R2：部署永不 rm -rf 安装根）
+mkdir -p "$_inst/cache/sentinel-abc123"
+printf 'sentinel\n' > "$_inst/cache/sentinel-abc123/1.txt"
 HOME="$_stage_home" CTFSWEEP_MIRROR="file://$_stage" "$_csw" update > "$_stage_home/.u3.out" 2>&1 \
     || _fail "真更新失败：$(cat "$_stage_home/.u3.out")"
 case "$(cat "$_stage_home/.u3.out")" in
-    *"更新完成: v1.9.0 → v1.9.1"*) : ;;
+    *"更新完成: v1.10.0 → v1.10.1"*) : ;;
     *) _fail "真更新输出异常：$(cat "$_stage_home/.u3.out")" ;;
 esac
-[ "$(cat "$_inst/VERSION")" = "1.9.1" ] || _fail "更新后 VERSION 未变：$(cat "$_inst/VERSION")"
-[ -f "$_inst/judge/dataset.jsonl" ] || _fail "更新删掉了用户数据（judge/dataset.jsonl 不见了）"
+[ "$(cat "$_inst/VERSION")" = "1.10.1" ] || _fail "更新后 VERSION 未变：$(cat "$_inst/VERSION")"
+[ -f "$_inst/cache/sentinel-abc123/1.txt" ] || _fail "更新删掉了扫描缓存（cache/sentinel-abc123/1.txt 不见了）"
 [ "$(ls -A "$_inst/bin" | wc -l | tr -d ' ')" = "1" ] || _fail "更新后 bin/ 不止一个条目"
 [ -L "$_inst/bin/ctfsweep" ] || _fail "更新后 bin/ctfsweep 不再是软链"
 HOME="$_stage_home" "$_csw" --version >/dev/null || _fail "更新后启动器不可用"
-echo "真更新 OK（v1.9.0 → v1.9.1；用户数据与布局契约都在）"
+echo "真更新 OK（v1.10.0 → v1.10.1；扫描缓存与布局契约都在）"
 
 # 7.5 离线失败：镜像空 + 禁掉 GitHub 回退 → 必须明确报错且退出码非 0（绝不静默成功）
 if HOME="$_stage_home" CTFSWEEP_MIRROR="file://$_empty" CTFSWEEP_GITHUB=none \
@@ -185,7 +185,7 @@ case "$(cat "$_stage_home/.u4.out")" in
     *) _fail "离线 update 输出异常：$(cat "$_stage_home/.u4.out")" ;;
 esac
 
-# 7.6 uninstall -y：摘除功能文件与 shell 接线，用户数据保留
+# 7.6 uninstall -y：摘除功能文件与 shell 接线，扫描缓存保留
 # 先把「老格式手工接线」原样塞回 rc（就是本机 ~/.zshrc 的真实形态）：
 # 标题注释 + 指向仓库 bin 的 PATH + alias + source 仓库补全。卸载必须连注释一起清掉——
 # 只删三行会留下一句对不上现状的 `# ctfsweep（源码直跑：…）`。
@@ -202,11 +202,11 @@ case "$(cat "$_stage_home/.u5.out")" in
     *) _fail "uninstall 输出异常：$(cat "$_stage_home/.u5.out")" ;;
 esac
 [ ! -e "$_inst/bin" ] || _fail "卸载后 bin/ 仍在"
-[ -f "$_inst/judge/dataset.jsonl" ] || _fail "卸载删掉了用户数据"
+[ -f "$_inst/cache/sentinel-abc123/1.txt" ] || _fail "卸载删掉了扫描缓存"
 if grep -q 'ctfsweep' "$_stage_home/.zshrc" 2>/dev/null; then
     _fail "卸载后 shell 接线未摘除：$(cat "$_stage_home/.zshrc")"
 fi
-echo "uninstall -y OK（功能与 shell 接线清理、用户数据保留）"
+echo "uninstall -y OK（功能与 shell 接线清理、扫描缓存保留）"
 
 rm -rf "$_stage" "$_stage_home" "$_boot_root" "$_empty"
 

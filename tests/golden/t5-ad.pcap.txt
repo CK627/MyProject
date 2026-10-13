@@ -23,9 +23,6 @@
     [0.55 中] 域账号: 域 CORP.LOCAL 出现的账号：svc_sql、kanna.seto   @(Kerberos/NTLM)
     [0.55 中] 域账号: SPN（服务主体名，Kerberoasting 目标）：MSSQLSvc/dc01.corp.local   @(Kerberos TGS-REP)
 
-[留存区] 已记录本次扫描（5 条候选）：<TMP>/work/t5-ad.pcap
-  已知答案可回填: ctfsweep mark "<TMP>/work/t5-ad.pcap" <真实flag>
-
 ==============================================================================
 
 【元判断核综合评分】
@@ -73,3 +70,7 @@
 【扫描统计】
   线路报告（抓包/原始文件）：高 5 条 / 中 2 条 / 低 0 条
   模块报告（类型块）：高 5 条 / 中 2 条 / 低 0 条
+
+【扫描缓存】本次 1 个文件，报告与分档明细已写入:
+  <TMP>/data/cache/<名>-<哈希>/
+  完整报告见各目录下的 <文件名>_cache.txt；占用与清理见 ctfsweep config

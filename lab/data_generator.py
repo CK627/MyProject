@@ -1,7 +1,9 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""生成 CTF 取证训练数据集。
+"""生成 CTF 取证训练数据集（仓库内实验脚本，**不随安装提供**）。
 
-覆盖不同难度、复杂度、类型、编码、格式的训练样本，用于训练 JudgeNet。
+覆盖不同难度、复杂度、类型、编码、格式的训练样本，用于离线训练 JudgeNet。
+用法: python3 lab/data_generator.py [-o lab/synthetic_data.jsonl] [--seed N]
 
 输出格式: JSONL 每行一条样本，包含:
 - v: 特征版本
@@ -24,10 +26,12 @@ import os
 import random
 import time
 
-# 确保导入 judge 模块
+# 仓库根入 sys.path：包里取特征函数（离线实验脚本，不在包目录内）
 import sys
-sys.path.insert(0, os.path.dirname(__file__))
-from judge import extract_features, FEATURES
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+from ctfsweep.core.judge import extract_features, FEATURES  # noqa: E402
 
 
 # ================================================================= 数据生成器
@@ -549,7 +553,7 @@ def main():
     """生成训练数据并保存。"""
     import argparse
     parser = argparse.ArgumentParser(description='生成 CTF 取证训练数据')
-    parser.add_argument('-o', '--output', default='ctfsweep/judge/training_data.jsonl',
+    parser.add_argument('-o', '--output', default=os.path.join(_ROOT, 'lab', 'synthetic_data.jsonl'),
                        help='输出文件路径')
     parser.add_argument('--seed', type=int, default=42, help='随机种子')
     args = parser.parse_args()
@@ -565,7 +569,7 @@ def main():
     print(f'  正样本: {n_pos} 条')
     print(f'  负样本: {n_neg} 条')
     print(f'  总计: {len(samples)} 条')
-    print(f'\n提示: 运行 `ctfsweep train --data {args.output}` 开始训练')
+    print(f'\n提示: 运行 `python3 lab/train.py --data {args.output}` 开始训练')
 
 
 if __name__ == '__main__':

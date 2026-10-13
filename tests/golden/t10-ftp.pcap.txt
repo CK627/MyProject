@@ -15,9 +15,6 @@
     [0.40 低] 关键词[ctf]: ...notes: the ctf challenge starts at noon second line mentions ctf again...   @10.9.9.30:51002 -> 10.9.9.40:8080 (会话拼接 73B)
     [0.40 低] 关键词[ctf]: ...ge starts at noon second line mentions ctf again...   @10.9.9.30:51002 -> 10.9.9.40:8080 (会话拼接 73B)
 
-[留存区] 已记录本次扫描（2 条候选）：<TMP>/work/t10-ftp.pcap
-  已知答案可回填: ctfsweep mark "<TMP>/work/t10-ftp.pcap" <真实flag>
-
 ==============================================================================
 
 【元判断核综合评分】
@@ -49,3 +46,7 @@
 【扫描统计】
   线路报告（抓包/原始文件）：高 1 条 / 中 1 条 / 低 2 条
   模块报告（类型块）：高 1 条 / 中 1 条 / 低 2 条
+
+【扫描缓存】本次 1 个文件，报告与分档明细已写入:
+  <TMP>/data/cache/<名>-<哈希>/
+  完整报告见各目录下的 <文件名>_cache.txt；占用与清理见 ctfsweep config

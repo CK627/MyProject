@@ -89,35 +89,28 @@ Windows 运行 `bin\ctfsweep.bat <文件或目录>`，或把项目根目录加�
 └── uninstall  deploy.sh  shell-setup.sh
 ```
 
-用户数据**与安装位置无关**，恒定在家目录（`update` 与 `uninstall` 都不碰它；
-用户级安装时它与上面的安装根是同一个目录）：
+数据目录**与安装位置无关**，恒定在家目录（`update` 与 `uninstall` 都不碰它；
+用户级安装时它与上面的安装根是同一个目录）。它（**只有扫描缓存**）：
 
 ```
 ~/.devtools/ctfsweep/
-├── judge/         留存区 / 候选池 / 累积标注数据集
-├── cache/         -q 灰度模式的详细输出缓存
-└── auto_learn/    自主学习引擎的运行时数据
+└── cache/         每次扫描的结果缓存（按文件分目录）
 ```
 
-### 数据与模型（模型随版本 / 缓存集中）
+### 数据与模型（模型随版本 / 数据目录只放缓存）
 
 | 内容 | 位置 | 说明 |
 |------|------|------|
 | **判断核模型 + 训练配置** | 安装目录 `lib/models/`（未安装时是项目内 `models/`） | 训练产物与超参数，随版本一起发布；升级模型参数无需改代码 |
-| 扫描缓存（留存区 / 候选池 / 累积数据集） | `~/.devtools/ctfsweep/judge/` | `retention.jsonl` 每次扫描的候选快照（留存区）、`pending.jsonl` 扫描候选记录、`dataset.jsonl` 累积标注数据 |
-| 自主学习数据 | `~/.devtools/ctfsweep/auto_learn/` | 自主学习引擎的运行时数据 |
+| **扫描缓存** | `~/.devtools/ctfsweep/cache/<文件名>-<路径哈希6位>/` | `1.txt`/`2.txt`/`3.txt` 高/中/低分档明细 + `<名>_cache.txt` 该文件的完整报告。**每次扫描都写**（默认模式与 `-q` 内容相同），跑完即可回看 |
 | 配置文件（可选） | `~/.devtools/ctfsweep/ctfsweep.conf` | 扫描行为配置 |
 
-> 训练数据流：**每次扫描跑动 → 候选记入留存区（retention）+ 缓存池（pending）→
-> 已知答案 `ctfsweep mark` 回填 / 未知答案 `ctfsweep learning` 时逐题询问（题目；答案：）→
-> 标注累积到数据集（dataset）→ `ctfsweep train` 按项目配置训练 → 模型写回 `models/`**。
-
-> ⚠️ **数据永不自动删除**：`ctfsweep update` 只覆盖功能文件，`ctfsweep uninstall` 也只删功能
-> 文件与 shell 接线——`judge/`、`cache/`、`auto_learn/` 一律保留，需要彻底
-> 清理请手动删除（`ctfsweep config` 会报出精简缓存的占用与路径）。
+> ⚠️ **缓存永不自动删除**：`ctfsweep update` 只覆盖功能文件，`ctfsweep uninstall` 也只删功能
+> 文件与 shell 接线——`cache/` 一律保留，需要彻底清理请手动删除
+> （`ctfsweep config` 会报出缓存的占用与路径）。
 >
-> ⚠️ **系统级安装（sudo）下 `lib/models/` 属 root**，`ctfsweep train` 写不进去——
-> 需要训练时用 `sudo ctfsweep train`，或改装用户级。
+> 模型是**离线统一训练**的产物，随版本发布；用户要自己重训（例如用自己的题库），
+> 用仓库里的 `python3 lab/train.py`——运行时命令行**不提供**任何训练/标注入口。
 
 ## 更新
 
@@ -144,7 +137,7 @@ ctfsweep uninstall            # 带确认提示（-y 跳过）
 
 > 默认是系统级安装，所以 `./installer/uninstall.sh` 需要 `sudo` 才能删掉
 > `/Library/devtools/ctfsweep`（脚本会明确告诉你哪一项没权限，重跑一次带 sudo 即可）。
-> 卸载只删功能文件与 shell 接线，**用户数据一律保留**（见下节）。
+> 卸载只删功能文件与 shell 接线，**扫描缓存一律保留**（见下文「数据与模型」）。
 
 ## 功能特性
 
@@ -265,23 +258,27 @@ AD 类题目（Kerberoasting / AS-REP Roasting / NetNTLM 中继 / LDAP 明文绑
 - 🎛️ `--min-score` 过滤、`--limit` 截断、`--depth` 控制解码深度、`--no-decode` 关闭解码
 - 🛡️ 单文件出错不中断，继续扫下一个
 
-### 判断核（实验特性，`train` + `--judge`）
+### 判断核（`--judge` 打分；模型随版本发布）
 
-本地训练的**轻量判断网络**：对扫描候选做"答案相关性"打分（`p=0.9x`），用于人工核验前的排序与降噪。
+**轻量判断网络**：对扫描候选做"答案相关性"打分（`p=0.9x`），用于人工核验前的排序与降噪。
 
-- 🧠 **纯 Python 手写 MLP 集成**（默认 5 个成员，140 维特征输入；模型为 `.ctfj` 二进制单一格式）——零依赖、完全离线、训练确定性
-- 🏷️ 训练数据 = 本机积累的解题标注（缓存区 `~/.devtools/ctfsweep/judge/dataset.jsonl`：每行 = 候选 + 真/假标签），永不自动删除
-- 🧩 **模型随项目**：训练产物保存在项目内 `models/model.ctfj`（与代码同步版本管理，可单独升级/替换）
-- ⚙️ **训练超参数独立于代码**：编辑项目内 `models/train_config.json`（网络结构 / 学习率 / 种子 / 轮数等）——升级模型参数无需改代码
-- 📏 **留一组评估**（leave-one-group-out）：每组轮流当测试集，评估泛化后再全量重训；实测当前题库汇总 AUC ≈ 0.92
+- 🧠 **纯 Python 手写 MLP 集成**（默认 5 个成员，140 维特征输入；模型为 `.ctfj` 二进制单一格式）——零依赖、完全离线、推理确定性
+- 🧩 **模型随项目版本发布**：`models/model.ctfj`（与代码同步版本管理，可单独升级/替换），安装时随包部署到 `lib/models/`
+- ⚙️ **超参数独立于代码**：`models/train_config.json`（网络结构 / 学习率 / 种子 / 轮数等）——调参无需改代码
 - 🔌 无模型时工具行为与之前完全一致；`--judge` 时输出 `p=` 分与【判断核·重点候选】
 
 ```bash
-ctfsweep train                 # 训练（留一组评估 + 保存模型到项目内 models/model.ctfj）
-ctfsweep train --epochs 500    # 临时覆盖训练轮数（其余参数读训练配置）
 ctfsweep file.pcap --judge     # 扫描时给候选打 p 分，并列出模型排序的重点候选
+
+# 自己重训（离线脚本，不在运行时命令里）：留一组评估 + 全量重训 + 保存模型
+python3 lab/build_dataset.py   # 从题库构建 lab/dataset.jsonl（或 lab/data_generator.py 合成）
+python3 lab/train.py           # → models/model.ctfj
+python3 lab/train.py --epochs 500
 ```
 
+> 运行时**不提供**训练/标注子命令（自学习闭环已整体移除）：模型由作者离线统一训练后随
+> 版本发布，装机与日常使用都只做推理打分。`lab/` 下的脚本是仓库内的实验工具，**不随安装提供**。
+>
 > 诚实边界：判断核的"推理"是**统计归纳**（形状 / 上下文 / 模式），不是语义理解——
 > 开放语义推理仍交给 LLM / 人工；它的定位是"扫描器找全 → 判断核排序 → 人最终确认"。
 
@@ -289,7 +286,7 @@ ctfsweep file.pcap --judge     # 扫描时给候选打 p 分，并列出模型�
 
 - ⚡ **零第三方依赖**：任意 Python 3.8+，无需 pip install 任何东西
 - 📁 目录递归扫描；260MB 注册表全量 10 秒内、常规抓包亚秒级
-- 🔁 自助管理：`ctfsweep update`（真更新，镜像优先）/ `config`（运行信息）/ `train` / `label` / `learning` 等
+- 🔁 自助管理：`ctfsweep update`（真更新，镜像优先）/ `install` / `uninstall` / `config`（运行信息含缓存占用）/ `help`
 - 🧰 完整工程配套：CLI 包装器、shell 补全、配置文件、冒烟测试、CI
 
 ## 使用方法
@@ -331,11 +328,11 @@ ctfsweep Security.evtx -k flag1,flag2,flag3
 | `--no-decode` | 关闭 hex / base64 自动解码 |
 | `--depth N` | 解码链最大深度（默认 3，即 hex/base64 可反复套娃） |
 | `--limit N` | 每个文件最多输出条数（默认 50，按置信度排序后截取） |
-| `-q, --brief` | 精简输出：控制台只打「分档统计块」（高/中/低 + 缓存文件路径）；完整报告与明细写入 `<数据目录>/cache/<文件名>-<哈希>/`（1.txt / 2.txt / 3.txt / `<名>_cache.txt`）。目录名带文件**完整路径**的短哈希，同名不同目录的文件不会互相覆盖。该缓存只增不减，`ctfsweep config` 会报出占用与路径，确认不需要后整体删除即可 |
+| `-q, --brief` | 精简输出：控制台只打「分档统计块」（高/中/低 + 缓存文件路径）。注意**缓存两种模式都写**（默认模式扫描完还会在末尾打印本轮写出的缓存目录），`-q` 只改变控制台是否上屏。缓存位置 `<数据目录>/cache/<文件名>-<哈希>/`（1.txt / 2.txt / 3.txt / `<名>_cache.txt`），目录名带文件**完整路径**的短哈希，同名不同目录的文件不会互相覆盖。该缓存只增不减，`ctfsweep config` 会报出占用与路径，确认不需要后整体删除即可 |
 | `--extract` | 从流量中提取文件并按内容扫描（详见下文） |
 | `--extract-dir D` | 指定提取输出目录（默认 `<抓包名>_extracted/`，与抓包同目录） |
 | `--pwd-file F` | 附加口令字典文件（每行一个，用于加密压缩包） |
-| `--judge` | 用本地判断核模型对候选打分（`p=…` + 重点候选排序；需先 `ctfsweep train`） |
+| `--judge` | 用本地判断核模型对候选打分（`p=…` + 重点候选排序；模型随版本发布，重装或离线训练后替换） |
 | `--config F` | 指定配置文件（默认读取 `~/.devtools/ctfsweep/ctfsweep.conf`） |
 | `--version` | 显示版本 |
 | `-h, --help` | 显示帮助 |
@@ -346,35 +343,36 @@ ctfsweep Security.evtx -k flag1,flag2,flag3
 |--------|------|
 | `ctfsweep update [--check]` | 拉取最新源码快照并重装（镜像优先，回退 GitHub）；`--check` 只比对版本不落盘 |
 | `ctfsweep install` | 显示安装方式（一键 / 镜像 / 本地源码，装到 devtools 目录） |
-| `ctfsweep uninstall [-y]` | 卸载安装副本并摘除 shell 接线（**用户数据保留**；`-y` 跳过确认） |
-| `ctfsweep config` | 显示运行信息、数据目录与生效配置 |
-| `ctfsweep train [--data F] [--epochs N] [--model-out F]` | 训练本地判断核：留一组评估 + 全量重训 + 保存模型（超参数读训练配置） |
-| `ctfsweep mark <路径> <真实flag>` | 用真实答案回填一道题（文件/文件夹均可）：匹配候选→正样本，同题其他高分候选→负样本（难负样本）；无记录时自动先扫描 |
-| `ctfsweep learning [opts]` | 自主学习：**先逐题复核留存区**（题目；答案：<真实flag>，一个接一个），再自动标注 + 训练（带收敛判断） |
-| `ctfsweep label` / `auto-label` | 交互式标注 / 自动标注未标注候选 |
-| `ctfsweep gen-data [-o F]` | 生成 CTF 取证训练数据集（多类型覆盖；默认输出到用户数据目录） |
+| `ctfsweep uninstall [-y]` | 卸载安装副本并摘除 shell 接线（**扫描缓存保留**；`-y` 跳过确认） |
+| `ctfsweep config` | 显示运行信息、数据目录与生效配置（含扫描缓存占用与可删路径） |
 | `ctfsweep help` | 显示帮助 |
 
-> 子命令名（update / install / uninstall / config / train / label / learning / mark / gen-data / help 等）优先于文件路径解析——
+> 子命令名（update / install / uninstall / config / help）优先于文件路径解析——
 > 若要扫描恰好同名的文件，请用 `-f 文件名` 或 `./文件名`。
+>
+> **没有训练/标注子命令**：`train` / `label` / `auto-label` / `mark` / `learning` / `gen-data`
+> 已从运行时整体移除（自学习闭环废弃，模型离线统一训练）。要自己重训就进仓库跑
+> `python3 lab/train.py`。
 
-### 留存区（每次扫描自动记录，学习数据的来源）
+### 扫描缓存（每次扫描自动写入）
 
-**每次扫描都会把候选快照记入留存区**（缓存区 `retention.jsonl`）——这是"每次跑动 → 积累 → 学习"的入口：
+**每次扫描都会把结果写进缓存**，跑完即可回看，不必重扫：
 
 ```bash
-# ① 扫描一道题（文件或文件夹都一样，目录名随意——里面是啥就扫啥）
-ctfsweep /path/to/logs/              # → 留存区自动记录这道题的候选
+ctfsweep /path/to/logs/              # 扫描（默认模式：报告上屏 + 缓存落盘）
+# 结束后控制台会打印本轮写出的缓存目录：
+#   【扫描缓存】本次 N 个文件，报告与分档明细已写入:
+#     ~/.devtools/ctfsweep/cache/<文件名>-<哈希>/
+#     完整报告见各目录下的 <文件名>_cache.txt；占用与清理见 ctfsweep config
 
-# ② 有答案：立即回填（正=匹配候选；负=同题其他高分候选，即难负样本）
-ctfsweep mark /path/to/logs/ "flag{windows-log-answer}"
-
-# ③ 没答案（或拿不准）：留到 learning 时逐题询问
-ctfsweep learning                    # 逐题显示「题目；答案：<真实flag>」——输入答案回填 / 输入"无"标记无答案 / 回车暂留 / q 结束
+ctfsweep /path/to/logs/ -q           # 精简输出：控制台只留分档统计块，明细照旧落盘
+ctfsweep config                      # 报出缓存占用与路径（唯一清理入口）
 ```
 
-> `mark` 支持文件与文件夹：路径给什么扫什么（递归）。像 `flag.pacpng/flag.pcapng` 这种
-> "文件夹名像文件名"的结构也不受影响——把题目文件夹路径传进来即可。
+每个文件一份 `cache/<文件名>-<路径哈希6位>/`：`1.txt`/`2.txt`/`3.txt` 是高分档明细，
+`<名>_cache.txt` 是该文件的完整报告。**缓存只增不减**（`update` / `uninstall` 都不碰），
+确认不需要后手动整体删除即可。`-q` 与默认模式写出的缓存**内容相同**——`-q` 只决定
+控制台是否上屏。
 
 ### 典型场景
 
@@ -392,7 +390,7 @@ ctfsweep Security.evtx -k flag1,flag2      # [拼接建议] 区段
 ctfsweep ./all_captures/ --extract         # 预扫全部抓包采集候选口令
 ctfsweep secret.zip --pwd-file rockyou.txt # 或用自定义字典（zip 会先解压扫描）
 
-# 判断核：对候选按"答案相关性"排序（先 ctfsweep train 一次，之后每次扫描都可加 --judge）
+# 判断核：对候选按"答案相关性"排序（模型随版本发布，直接加 --judge）
 ctfsweep Security.evtx --judge              # 输出 p= 分 + 【判断核·重点候选】
 ```
 
@@ -501,9 +499,9 @@ CtfSweep/
 │       ├── http.py                # 请求序列 / POST 字段 / JWT / 事务配对
 │       ├── ad.py                  # AD 域取证：Kerberos 票据 / NTLMSSP / LDAP 明文绑定（hashcat 格式输出）
 │       ├── extract.py             # 文件雕刻、口令池、zip 弱口令与假加密绕过
-│       ├── judge.py               # 判断核：轻量 MLP 集成 + 特征 + 训练/标注/自主学习
+│       ├── judge.py               # 判断核：轻量 MLP 集成 + 特征提取 + 推理打分（只推理，不训练）
 │       ├── model_io.py            # 判断核模型 I/O（.ctfj 二进制单一格式）
-│       ├── data_generator.py      # 训练数据集生成（多类型覆盖）
+│       ├── paths.py               # 数据目录布局单点定义（~/.devtools/ctfsweep/cache/）
 │       ├── scanner.py             # 抓包扫描与原始文件扫描的编排
 │       ├── report.py              # 置信度报告渲染
 │       └── selfmgr.py             # 自管理：config / update（真更新）/ install 指引 / uninstall
@@ -519,19 +517,22 @@ CtfSweep/
 │   ├── ctfsweep.zsh               # zsh 补全
 │   └── ctfsweep.bash              # bash 补全
 ├── lab/                           # 实验/辅助工具（独立运行；脚本代码进库，数据产物不进库）
-│   ├── auto_learning.py           # 自主学习引擎：生成题目 → 扫描 → 分析 → 收集 → 训练 闭环
+│   ├── train.py                   # 判断核离线训练入口（留一组评估 + 保存模型；不随安装提供）
+│   ├── data_generator.py          # 合成训练样本（多类型覆盖）
+│   ├── build_dataset.py           # 从题库构建训练语料 lab/dataset.jsonl
 │   ├── task_generator.py          # SSH 远程题目生成器（pcap/evtx/registry/memory/文件取证）
-│   └── build_dataset.py           # 数据集构建辅助脚本
+│   └── analysis/                  # 案例库（每题一个 .md：识别特征 / 推理链 / 沉淀的工具函数）
 ├── installer/                     # 安装 / 卸载 / 发布
 │   ├── install.sh                 # 一键安装（可 source；自举下载或就地调用下方脚本）
 │   ├── install-from-source.sh     # 本地源码安装（deploy + shell 接线）
 │   ├── deploy.sh                  # 布局实现（唯一一份）：白名单拷贝 + bin/ 只留一个软链
 │   ├── shell-setup.sh             # shell 接线安装/摘除（成对标记块，幂等）
-│   ├── uninstall.sh               # 卸载安装副本（保留用户数据；由 shell-setup 摘接线）
+│   ├── uninstall.sh               # 卸载安装副本（保留扫描缓存；由 shell-setup 摘接线）
 │   └── publish-mirror.sh          # 把源码快照 + install.sh + VERSION 发布到国内镜像
 ├── tests/
 │   ├── gen_fixtures.py            # 生成确定性测试样例（pcap/pcapng/evtx/内嵌 zip/AD 域流量）
 │   ├── test_smoke.py              # 纯标准库冒烟（CLI + 扫描行为 + AD 协议 + shell 脚本体检）
+│   ├── test_golden.py             # 特征化（golden）逐字节回归（重构期手工跑，不进 CI）
 │   └── smoke.sh                   # 冒烟总入口（语法门 + 单元冒烟 + 启动器 + 布局契约
 │                                  #   + 引导模式 + 真更新/离线失败/uninstall，全程 file:// 镜像）
 └── .github/workflows/ci.yml       # CI：Python 3.8 / 3.11 / 3.13 三版本跑冒烟
@@ -572,7 +573,7 @@ PATH 只该指向安装目录的 `bin/`，那里只有一个无后缀软链。
 **Q: 已经手工把仓库 `bin/` 加进 PATH 了，怎么收拾？**
 跑一次 `install.sh` 即可：`shell-setup.sh` 会把 rc 里的旧手工接线（指向
 `CtfSweep/bin` 的 `export PATH`、`alias ctf`、source 仓库补全的行）逐行删掉，再写入
-`# >>> ctfsweep >>>` 块。想彻底移除就 `ctfsweep uninstall`——缓存数据（候选池/数据集）始终保留。
+`# >>> ctfsweep >>>` 块。想彻底移除就 `ctfsweep uninstall`——扫描缓存始终保留。
 
 **Q: 需要装 Wireshark 或 scapy 吗？**
 不需要。解析器是纯 Python 实现（不到 200 行），这也是"零依赖"的一部分。
@@ -592,13 +593,13 @@ PATH 只该指向安装目录的 `bin/`，那里只有一个无后缀软链。
 
 **Q: 数据都存在哪里？会不会随着清理丢失？**
 分两类：**模型与训练配置**随版本发布（`models/model.ctfj` + `models/train_config.json`，
-安装到 `<安装根>/lib/models/`）；**运行时缓存**（扫描候选池、累积标注数据集）放
-`~/.devtools/ctfsweep/`（judge/、auto_learn/ 等）。`update` 与 `uninstall` 都只覆盖
+安装到 `<安装根>/lib/models/`）；**扫描缓存**放 `~/.devtools/ctfsweep/cache/`——这是数据
+目录下**唯一**的内容（每次扫描都会写，跑完就能回看）。`update` 与 `uninstall` 都只覆盖
 `bin lib completions config VERSION uninstall deploy.sh shell-setup.sh` 这些功能项，
-**永不删除任何数据**（冒烟测试里有一个 `judge/dataset.jsonl` 哨兵守着这条契约）。
+**永不删除任何数据**（冒烟测试里有一个 `cache/sentinel-abc123/1.txt` 哨兵守着这条契约）。
 
 **Q: 怎么更新？**
-安装副本：`ctfsweep update` 读镜像 `VERSION` 比对，有新版就下载快照重装（用户数据保留）；
+安装副本：`ctfsweep update` 读镜像 `VERSION` 比对，有新版就下载快照重装（扫描缓存保留）；
 `--check` 只看不装。源码直跑：在项目目录 `git pull` 即可（`update` 会直接给出这条指引）。
 代码更新后无需任何刷新动作。
 
@@ -607,8 +608,9 @@ PATH 只该指向安装目录的 `bin/`，那里只有一个无后缀软链。
 想只走 GitHub 用 `CTFSWEEP_MIRROR=none`。命令不会静默成功——失败一律非零退出。
 
 **Q: 会不会污染我的目录？**
-只有 `--extract` 会写文件，默认写到 `<抓包名>_extracted/`（可用 `--extract-dir` 改）；
-若没有提取到任何文件，该目录会被自动移除。
+扫描结果写 `~/.devtools/ctfsweep/cache/`（数据目录下唯一的子目录，只增不减，`ctfsweep config`
+报占用）；`--extract` 写 `<抓包名>_extracted/`（与抓包同目录，可用 `--extract-dir` 改，
+没提取到任何文件时该目录会被自动移除）。
 
 ## 许可证
 

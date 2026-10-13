@@ -1,16 +1,16 @@
 # ctfsweep 补全（bash）：source 本文件，或放入 /etc/bash_completion.d/。
 # 兼容 bash 3.2（macOS 自带版本）。
 # 行为与 zsh 版对齐：TAB 直接列出全部选项（不必先敲 "-"）；
-# 子命令专属参数（update --check / uninstall -y / train --data）与选项值补全亦已支持。
+# 子命令专属参数（update --check / uninstall -y）与选项值补全亦已支持。
 _ctfsweep() {
     local cur prev opts subcmds
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     opts="-f --file -F --folder -k --keywords --min-score --no-decode --depth --limit --extract --extract-dir --pwd-file --judge -q --brief --config --version -h --help"
-    subcmds="update install uninstall config train label learning help"
+    subcmds="update install uninstall config help"
 
-    # 子命令专属参数（ctfsweep uninstall ... / ctfsweep train ...）
+    # 子命令专属参数（ctfsweep update --check / ctfsweep uninstall -y）
     if [ "$COMP_CWORD" -ge 2 ]; then
         case "${COMP_WORDS[1]}" in
             update)
@@ -19,44 +19,6 @@ _ctfsweep() {
                 ;;
             uninstall)
                 COMPREPLY=( $(compgen -W "-y --yes" -- "$cur") )
-                return 0
-                ;;
-            train)
-                case "$prev" in
-                    --data|--model-out|--model)
-                        COMPREPLY=( $(compgen -f -- "$cur") )
-                        return 0
-                        ;;
-                    --epochs)
-                        COMPREPLY=( $(compgen -W "100 250 500 1000" -- "$cur") )
-                        return 0
-                        ;;
-                esac
-                COMPREPLY=( $(compgen -W "--data --model-out --epochs" -- "$cur") )
-                return 0
-                ;;
-            label)
-                case "$prev" in
-                    --batch)
-                        COMPREPLY=( $(compgen -W "5 10 20 50" -- "$cur") )
-                        return 0
-                        ;;
-                esac
-                COMPREPLY=( $(compgen -W "--batch" -- "$cur") )
-                return 0
-                ;;
-            learning)
-                case "$prev" in
-                    --min-auc)
-                        COMPREPLY=( $(compgen -W "0.80 0.85 0.90 0.95" -- "$cur") )
-                        return 0
-                        ;;
-                    --min-samples|--max-epochs|--epochs)
-                        COMPREPLY=( $(compgen -W "8 16 32 64 100 200 500 1000" -- "$cur") )
-                        return 0
-                        ;;
-                esac
-                COMPREPLY=( $(compgen -W "--min-auc --min-samples --max-epochs --epochs" -- "$cur") )
                 return 0
                 ;;
             install|config|help)

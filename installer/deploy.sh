@@ -9,8 +9,8 @@
 # 三条硬约定:
 #   1. preflight 挡在删除之前。调用方是 set -e，先删后拷一旦源文件缺失就会中止，
 #      留下「已删旧、未建新」的半安装残骸，shell 接线根本跑不到。
-#   2. 永不 rm -rf <安装根>。用户级安装下安装根就是数据目录，还住着 judge/ cache/ 等
-#      用户数据，项目硬契约是「永不自动删除，uninstall 也保留」；删除范围收窄到功能项。
+#   2. 永不 rm -rf <安装根>。用户级安装下安装根就是数据目录，还住着 cache/ 等
+#      扫描缓存，项目硬契约是「永不自动删除，uninstall 也保留」；删除范围收窄到功能项。
 #   3. 白名单拷贝，绝不 cp -R bin。那会把 Windows 启动器 ctfsweep.bat 带进 PATH，
 #      命令名补全就会同时列出 ctfsweep 和 ctfsweep.bat —— 正是本布局要修的病。
 set -euo pipefail
@@ -64,7 +64,7 @@ mkdir -p "$DEST"
 DEST="$(cd "$DEST" && pwd)"
 echo "[ctfsweep] 部署 → $DEST"
 
-# ---- 只删功能项（保留 judge/ cache/ auto_learn/ 等用户数据）----
+# ---- 只删功能项（保留 cache/ 等扫描缓存）----
 for item in bin lib completions config VERSION uninstall deploy.sh shell-setup.sh; do
     rm -rf "$DEST/$item"
 done
