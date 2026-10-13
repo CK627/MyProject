@@ -7,6 +7,7 @@
 #   ctf -<TAB> / --<TAB>  → 全部选项；同义短/长选项合并为一行显示（如 "-f --file"）
 #   ctf -f<TAB>           → 直接补全 -f（短形式仍可按前缀补全；--f<TAB> → --file）
 #   ctf -f <TAB>          → 补全文件；-F <TAB> → 补全文件夹；--extract-dir <TAB> → 补全目录
+#   ctf -q <TAB>          → 只补文件（选项只在 "-" 开头或第一个参数位出现）
 #   ctf --min-score <TAB> → 0.40 / 0.55 / 0.85 / 0.95
 #   ctf -q               → 精简输出（控制台只打汇总块，明细在数据目录 cache/）
 #   ctf uninstall <TAB>   → -y / --yes
@@ -108,70 +109,82 @@ _ctfsweep() {
       ;;
   esac
 
-  # 收集已用过的选项（空格分隔串；-f / -k / -h 归一为对应长选项；--x=y 截到 --x）
-  used_str=' '
-  for (( i = 2; i < CURRENT; i++ )); do
-    case "${words[i]}" in
-      -f) used_str+='--file ' ;;
-      -F) used_str+='--folder ' ;;
-      -k) used_str+='--keywords ' ;;
-      -q) used_str+='--brief ' ;;
-      -h) used_str+='--help ' ;;
-      -*) used_str+="${${words[i]}%%=*} " ;;
-    esac
-  done
+  # 选项只在这两种位置作为候选出现：
+  #   ① 当前词以 "-" 开头 —— 标准补全时机；
+  #   ② 第一个参数位（CURRENT == 2）—— 保留「不敲 - 也能看到 --选项」的既有约定。
+  # 其余位置一律只补文件。缺失这道闸门时 `ctf -q <TAB>` 会把除 --brief 外的
+  # 全部 14 个选项连 --config 一起铺出来（按显示串排序，--config 恰好第一，最扎眼），
+  # 与 jtool/ptool 那种位置驱动的补全行为也不一致。
+  local show_opts=0
+  [[ "$cur" == -* ]] && show_opts=1
+  (( CURRENT == 2 )) && show_opts=1
 
-  # 拼装选项候选与显示串（配对项合并显示为 "-f --file"）
-  # 单横线场景（- / -f 等）配对项以【短形式】作为匹配词：保证 -f<TAB> 可补全，
-  # 且裸 "-" + TAB 不会被整体补成 "--"（全部候选的共同前缀保持为 "-"）。
-  local -a wshow dword dodesc
-  wshow=()
-  dword=()
-  dodesc=()
-  use_short=0
-  [[ "$cur" == -* && "$cur" != --* ]] && use_short=1
-  for item in "${_ctfsweep_opts_long[@]}"; do
-    name="${item%%:*}"
-    desc="${item#*:}"
-    disp="$name"
-    pshort=""
-    for pitem in "${_ctfsweep_opts_pairs[@]}"; do
-      ptmp="${pitem%%:*}"
-      if [[ "$name" == "${ptmp##* }" ]]; then
-        disp="$ptmp"
-        pshort="${ptmp%% *}"
-        desc="${pitem#*:}"
-        break
+  if (( show_opts )); then
+    # 收集已用过的选项（空格分隔串；-f / -k / -h 归一为对应长选项；--x=y 截到 --x）
+    used_str=' '
+    for (( i = 2; i < CURRENT; i++ )); do
+      case "${words[i]}" in
+        -f) used_str+='--file ' ;;
+        -F) used_str+='--folder ' ;;
+        -k) used_str+='--keywords ' ;;
+        -q) used_str+='--brief ' ;;
+        -h) used_str+='--help ' ;;
+        -*) used_str+="${${words[i]}%%=*} " ;;
+      esac
+    done
+
+    # 拼装选项候选与显示串（配对项合并显示为 "-f --file"）
+    # 单横线场景（- / -f 等）配对项以【短形式】作为匹配词：保证 -f<TAB> 可补全，
+    # 且裸 "-" + TAB 不会被整体补成 "--"（全部候选的共同前缀保持为 "-"）。
+    local -a wshow dword dodesc
+    wshow=()
+    dword=()
+    dodesc=()
+    use_short=0
+    [[ "$cur" == -* && "$cur" != --* ]] && use_short=1
+    for item in "${_ctfsweep_opts_long[@]}"; do
+      name="${item%%:*}"
+      desc="${item#*:}"
+      disp="$name"
+      pshort=""
+      for pitem in "${_ctfsweep_opts_pairs[@]}"; do
+        ptmp="${pitem%%:*}"
+        if [[ "$name" == "${ptmp##* }" ]]; then
+          disp="$ptmp"
+          pshort="${ptmp%% *}"
+          desc="${pitem#*:}"
+          break
+        fi
+      done
+      [[ "$used_str" == *" $name "* ]] && continue
+      if (( use_short )) && [[ -n "$pshort" ]]; then
+        wshow+=("$pshort")
+      else
+        wshow+=("$name")
       fi
+      dword+=("$disp")
+      dodesc+=("$desc")
     done
-    [[ "$used_str" == *" $name "* ]] && continue
-    if (( use_short )) && [[ -n "$pshort" ]]; then
-      wshow+=("$pshort")
-    else
-      wshow+=("$name")
+
+    # 加入候选：显示串自带 "word -- 描述" 排版；-l 保证一屏一行（不排多列）。
+    # 不指定 -o：默认按显示串排序 —— --长选项在前，"-f --file" 等短形式组自然落在末尾。
+    if (( ${#wshow} )); then
+      local wmax=0
+      for dw in "${dword[@]}"; do
+        (( ${#dw} > wmax )) && wmax=${#dw}
+      done
+      local -a ddisp
+      ddisp=()
+      for (( i = 1; i <= ${#wshow}; i++ )); do
+        ddisp+=("$(printf "%-$((wmax+2))s-- %s" "${dword[i]}" "${dodesc[i]}")")
+      done
+      compadd -l -d ddisp -- "${wshow[@]}"
     fi
-    dword+=("$disp")
-    dodesc+=("$desc")
-  done
 
-  # 加入候选：显示串自带 "word -- 描述" 排版；-l 保证一屏一行（不排多列）。
-  # 不指定 -o：默认按显示串排序 —— --长选项在前，"-f --file" 等短形式组自然落在末尾。
-  if (( ${#wshow} )); then
-    local wmax=0
-    for dw in "${dword[@]}"; do
-      (( ${#dw} > wmax )) && wmax=${#dw}
-    done
-    local -a ddisp
-    ddisp=()
-    for (( i = 1; i <= ${#wshow}; i++ )); do
-      ddisp+=("$(printf "%-$((wmax+2))s-- %s" "${dword[i]}" "${dodesc[i]}")")
-    done
-    compadd -l -d ddisp -- "${wshow[@]}"
-  fi
-
-  # 光标在选项区：到此为止（选项场景不补文件）
-  if [[ "$cur" == -* ]]; then
-    return 0
+    # 光标在选项区：到此为止（选项场景不补文件）
+    if [[ "$cur" == -* ]]; then
+      return 0
+    fi
   fi
 
   # 其他位置：子命令（仅第二个词）+ 文件

@@ -9,7 +9,8 @@
   * VERSION 文件与包版本一致性
   * shell 脚本体检：$VAR 后不得紧跟全角字符（bash 变量名解析坑）
   * 补全体检：选项列表经 compadd -l -d 添加并合并显示同义短/长选项（"-f --file"）；
-    不得回退为 _describe -t options（prefix-needed 门禁会拦截，不敲 "-" 就补不出选项）
+    不得回退为 _describe -t options（prefix-needed 门禁会拦截，不敲 "-" 就补不出选项）；
+    另在真 shell 里驱动补全函数，断言选项只出现在「- 开头」或「第一个参数位」
   * t1.pcap：明文 flag / hex 解码 / DNS base64 外带 / JWT / 环境变量回显 / --min-score 过滤
   * t2.pcapng：pcapng 封装 + -f/--file 参数
   * t3.evtx：UTF-16 明文 + 花括号片段 + 启发式拼接 + 噪音闸门（dll 后缀 / GUID / 乱码区剔除）
@@ -115,6 +116,106 @@ def check_completions():
     check('--judge' in bash, 'bash 补全：含 --judge')
     check(not any(s in bash for s in _REMOVED_SUBCOMMANDS),
           'bash 补全：无自学习子命令')
+    # 反向断言：兜底分支不得再「选项 + 文件」并列（history: 旧语句下面这一行
+    # 让 `ctf -q <TAB>` 把全部选项连 --config 一起倒出来——按字母排第一，最扎眼）。
+    # 注意别误伤第一个参数位那条 `$subcmds + $opts + 文件`：它是既有约定，保留。
+    check('COMPREPLY=( $(compgen -W "$opts" -- "$cur") $(compgen -f -- "$cur") )' not in bash,
+          'bash 补全：兜底分支不再铺选项（仅第一个参数位列选项）')
+    _check_completion_behavior()
+
+
+# 驱动补全函数、把它要加的候选打出来：覆写补全原语，不需要真实补全上下文。
+# 这是唯一能守住「哪个位置出哪些候选」的手段——静态体检看不见候选集合，
+# 上面那条 `ctf -q <TAB>` 倒出 --config 的缺陷正是从静态检查缝里漏过去的。
+_COMPLETION_STUB_ZSH = r'''compadd() {
+  local -a got=()
+  while (( $# )); do
+    case "$1" in
+      --) shift; got=("$@"); break ;;
+      -d|-O|-o|-t|-M|-a|-k|-W|-p|-P|-S|-I|-i|-s|-x|-X) shift ;;
+      *) shift ;;
+    esac
+  done
+  print -r -- "opts: ${(j: :)got}"
+}
+_files() { print -r -- "files" }
+_describe() { print -r -- "cmds: $3" }
+source "$1"; shift
+words=("$@"); CURRENT=$#words
+_ctfsweep
+'''
+
+_COMPLETION_STUB_BASH = r'''source "$1"; shift
+COMP_WORDS=("$@")
+COMP_CWORD=$(( ${#COMP_WORDS[@]} - 1 ))
+compgen() {
+  local mode="" word=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -W) mode=W; word="$2"; shift 2 ;;
+      -f) mode=f; shift ;;
+      -d) mode=d; shift ;;
+      -o) shift 2 ;;
+      --) shift; break ;;
+      *) shift ;;
+    esac
+  done
+  case "$mode" in
+    W) local w; for w in $word; do echo "$w"; done ;;
+    f) echo "files" ;;
+    d) echo "dirs" ;;
+  esac
+}
+_ctfsweep
+printf 'opts: %s\n' "${COMPREPLY[*]}"
+'''
+
+
+def _completion_candidates(shell, words):
+    """在 <shell> 里跑补全函数，返回其候选串（-q 场景应不再出现任何 --选项）。"""
+    tmp = tempfile.mkdtemp(prefix='ctfsweep-comp-')
+    try:
+        stub = os.path.join(tmp, 'stub')
+        src = _COMPLETION_STUB_ZSH if shell == 'zsh' else _COMPLETION_STUB_BASH
+        open(stub, 'w', encoding='utf-8').write(src)
+        comp = os.path.join(ROOT, 'completions',
+                            'ctfsweep.zsh' if shell == 'zsh' else 'ctfsweep.bash')
+        # -f：跳过用户的 rc 文件（补全候选不该依赖本机 shell 配置）
+        proc = subprocess.run([shell, '-f', stub, comp] + list(words),
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        return proc.stdout.decode('utf-8', 'replace')
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _check_completion_behavior():
+    """补全行为体检：选项只出现在「- 开头」或「第一个参数位」，其余位置只补文件。
+
+    缺失这道闸门时 `ctf -q <TAB>` 仍会把除 --brief 外的全部选项（含 --config）铺出来。
+    zsh 缺失的机器（如纯 bash 的 CI 镜像）跳过，不因此判失败。
+    """
+    for shell in ('bash', 'zsh'):
+        if not shutil.which(shell):
+            check(True, '%s 补全：本机无该 shell，跳过行为体检' % shell)
+            continue
+        first = _completion_candidates(shell, ['ctfsweep', ''])
+        check('--config' in first, '%s 补全：第一个参数位仍列出选项（不敲 - 也能看到）' % shell)
+        check('cmds' in first or 'update' in first, '%s 补全：第一个参数位仍列出子命令' % shell)
+
+        dash = _completion_candidates(shell, ['ctfsweep', '-'])
+        check('--config' in dash, '%s 补全：裸 "-" 后列出选项' % shell)
+
+        after_q = _completion_candidates(shell, ['ctfsweep', '-q', ''])
+        check('--config' not in after_q and '-f' not in after_q,
+              '%s 补全：-q 之后不再铺选项（历史缺陷：--config 排第一）' % shell)
+        check('files' in after_q, '%s 补全：-q 之后补文件' % shell)
+
+        after_q_dash = _completion_candidates(shell, ['ctfsweep', '-q', '-'])
+        check('--config' in after_q_dash, '%s 补全：-q 之后敲 "-" 仍可补选项' % shell)
+
+        after_file = _completion_candidates(shell, ['ctfsweep', 'a.pcap', ''])
+        check('--config' not in after_file and 'files' in after_file,
+              '%s 补全：文件参数之后只补文件' % shell)
 
 
 def _judge_samples():

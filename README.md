@@ -448,6 +448,7 @@ ctf -f<TAB>            # 补全短选项 → -f（--f<TAB> 同理 → --file）
 ctf -f <TAB>           # 补全文件路径（--extract-dir <TAB> 补全目录）
 ctf -F <TAB>           # 补全文件夹路径（-F/--folder；目录递归扫描整个项目）
 ctf --min-score <TAB>  # 补全取值（0.40 / 0.55 / 0.85 / 0.95）
+ctf -q <TAB>           # 只补文件（选项只在 "-" 开头或第一个参数位出现）
 ctf uninstall <TAB>    # → -y / --yes
 ```
 
@@ -455,7 +456,10 @@ ctf uninstall <TAB>    # → -y / --yes
 
 - **不敲 `-` 也能看到选项**：zsh 的 `_describe -t options` 有默认门禁（prefix-needed，
   光标不以 `-` 开头就不列出选项）；本项目改用「`compadd -l -d` + 手写显示串」直接列出，
-  TAB 即见全部选项；bash 版行为一致。
+  第一个参数位 TAB 即见全部选项；bash 版行为一致。
+- **选项只出现在两种位置**：当前词以 `-` 开头，或**第一个参数位**。其余位置（`ctf -q <TAB>`、
+  `ctf a.pcap <TAB>`）只补文件——否则 `-q` 之后会把全部选项连 `--config` 一起铺出来
+  （按显示串排序，`--config` 恰好第一，最扎眼），且与 `ls -l <TAB>` 的直觉相悖。
 - **同义短/长选项合并显示**（如 `-f --file`，只出现一次）；`-f<TAB>` 与 `--f<TAB>` 均按前缀补全。
 - 已输入过的选项不会重复列出（`-f` 与 `--file` 视为同一个）。
 

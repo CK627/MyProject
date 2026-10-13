@@ -1,6 +1,7 @@
 # ctfsweep 补全（bash）：source 本文件，或放入 /etc/bash_completion.d/。
 # 兼容 bash 3.2（macOS 自带版本）。
-# 行为与 zsh 版对齐：TAB 直接列出全部选项（不必先敲 "-"）；
+# 行为与 zsh 版对齐：第一个参数位 TAB 直接列出全部选项（不必先敲 "-"）；
+# 其余位置只在当前词以 "-" 开头时列选项，否则只补文件。
 # 子命令专属参数（update --check / uninstall -y）与选项值补全亦已支持。
 _ctfsweep() {
     local cur prev opts subcmds
@@ -61,10 +62,13 @@ _ctfsweep() {
             return 0
             ;;
     esac
+    # 选项只在这两种位置出现：当前词以 "-" 开头，或第一个参数位（保留
+    # 「TAB 直接列出全部选项」的既有约定）。其余位置只补文件——否则
+    # `ctf -q <TAB>` 会把全部选项连 --config 一起铺出来。
     if [[ "$cur" == -* ]]; then
         COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
     else
-        COMPREPLY=( $(compgen -W "$opts" -- "$cur") $(compgen -f -- "$cur") )
+        COMPREPLY=( $(compgen -f -- "$cur") )
     fi
 }
 complete -o filenames -F _ctfsweep ctfsweep
