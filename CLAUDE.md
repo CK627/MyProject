@@ -11,8 +11,12 @@ ctfsweep 是面向 CTF / 应急响应的取证扫描 CLI：把 pcap/pcapng、evt
 三条硬约束（改任何代码前先记住）：
 
 1. **零第三方依赖**：纯标准库、Python 3.8+。`pyproject.toml` 的 `dependencies = []`。
-2. **源码直跑**：不做外部安装，功能全在仓库内；`installer/` 里是历史遗留脚本（只用于
-   冒烟测试的历史路径回归，正常使用不需要）。
+2. **安装副本，不是源码直跑**：与同仓库的 jtool / ptool 同规——代码装成 devtools 副本
+   （`~/.devtools/ctfsweep`，sudo 则 `/Library/devtools/ctfsweep`），启动器实体在
+   `<根>/lib/ctfsweep.sh`，PATH 上只有 `<根>/bin/ctfsweep`（无后缀软链，指向 `../lib/ctfsweep.sh`）。
+   仓库 `bin/` 是**素材目录**（`ctfsweep.sh` + `ctfsweep.bat` 靠扩展名区分系统），
+   **绝不能整体进 PATH**：zsh 命令名补全走 `$commands` 哈希、不检查可执行位，`.bat` 会跟着
+   进候选（这正是本次改造的起因）。`ctfsweep update` 是**真更新**（镜像优先 + GitHub 回退）。
 3. **文档/输出/注释/提交信息全部中文**。报告标题（`【高置信（可直接核验）】`）、
    CLI 帮助、findings 的 `kind` 字段都是中文字面量，测试直接断言这些字符串——
    改文案等于改测试，见下文「改文案前必看」。
@@ -21,12 +25,16 @@ ctfsweep 是面向 CTF / 应急响应的取证扫描 CLI：把 pcap/pcapng、evt
 
 ```bash
 # 跑工具（三种等价方式）
-./bin/ctfsweep <文件或目录> [选项]
+ctf -f capture.pcap            # 已安装：PATH 上唯一的无后缀软链；ctf 是 shell-setup 写的 alias
 python3 -m ctfsweep <文件或目录> [选项]
-ctf -f capture.pcap            # 短命令 ctf = ctfsweep，由 installer 写入 shell 配置的 alias
-                               # （纯源码直跑时未必存在，以 ./bin/ctfsweep 为准）
+./bin/ctfsweep.sh <文件或目录> [选项]   # 仓库启动器（macOS / Linux；.bat 是 Windows 版）
+                               # ⚠️ 别把仓库 bin/ 加进 PATH（见「项目概览」第 2 条）
 
-# 完整冒烟（语法门 + 单元冒烟 + shell 语法 + 启动器 + 安装/卸载循环 + 引导模式）
+# 安装 / 更新 / 卸载（改完安装逻辑必跑：tests/smoke.sh 第 5、7 步守着布局契约与真更新）
+sudo bash installer/install.sh     # 本机落地；用户级去掉 sudo（installer/install.sh 亦可）
+ctfsweep update [--check]
+
+# 完整冒烟（语法门 + 单元冒烟 + shell 语法 + 启动器 + 安装/布局契约 + 引导模式 + 真更新）
 bash tests/smoke.sh
 
 # 只跑 Python 冒烟（快，日常用这个）
@@ -348,15 +356,28 @@ DNS 相关的 `KNOWN_INFRA_SUFFIXES` / `dns_lead_reason` 也在这里（见上�
         → ctfsweep mark <路径> <真实flag>：命中答案的候选=正样本，同题其他高分候选=难负样本
         → 累积到 dataset.jsonl
         → ctfsweep train / learning：留一组评估 + 全量重训
-        → 模型写回项目内 models/model.ctfj
+        → 模型写回 models/model.ctfj
 ```
 
-- **模型与超参数随项目**：`models/model.ctfj` + `models/train_config.json`
-  （改网络结构/学习率/种子改 JSON，不改代码）。
+- **模型与超参数随版本发布**：`models/model.ctfj` + `models/train_config.json`
+  （改网络结构/学习率/种子改 JSON，不改代码）。⚠️ `models_dir()` 走 `judge.project_dir()`，
+  而后者是 `judge.py` 上溯三级目录——**安装态下解析成 `<安装根>/lib/models`**，所以
+  `deploy.sh` 必须把 `models/` 一起装（不装则 `--judge` **静默**显示「未训练」，不报错；
+  `tests/smoke.sh` 第 5 步断言 `lib/models/model.ctfj` 存在）。系统级安装下该目录属 root，
+  `train` 需 `sudo`。
 - **运行时数据在用户目录**：`~/.devtools/ctfsweep/judge/`（`retention.jsonl`/`pending.jsonl`/
-  `dataset.jsonl`）。**这些数据永不自动删除**，`uninstall` 也保留。
+  `dataset.jsonl`）。**这些数据永不自动删除**——`update` 与 `uninstall` 都只覆盖功能项
+  （`bin lib completions config VERSION uninstall deploy.sh shell-setup.sh`），
+  **永不 `rm -rf <安装根>`**；`tests/smoke.sh` 7.4/7.6 各埋一个 `judge/dataset.jsonl` 哨兵守着。
 - 环境变量可覆盖路径（测试与实验靠这些隔离）：`CTFSWEEP_DATA_DIR`、`CTFSWEEP_MODELS_DIR`、
-  `CTFSWEEP_TRAIN_CONFIG`、`CTFSWEEP_JUDGE_MODEL`、`CTFSWEEP_CONF`、`CTFSWEEP_MIRROR`。
+  `CTFSWEEP_TRAIN_CONFIG`、`CTFSWEEP_JUDGE_MODEL`、`CTFSWEEP_CONF`、`CTFSWEEP_MIRROR`、
+  `CTFSWEEP_GITHUB`（`none` = 只认镜像，离线验证失败路径用）、`CTFSWEEP_GITHUB_TARBALL`。
+  安装层级另有两个（见「硬约束」第 2 条）：`CTFSWEEP_USER=1` 装用户级、`CTFSWEEP_DEVROOT=<dir>`
+  显式指定 devtools 根（优先级最高，只给测试用）。
+  ⚠️ **冒烟里凡是真落盘的安装/更新都显式带 `CTFSWEEP_USER=1`**：默认是系统级
+  （`/Library/devtools`，Linux `/usr/local/devtools`），CI 既没有 tty 也没有免密 sudo，
+  跑默认路径会卡在密码提示上。默认层级的正确性由 `install-from-source.sh print-install-dir`
+  守（只问不装），`tests/smoke.sh` 第 5 步断言。
 
 🚨 **负样本必须来自同题语境**。`lab/analysis/README.md` 记录了受控实验：把"真实恶意流量"
 （无 flag）题目的高分候选当负样本灌进训练集，留一组评估显示 AUC 0.956→0.779 明显退化。
@@ -371,9 +392,16 @@ DNS 相关的 `KNOWN_INFRA_SUFFIXES` / `dns_lead_reason` 也在这里（见上�
   `completions/ctfsweep.bash`、README 的选项表。补全有静态体检防回退：
   必须用 `compadd -l -d` + 手写显示串，**不得**改回 `_describe -t options`
   （其 prefix-needed 门禁会导致"不敲 `-` 就看不到选项"）；同义短/长选项合并为
-  一行显示（`-f --file` 只出现一次）。`update`/`install` 的文案也被断言。
+  一行显示（`-f --file` 只出现一次）。
+- **安装/更新/卸载的文案被两处逐字断言**，改这五个字符串之一就要同步改测试：
+  `update:拉取最新源码快照并重装`、`install:显示安装方式`（`tests/test_smoke.py:95`，另有一条
+  「无 `已弃用` / `更新指引` 残留」的反向断言防旧文案漂回来）；以及 `smoke.sh` 第 7 步断言的
+  `运行模式: devtools 安装`、`已是最新版本`、`远端 vX 可用` + `--check：仅比对`、
+  `更新完成: vA → vB`、`无法获取远端版本号`、`清理完成`。改 `cli.HELP` 里的三种运行方式说明
+  同样要同步 README 的「安装」一节。
 - **shell 脚本里 `$VAR` 后不得紧跟非 ASCII 字符**——bash 会把全角字符并入变量名。
-  `check_shell_scripts()` 扫描所有 `*.sh`/`*.zsh`/`*.bash`/`bin/ctfsweep` 强制这条。
+  `check_shell_scripts()` 扫描所有 `*.sh`/`*.zsh`/`*.bash`/`bin/ctfsweep.sh` 强制这条。
+  （`installer/shell-setup.sh` 里 `echo "…: $RC（…）"` 就是这么炸过一次，写成 `${RC}` 才行。）
 - **报告文案是测试断言**：如 `【中置信（需人工确认）】`、`片段池（按文件标注来源）`、
   `←` 来源标注、`统计: 高置信` 的"已移除"反向断言。改输出前先 grep `tests/`。
 - **汇总区分「flag 候选」与「非 flag 证据」**：`cli.py` 用 `utils.FLAG_RE` 判候选值是否呈
@@ -406,6 +434,9 @@ DNS 相关的 `KNOWN_INFRA_SUFFIXES` / `dns_lead_reason` 也在这里（见上�
 - `lab/auto_learning.py` 是"生成题目 → 扫描 → 分析 → 收集 → 训练"闭环，
   `lab/task_generator.py` 靠 SSH 连远程 Windows 生成题目——两者都依赖本机环境，
   不要在 CI 或无关改动里跑。
+- `models/` 不只是"项目内的模型"：`deploy.sh` 会把它复制到 `<安装根>/lib/models`，
+  **它属于安装载荷**（见上文 `models_dir()`）。改 `models/` 下任何文件都要走一次
+  `bash tests/smoke.sh`（第 5 步断言安装后模型就位）。
 
 ## 工作流
 

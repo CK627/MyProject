@@ -559,13 +559,19 @@ def param_count(sizes):
 
 
 # ---------------------------------------------------------------- 数据 / 评估
-# 布局约定（2026-10-12 定稿）：
-#   · 模型 + 训练配置 → 项目内 models/（随项目版本管理，专注"训练/升级模型"）
+# 布局约定（2026-10-12 定稿，2026-10-13 补安装态）：
+#   · 模型 + 训练配置 → models/（随版本发布；安装态落在 <安装根>/lib/models）
+#     专注"训练/升级模型"，改超参数无需改代码
 #   · 运行时缓存（扫描候选池、累积数据集）→ ~/.devtools/ctfsweep/judge/
-#   训练流 = 读缓存数据 → 按项目配置训练 → 产出模型写回项目。
+#   训练流 = 读缓存数据 → 按配置训练 → 产出模型写回 models_dir()。
+#   ⚠️ 安装态下 models_dir() 在安装根内，系统级安装（sudo）属 root，train 需 sudo。
 
 def project_dir():
-    """项目根目录（源码直跑模式；judge.py 位于 <root>/ctfsweep/core/judge.py）。
+    """项目根目录（judge.py 位于 <root>/.../ctfsweep/core/judge.py，上溯三级）。
+
+    注意安装态下这里得到的是**安装根的 lib/**（启动器在 <root>/lib/ctfsweep.sh、
+    包在 <root>/lib/ctfsweep/），于是 models_dir() = <root>/lib/models——
+    所以 deploy.sh 必须把 models/ 一起装，否则 --judge 会静默退化成「未训练」。
 
     环境变量 CTFSWEEP_PROJECT_DIR 可覆盖（测试隔离用）。
     """

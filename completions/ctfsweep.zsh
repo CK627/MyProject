@@ -1,6 +1,6 @@
 #compdef ctfsweep
-# ctfsweep 补全（zsh）：把本文件所在目录加入 fpath 后重开终端，或直接 source 本文件
-# （源码直跑模式：在 ~/.zshrc 中 source 项目里的本文件即可）。
+# ctfsweep 补全（zsh）：安装时由 installer/shell-setup.sh 接进 ~/.zshrc 的
+# `# >>> ctfsweep >>>` 块（source 安装目录里的这一份）。手工使用也可直接 source 本文件。
 #
 # 候选为手写清单（不依赖 _arguments）：
 #   ctf <TAB>             → 子命令 + 全部选项 + 文件（不敲 "-" 也能看到 --选项）
@@ -15,9 +15,9 @@
 
 # ---- 候选清单 ----
 _ctfsweep_subcmds=(
-  'update:更新指引（源码直跑：git pull）'
-  'install:已弃用（源码直跑，不安装外部副本）'
-  'uninstall:清理旧版安装残留（保留数据）'
+  'update:拉取最新源码快照并重装（--check 只比对版本）'
+  'install:显示安装方式（装到 devtools 目录）'
+  'uninstall:卸载安装副本（保留用户数据）'
   'config:显示运行信息与配置'
   'train:训练本地判断核（judge）模型'
   'label:交互式标注未标注候选'
@@ -85,7 +85,8 @@ _ctfsweep() {
   if (( CURRENT >= 3 )); then
     case "${words[2]}" in
       update)
-        return 0   # update 无参数（仅输出更新指引）
+        compadd -- --check
+        return 0
         ;;
       uninstall)
         _describe -O 'uninstall 选项' _ctfsweep_opts_uninstall
@@ -244,7 +245,10 @@ if (( $+functions[compdef] )); then
 fi
 
 # ============================================
-# 说明（源码直跑模式）
-# 补全与 PATH 均由本文件所在的项目目录提供；代码更新（git pull）后无需刷新。
-# （历史版本曾在此定义 ctfsweep 包装函数用于安装后的即时刷新，已随安装模式移除）
+# 说明（devtools 安装形态）
+# 安装后 PATH 与补全都由安装目录提供，接线写在 ~/.zshrc 的
+# `# >>> ctfsweep >>>` 块里（由 installer/shell-setup.sh 维护，幂等）。
+# 仓库 bin/ 是素材目录（ctfsweep.sh + ctfsweep.bat），**不进 PATH** ——
+# 命令名补全走 $commands 哈希，而它不检查可执行位，整体挂上会连
+# Windows 启动器 ctfsweep.bat 一起列出来。ctfsweep update 后补全自动刷新。
 # ============================================

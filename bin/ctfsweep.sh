@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # ctfsweep 启动器（macOS / Linux）
 # 解析软链接定位自身目录，再交给 python3 执行（-c 引导，避免 cwd 遮蔽安装版）。
+# 本文件是**素材**，不进 PATH：安装时被复制成 <安装根>/lib/ctfsweep.sh，
+# 由 <安装根>/bin/ctfsweep（无后缀软链）指过来。bin/ 在 PATH 上，若把 .sh 也
+# 放在那里，命令名补全就会同时列出 ctfsweep 和 ctfsweep.sh（Windows 的 .bat 同理）。
 # 兼容两种布局：
-#   仓库检出   <root>/bin/ctfsweep + <root>/ctfsweep/        → PYTHONPATH=<root>
-#   devtools   <root>/bin/ctfsweep + <root>/lib/ctfsweep/    → PYTHONPATH=<root>/lib
+#   仓库检出   <root>/bin/ctfsweep.sh + <root>/ctfsweep/     → PYTHONPATH=<root>
+#   devtools   <root>/bin/ctfsweep（软链）→ <root>/lib/ctfsweep.sh
+#              + <root>/lib/ctfsweep/                        → PYTHONPATH=<root>/lib
 set -euo pipefail
 
 src="${BASH_SOURCE[0]}"

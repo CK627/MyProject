@@ -6,63 +6,145 @@
 >
 > 零依赖（纯标准库，Python 3.8+），`ctfsweep <文件或目录>` 即用；支持 macOS / Linux / Windows。
 
-## 快速开始（源码直跑）
+## 安装
 
-本工具采用**源码直跑**模式：功能完整存在于项目目录，**不安装外部副本**；
-模型与训练配置随项目（`models/`），运行时缓存（扫描候选池 / 数据集）放
-`~/.devtools/ctfsweep/`（见下）。
+### 命令行一键安装
 
-macOS / Linux / Windows 通用，零依赖（Python 3.8+）：
+macOS / Linux（安装后自动刷新当前终端，无需手动 source）：
 
 ```bash
-# 方式一：项目启动器（任意目录可用）
-./bin/ctfsweep <文件或目录> [选项]
-
-# 方式二：模块方式（项目根目录内）
-python3 -m ctfsweep <文件或目录> [选项]
-
-# 方式三（推荐）：把项目的 bin 加入 PATH，之后 ctfsweep / ctf 命令全局可用
-#   在项目根目录执行：
-echo "export PATH=\"$PWD/bin:\$PATH\"" >> ~/.zshrc && source ~/.zshrc
+source <(curl -fsSL https://raw.githubusercontent.com/CK627/MyProject/CtfSweep/installer/install.sh)
 ```
 
-### Windows
+装成 devtools 副本（与同仓库的 jtool / ptool 同规）：**默认系统级** → macOS
+`/Library/devtools/ctfsweep`、Linux `/usr/local/devtools/ctfsweep`，需要时在脚本里提示
+管理员密码；代码全在安装目录，PATH 上只多一个无后缀的 `ctfsweep`，之后用
+`ctfsweep update` 更新。
 
-Windows 下无需安装：运行 `bin\ctfsweep.bat <文件或目录>`（任意目录可用），
-或把项目根目录加入 `PYTHONPATH` 后使用 `python -m ctfsweep`。
+> 只想装给当前用户（不需要密码，落到 `~/.devtools/ctfsweep`）：在命令前加
+> `CTFSWEEP_USER=1`。
 
-### 文件布局（模型随项目 / 缓存集中）
+装完重开终端（`source <(...)` 的形式会自动刷新当前终端），然后：
+
+```bash
+ctfsweep <文件或目录> [选项]
+ctf <文件或目录> [选项]        # 短命令别名
+ctfsweep update               # 更新到最新版（--check 只比对版本，不落盘）
+```
+
+### 国内镜像（无需 VPN）
+
+GitHub 的 `raw` / `api` 域名在国内不保证可达。镜像服务器在国内，产物与 GitHub 分支逐字节相同：
+
+```bash
+source <(curl -fsSL http://101.132.165.98/dist/ctfsweep/install.sh)
+```
+
+安装脚本**先访问镜像，拿不到再回退 GitHub**，`ctfsweep update` 同样如此。换源用环境变量：
+
+```bash
+CTFSWEEP_MIRROR=https://mirror.example.com/ctfsweep source <(curl -fsSL .../install.sh)
+CTFSWEEP_MIRROR=none source <(curl -fsSL .../install.sh)   # 强制只走 GitHub
+```
+
+### macOS / Linux（源码安装）
+
+```bash
+cd /path/to/CtfSweep
+./installer/install.sh                    # 默认系统级（需要时提示管理员密码）
+CTFSWEEP_USER=1 ./installer/install.sh    # 只装给当前用户 → ~/.devtools/ctfsweep
+```
+
+安装完成后执行 `source ~/.zshrc`（或 `source ~/.bashrc`）或重新打开终端。
+
+### Windows / 不安装也能跑
+
+纯标准库、Python 3.8+，Windows 下不需要安装：
+
+```bash
+python3 -m ctfsweep <文件或目录> [选项]   # 项目根目录内
+./bin/ctfsweep.sh <文件或目录> [选项]     # 仓库启动器（macOS / Linux）
+```
+
+Windows 运行 `bin\ctfsweep.bat <文件或目录>`，或把项目根目录加入 `PYTHONPATH`
+后使用 `python -m ctfsweep`。
+
+> ⚠️ **别把仓库的 `bin/` 直接加进 PATH**。那是**素材目录**：`ctfsweep.sh`（macOS / Linux）
+> 与 `ctfsweep.bat`（Windows）靠扩展名区分系统。整体挂上 PATH 后，zsh 的命令名补全走
+> `$commands` 哈希，而**这个哈希不检查可执行位**——macOS 上根本跑不起来的 `.bat`
+> 也会进候选，`ctfsweep<TAB>` 就同时列出 `ctfsweep` 和 `ctfsweep.bat`。
+> 安装形态正是为此设计的：真实脚本住在安装目录的 `lib/ctfsweep.sh`，
+> PATH 上的 `bin/ctfsweep` 只是指向它的软链，全程只有**一个**名字。
+
+### 安装后的目录布局
+
+```
+/Library/devtools/ctfsweep/          ← 默认（Linux: /usr/local/devtools/）；
+                                     CTFSWEEP_USER=1 则装在 ~/.devtools/ctfsweep/
+├── bin/ctfsweep -> ../lib/ctfsweep.sh   ← PATH 上唯一的名字（软链）
+├── lib/ctfsweep.sh                      启动器实体
+├── lib/ctfsweep/                        Python 包
+├── lib/models/                          判断核模型（model.ctfj + train_config.json）
+├── config/ completions/ VERSION
+└── uninstall  deploy.sh  shell-setup.sh
+```
+
+用户数据**与安装位置无关**，恒定在家目录（`update` 与 `uninstall` 都不碰它；
+用户级安装时它与上面的安装根是同一个目录）：
+
+```
+~/.devtools/ctfsweep/
+├── judge/         留存区 / 候选池 / 累积标注数据集
+├── cache/         -q 灰度模式的详细输出缓存
+└── auto_learn/    自主学习引擎的运行时数据
+```
+
+### 数据与模型（模型随版本 / 缓存集中）
 
 | 内容 | 位置 | 说明 |
 |------|------|------|
-| **判断核模型 + 训练配置** | 项目内 `models/`（`model.ctfj` + `train_config.json`） | 训练产物与超参数，随项目版本管理；专注升级模型参数无需改代码 |
+| **判断核模型 + 训练配置** | 安装目录 `lib/models/`（未安装时是项目内 `models/`） | 训练产物与超参数，随版本一起发布；升级模型参数无需改代码 |
 | 扫描缓存（留存区 / 候选池 / 累积数据集） | `~/.devtools/ctfsweep/judge/` | `retention.jsonl` 每次扫描的候选快照（留存区）、`pending.jsonl` 扫描候选记录、`dataset.jsonl` 累积标注数据 |
 | 自主学习数据 | `~/.devtools/ctfsweep/auto_learn/` | 自主学习引擎的运行时数据 |
 | 配置文件（可选） | `~/.devtools/ctfsweep/ctfsweep.conf` | 扫描行为配置 |
 
 > 训练数据流：**每次扫描跑动 → 候选记入留存区（retention）+ 缓存池（pending）→
 > 已知答案 `ctfsweep mark` 回填 / 未知答案 `ctfsweep learning` 时逐题询问（题目；答案：）→
-> 标注累积到数据集（dataset）→ `ctfsweep train` 按项目配置训练 → 模型写回项目 `models/`**。
+> 标注累积到数据集（dataset）→ `ctfsweep train` 按项目配置训练 → 模型写回 `models/`**。
 
-> 历史说明：早期版本支持"安装到 `~/.devtools/ctfsweep/`（devtools 布局）"。
-> 现已改为源码直跑（不做外部拓展）；如本机留有旧安装副本，运行
-> `ctfsweep uninstall` 清理（**用户数据始终保留**）。
+> ⚠️ **数据永不自动删除**：`ctfsweep update` 只覆盖功能文件，`ctfsweep uninstall` 也只删功能
+> 文件与 shell 接线——`judge/`、`cache/`、`auto_learn/` 一律保留，需要彻底
+> 清理请手动删除（`ctfsweep config` 会报出精简缓存的占用与路径）。
+>
+> ⚠️ **系统级安装（sudo）下 `lib/models/` 属 root**，`ctfsweep train` 写不进去——
+> 需要训练时用 `sudo ctfsweep train`，或改装用户级。
 
-## 清理旧版安装（uninstall）
-
-源码直跑模式下通常无需卸载。如本机曾装过旧版（devtools 布局），清理方式：
+## 更新
 
 ```bash
-ctfsweep uninstall            # 推荐：带确认提示（-y 跳过）
-./installer/uninstall.sh      # 等价脚本
-
-sudo ./installer/uninstall.sh # 连同系统级目录（/Library/devtools/ctfsweep）一起清理
+ctfsweep update               # 拉取最新源码快照并重装（镜像优先，回退 GitHub）
+ctfsweep update --check       # 只比对版本，不落盘
 ```
 
-清理只删除功能残留（bin / lib / config / completions 等），
-**缓存目录（`~/.devtools/ctfsweep/` 下的候选池与数据集）始终保留**。
+`update` 会读镜像上的 `VERSION` 比对，只在版本更高（或检测到安装残缺）时才下载重装；
+下载到的快照版本号与远端对不上（镜像半发布）就拒绝落盘。
+换源：`CTFSWEEP_MIRROR=<url>`；`CTFSWEEP_MIRROR=none` 只走 GitHub；
+`CTFSWEEP_GITHUB=none` 只认镜像（离线环境用）。
 
-> 历史安装脚本仍保留在 `installer/`（如需在别的机器临时部署），当前模式不再使用。
+> **旧版（≤ 1.8.10）无法自我更新**：那一版的 `update` 只打印 `git pull` 提示，不认识这套
+> 更新流程。老机器第一次必须手动装一次（跑上面的「命令行一键安装」），之后 `ctfsweep update`
+> 才会走真更新。系统级安装下更新会提示管理员密码（落盘要写 `/Library/devtools`）。
+
+## 卸载
+
+```bash
+ctfsweep uninstall            # 带确认提示（-y 跳过）
+./installer/uninstall.sh      # 等价脚本（用户级 + 系统级一起清）
+```
+
+> 默认是系统级安装，所以 `./installer/uninstall.sh` 需要 `sudo` 才能删掉
+> `/Library/devtools/ctfsweep`（脚本会明确告诉你哪一项没权限，重跑一次带 sudo 即可）。
+> 卸载只删功能文件与 shell 接线，**用户数据一律保留**（见下节）。
 
 ## 功能特性
 
@@ -207,7 +289,7 @@ ctfsweep file.pcap --judge     # 扫描时给候选打 p 分，并列出模型�
 
 - ⚡ **零第三方依赖**：任意 Python 3.8+，无需 pip install 任何东西
 - 📁 目录递归扫描；260MB 注册表全量 10 秒内、常规抓包亚秒级
-- 🔁 自助管理：`ctfsweep config`（运行信息）/ `train` / `label` / `learning` 等；`uninstall` 仅用于清理历史旧安装
+- 🔁 自助管理：`ctfsweep update`（真更新，镜像优先）/ `config`（运行信息）/ `train` / `label` / `learning` 等
 - 🧰 完整工程配套：CLI 包装器、shell 补全、配置文件、冒烟测试、CI
 
 ## 使用方法
@@ -262,9 +344,9 @@ ctfsweep Security.evtx -k flag1,flag2,flag3
 
 | 子命令 | 说明 |
 |--------|------|
-| `ctfsweep update` | 更新指引（源码直跑模式：在项目目录 `git pull`） |
-| `ctfsweep install` | 已弃用（源码直跑，不安装外部副本） |
-| `ctfsweep uninstall [-y]` | 清理历史旧安装残留（用户数据保留；`-y` 跳过确认） |
+| `ctfsweep update [--check]` | 拉取最新源码快照并重装（镜像优先，回退 GitHub）；`--check` 只比对版本不落盘 |
+| `ctfsweep install` | 显示安装方式（一键 / 镜像 / 本地源码，装到 devtools 目录） |
+| `ctfsweep uninstall [-y]` | 卸载安装副本并摘除 shell 接线（**用户数据保留**；`-y` 跳过确认） |
 | `ctfsweep config` | 显示运行信息、数据目录与生效配置 |
 | `ctfsweep train [--data F] [--epochs N] [--model-out F]` | 训练本地判断核：留一组评估 + 全量重训 + 保存模型（超参数读训练配置） |
 | `ctfsweep mark <路径> <真实flag>` | 用真实答案回填一道题（文件/文件夹均可）：匹配候选→正样本，同题其他高分候选→负样本（难负样本）；无记录时自动先扫描 |
@@ -384,8 +466,19 @@ ctf uninstall <TAB>    # → -y / --yes
 
 ### 关于「刷新」
 
-源码直跑模式下，`update` / `install` / `uninstall` 不再改写 shell 配置；
-补全与 PATH 始终指向项目目录，代码更新（`git pull`）后无需任何刷新动作。
+`install` / `update` / `uninstall` 都会**按成对标记块**改写 shell 配置：写入的是
+
+```sh
+# >>> ctfsweep >>>
+
+export PATH="<安装根>/bin:$PATH"
+alias ctf='ctfsweep'
+[ -f "<安装根>/completions/ctfsweep.zsh" ] && source "<安装根>/completions/ctfsweep.zsh"
+# <<< ctfsweep <<<
+```
+
+重复安装不会堆叠（整块先删后写），卸载会整块摘除。改完配置需重开终端或 `source` 一次；
+**更新代码不需要任何刷新动作**（PATH 与补全指的都是安装目录里的文件，重装就地生效）。
 
 ## 项目结构
 
@@ -413,10 +506,10 @@ CtfSweep/
 │       ├── data_generator.py      # 训练数据集生成（多类型覆盖）
 │       ├── scanner.py             # 抓包扫描与原始文件扫描的编排
 │       ├── report.py              # 置信度报告渲染
-│       └── selfmgr.py             # 自管理子命令：config / uninstall 清理 / 更新指引
-├── bin/
-│   ├── ctfsweep                   # 启动器（macOS / Linux，支持软链，定位仓库根）
-│   └── ctfsweep.bat               # 启动器（Windows）
+│       └── selfmgr.py             # 自管理：config / update（真更新）/ install 指引 / uninstall
+├── bin/                           # ⚠️ 素材目录，**不要**整体加入 PATH（见「安装」）
+│   ├── ctfsweep.sh                # 启动器（macOS / Linux；安装时复制成 <安装根>/lib/ctfsweep.sh）
+│   └── ctfsweep.bat               # 启动器（Windows；只走源码直跑，不进安装目录）
 ├── config/
 │   └── ctfsweep.conf              # 扫描配置文件模板
 ├── models/                        # 判断核模型与训练配置（随项目版本管理）
@@ -429,23 +522,26 @@ CtfSweep/
 │   ├── auto_learning.py           # 自主学习引擎：生成题目 → 扫描 → 分析 → 收集 → 训练 闭环
 │   ├── task_generator.py          # SSH 远程题目生成器（pcap/evtx/registry/memory/文件取证）
 │   └── build_dataset.py           # 数据集构建辅助脚本
-├── installer/                     # 历史安装脚本（源码直跑模式下不再使用，临时部署可参考）
-│   ├── install.sh                 # 一键安装（可 source）
-│   ├── install-from-source.sh     # 从源码安装
-│   ├── uninstall.sh               # 清理旧安装残留（保留用户数据）
-│   └── publish-mirror.sh          # 把源码快照与一键脚本发布到国内镜像服务器
+├── installer/                     # 安装 / 卸载 / 发布
+│   ├── install.sh                 # 一键安装（可 source；自举下载或就地调用下方脚本）
+│   ├── install-from-source.sh     # 本地源码安装（deploy + shell 接线）
+│   ├── deploy.sh                  # 布局实现（唯一一份）：白名单拷贝 + bin/ 只留一个软链
+│   ├── shell-setup.sh             # shell 接线安装/摘除（成对标记块，幂等）
+│   ├── uninstall.sh               # 卸载安装副本（保留用户数据；由 shell-setup 摘接线）
+│   └── publish-mirror.sh          # 把源码快照 + install.sh + VERSION 发布到国内镜像
 ├── tests/
 │   ├── gen_fixtures.py            # 生成确定性测试样例（pcap/pcapng/evtx/内嵌 zip/AD 域流量）
 │   ├── test_smoke.py              # 纯标准库冒烟（CLI + 扫描行为 + AD 协议 + shell 脚本体检）
-│   └── smoke.sh                   # 冒烟总入口（语法门 + 单元冒烟 + 启动器 + 清理循环 + 引导模式）
+│   └── smoke.sh                   # 冒烟总入口（语法门 + 单元冒烟 + 启动器 + 布局契约
+│                                  #   + 引导模式 + 真更新/离线失败/uninstall，全程 file:// 镜像）
 └── .github/workflows/ci.yml       # CI：Python 3.8 / 3.11 / 3.13 三版本跑冒烟
 ```
 
 ## 开发与测试
 
 ```bash
-# 一键冒烟：compileall 语法门 + 单元冒烟 + shell 语法 + 启动器 + 清理循环
-#           + 引导模式（离线模拟）+ 自管理子命令（config / uninstall，离线）
+# 一键冒烟：compileall 语法门 + 单元冒烟 + shell 语法 + 启动器 + 安装/布局契约
+#           + 引导模式（离线模拟）+ 自管理子命令（config / 真更新 / 离线失败 / uninstall）
 bash tests/smoke.sh
 
 # 单独跑单元冒烟
@@ -464,14 +560,19 @@ CI（`.github/workflows/ci.yml`）在 ubuntu 上以 Python **3.8 / 3.11 / 3.13**
 ## 常见问题
 
 **Q: 怎么使用？需要安装吗？**
-不需要。本工具为**源码直跑**：`./bin/ctfsweep <文件>` 或把项目的 `bin` 加入 PATH 后
-`ctfsweep <文件>`。功能完整存在于项目目录；模型与配置在项目 `models/`，
-运行时缓存（候选池/数据集）放 `~/.devtools/ctfsweep/`。
+推荐安装（`source <(curl -fsSL <镜像>/dist/ctfsweep/install.sh)`），与同仓库的 jtool / ptool
+一样装成 devtools 副本。不装也能跑：在项目目录里 `python3 -m ctfsweep <文件>`
+或 `./bin/ctfsweep.sh <文件>`，功能完整。
 
-**Q: 之前的"一键安装"还能用吗？**
-历史安装脚本保留在 `installer/`（供临时部署参考），但当前模式推荐源码直跑。
-如本机留有旧版安装副本（`~/.devtools/ctfsweep/bin`、`lib` 等），运行
-`ctfsweep uninstall` 清理——缓存数据（候选池/数据集）始终保留。
+**⚠️ 别把项目的 `bin/` 加进 PATH**：它靠扩展名区分系统（`ctfsweep.sh` + `ctfsweep.bat`），
+而 zsh 的命令名补全走 `$commands` 哈希、**不检查可执行位**——于是 Windows 启动器
+`ctfsweep.bat` 会跟 `ctfsweep` 一起出现在 TAB 补全里（macOS 上它根本跑不起来）。
+PATH 只该指向安装目录的 `bin/`，那里只有一个无后缀软链。
+
+**Q: 已经手工把仓库 `bin/` 加进 PATH 了，怎么收拾？**
+跑一次 `install.sh` 即可：`shell-setup.sh` 会把 rc 里的旧手工接线（指向
+`CtfSweep/bin` 的 `export PATH`、`alias ctf`、source 仓库补全的行）逐行删掉，再写入
+`# >>> ctfsweep >>>` 块。想彻底移除就 `ctfsweep uninstall`——缓存数据（候选池/数据集）始终保留。
 
 **Q: 需要装 Wireshark 或 scapy 吗？**
 不需要。解析器是纯 Python 实现（不到 200 行），这也是"零依赖"的一部分。
@@ -490,14 +591,20 @@ CI（`.github/workflows/ci.yml`）在 ubuntu 上以 Python **3.8 / 3.11 / 3.13**
 自动绕过。
 
 **Q: 数据都存在哪里？会不会随着清理丢失？**
-分两类：**模型与训练配置**随项目（`models/model.ctfj` + `models/train_config.json`，
-版本管理、可单独升级）；**运行时缓存**（扫描候选池、累积标注数据集）放
-`~/.devtools/ctfsweep/`（judge/、auto_learn/ 等）。`uninstall` 只清理功能残留，
-**永不删除任何数据**。
+分两类：**模型与训练配置**随版本发布（`models/model.ctfj` + `models/train_config.json`，
+安装到 `<安装根>/lib/models/`）；**运行时缓存**（扫描候选池、累积标注数据集）放
+`~/.devtools/ctfsweep/`（judge/、auto_learn/ 等）。`update` 与 `uninstall` 都只覆盖
+`bin lib completions config VERSION uninstall deploy.sh shell-setup.sh` 这些功能项，
+**永不删除任何数据**（冒烟测试里有一个 `judge/dataset.jsonl` 哨兵守着这条契约）。
 
 **Q: 怎么更新？**
-源码直跑模式：在项目目录 `git pull` 即可（`ctfsweep update` 会给出同样指引）。
+安装副本：`ctfsweep update` 读镜像 `VERSION` 比对，有新版就下载快照重装（用户数据保留）；
+`--check` 只看不装。源码直跑：在项目目录 `git pull` 即可（`update` 会直接给出这条指引）。
 代码更新后无需任何刷新动作。
+
+**Q: `update` 提示「无法获取远端版本号」？**
+镜像与 GitHub 都没读到 `VERSION`。查网络、或换源（`CTFSWEEP_MIRROR=<url>`）；临时
+想只走 GitHub 用 `CTFSWEEP_MIRROR=none`。命令不会静默成功——失败一律非零退出。
 
 **Q: 会不会污染我的目录？**
 只有 `--extract` 会写文件，默认写到 `<抓包名>_extracted/`（可用 `--extract-dir` 改）；

@@ -10,9 +10,14 @@
 # 国内镜像（无需 VPN，同一份脚本，只是换个下载地址）:
 #   source <(curl -fsSL http://101.132.165.98/dist/ctfsweep/install.sh)
 #
+# 安装位置（与 jtool / ptool 一致，默认系统级）:
+#   默认           → /Library/devtools/ctfsweep   (macOS)
+#                    /usr/local/devtools/ctfsweep (Linux)，需要时脚本内提示管理员密码
+#   CTFSWEEP_USER=1 → ~/.devtools/ctfsweep         （只装给当前用户，不需要密码）
+#
 # 在源码仓库内运行（自动识别，用本地源码安装）:
-#   ./installer/install.sh          # 默认用户级 → ~/.devtools/ctfsweep
-#   sudo ./installer/install.sh     # 系统级 → /Library/devtools/ctfsweep
+#   ./installer/install.sh                          # 默认系统级
+#   CTFSWEEP_USER=1 ./installer/install.sh          # 用户级
 #
 # 说明:
 #   · 本脚本设计为可被 source 加载：顶层不使用 exit（会关掉用户 shell），
@@ -22,6 +27,8 @@
 #   · 不在源码目录里运行时（curl 管道 / 下载后的脚本），会先下载源码快照
 #     （先镜像后 GitHub，全部失败才报错），再交给 install-from-source.sh 安装。
 #   · 换源：CTFSWEEP_MIRROR=<url> 指定其他镜像；CTFSWEEP_MIRROR=none 强制只走 GitHub。
+#   · 落盘位置由 install-from-source.sh 决定（默认系统级；CTFSWEEP_USER=1 用户级），
+#     需要写 /Library 时由它逐条 sudo，shell 接线仍以调用者身份写入。
 
 # ---- 顶层（对 source 安全）：定位自身，判断「仓库内运行」还是「远程自举」----
 _ctfsweep_self=""

@@ -26,13 +26,13 @@ HELP = """ctfsweep — CTF 流量 / 日志 / 注册表 快速扫描器（零依�
 
 用法:
   ctfsweep <文件或目录> [选项]           # 已安装（PATH 中）
-  python3 -m ctfsweep <文件或目录> ...   # 免安装，项目目录内直接跑
-  ./bin/ctfsweep <文件或目录> ...        # 仓库启动器（macOS / Linux）
+  python3 -m ctfsweep <文件或目录> ...   # 未安装，项目目录内直接跑
+  ./bin/ctfsweep.sh <文件或目录> ...     # 仓库启动器（macOS / Linux）
 
 管理子命令:
-  ctfsweep update             更新指引（源码直跑模式：git pull）
-  ctfsweep install            已弃用（源码直跑，不安装外部副本）
-  ctfsweep uninstall [-y]     清理旧版安装残留（保留用户数据；-y 跳过确认）
+  ctfsweep update [--check]   拉取最新源码快照并重装（--check 只比对版本，不落盘）
+  ctfsweep install            显示安装方式（装到 devtools 目录）
+  ctfsweep uninstall [-y]     卸载安装副本并摘除 shell 接线（用户数据保留；-y 跳过确认）
   ctfsweep config             显示运行信息与生效配置
   ctfsweep train [--data F]   训练本地判断核模型（超参数读训练配置；--epochs N / --model-out F 可覆盖）
   ctfsweep label              交互式标注未标注候选（确认/否定/跳过）
@@ -138,9 +138,9 @@ def _cmd_config():
     mode, root, _devtools = selfmgr.self_info()
     print('ctfsweep %s' % __version__)
     if mode == 'repo':
-        print('运行模式: 源码仓库（项目内直跑，未安装外部副本）')
+        print('运行模式: 源码仓库（未安装；ctfsweep install 可装成 devtools 副本）')
     elif mode == 'installed':
-        print('运行模式: 旧版 devtools 安装（本机已改为项目内直跑，建议清理旧副本）')
+        print('运行模式: devtools 安装（ctfsweep update 可更新，用户数据保留）')
     else:
         print('运行模式: 未识别')
     print('程序目录: %s' % root)

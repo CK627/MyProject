@@ -14,7 +14,8 @@ _ctfsweep() {
     if [ "$COMP_CWORD" -ge 2 ]; then
         case "${COMP_WORDS[1]}" in
             update)
-                return 0   # update 无参数（仅输出更新指引）
+                COMPREPLY=( $(compgen -W "--check" -- "$cur") )
+                return 0
                 ;;
             uninstall)
                 COMPREPLY=( $(compgen -W "-y --yes" -- "$cur") )
@@ -107,7 +108,10 @@ _ctfsweep() {
 complete -o filenames -F _ctfsweep ctfsweep
 
 # ============================================
-# 说明（源码直跑模式）
-# 补全与 PATH 均由本文件所在的项目目录提供；代码更新（git pull）后无需刷新。
-# （历史版本曾在此定义 ctfsweep 包装函数用于安装后的即时刷新，已随安装模式移除）
+# 说明（devtools 安装形态）
+# 安装后 PATH 与补全都由安装目录提供，接线写在 ~/.bashrc 的
+# `# >>> ctfsweep >>>` 块里（由 installer/shell-setup.sh 维护，幂等）。
+# 仓库 bin/ 是素材目录（ctfsweep.sh + ctfsweep.bat），**不进 PATH** ——
+# 命令名补全走 $commands 哈希，而它不检查可执行位，整体挂上会连
+# Windows 启动器 ctfsweep.bat 一起列出来。ctfsweep update 后补全自动刷新。
 # ============================================

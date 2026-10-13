@@ -92,7 +92,12 @@ def check_completions():
     check('-F --folder' in code and '--folder:' in code, 'zsh 补全：含 -F --folder（指定文件夹）')
     check('-q --brief' in code, 'zsh 补全：含 -q --brief（精简输出）')
     check('--extract' in code and '--min-score' in code, 'zsh 补全：含主要选项')
-    check('update:更新指引' in code and 'install:已弃用' in code, 'zsh 补全：update/install 新语义文案在场')
+    check('update:拉取最新源码快照并重装' in code and 'install:显示安装方式' in code,
+          'zsh 补全：update/install 新语义文案在场')
+    # 反向断言：安装形态已从「源码直跑 / 不装副本」翻转为 devtools 副本 + 真更新，
+    # 别再让旧文案漂回来（history: install 曾是「已弃用」，update 曾是「更新指引」）
+    check('已弃用' not in code and '更新指引' not in code and '--check' in code,
+          'zsh 补全：无「已弃用 / 更新指引」残留，update 认出 --check')
     check('train' in code and '--judge' in code, 'zsh 补全：含 train 子命令与 --judge')
     bash = open(os.path.join(ROOT, 'completions', 'ctfsweep.bash'), encoding='utf-8').read()
     check('--extract' in bash and '--folder' in bash, 'bash 补全：含主要选项')
