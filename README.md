@@ -28,7 +28,6 @@ source <(curl -fsSL https://raw.githubusercontent.com/CK627/MyProject/CtfSweep/i
 
 ```bash
 ctfsweep <文件或目录> [选项]
-ctf <文件或目录> [选项]        # 短命令别名
 ctfsweep update               # 更新到最新版（--check 只比对版本，不落盘）
 ```
 
@@ -297,8 +296,8 @@ python3 lab/train.py --epochs 500
 # 扫描一个抓包（默认输出 >= 0.40 的全部候选）
 ctfsweep capture.pcap
 
-# 短命令 ctf（项目 bin 加入 PATH 后与 ctfsweep 等价）与 -f 写法，都等价
-ctf -f capture.pcap
+# -f 与位置参数写法等价（命令名优先：要扫名叫 update 的文件就用 -f 或 ./update）
+ctfsweep -f capture.pcap
 
 # 只看高置信结果（直接要 flag 时）
 ctfsweep capture.pcap --min-score 0.85
@@ -310,7 +309,7 @@ ctfsweep capture.pcap --extract
 ctfsweep ./logs/
 
 # 用 -F 指定文件夹（与位置参数传目录等价，语义更直观；适合"整个项目=一个文件夹"的日志包）
-ctf -F ./logs/
+ctfsweep -F ./logs/
 
 # 事件日志搜索特定关键词
 ctfsweep Security.evtx -k flag1,flag2,flag3
@@ -447,23 +446,24 @@ source <项目根>/completions/ctfsweep.zsh
 ```
 
 ```bash
-ctfs<TAB>              # 补全命令名 → ctfsweep（ctf<TAB> 会同时列出系统自带的 ctf_insert）
-ctf <TAB>              # 子命令 + 文件（不列选项，与 jtool/ptool 的位置驱动一致）
-ctf -<TAB> / --<TAB>   # 全部选项；同义短/长合并为一行显示（如 "-f --file"，只出现一次）
-ctf --ex<TAB>          # 按前缀补全（--extract / --extract-dir ...）
-ctf -f<TAB>            # 补全短选项 → -f（--f<TAB> 同理 → --file）
-ctf -f <TAB>           # 补全文件路径（--extract-dir <TAB> 补全目录）
-ctf -F <TAB>           # 补全文件夹路径（-F/--folder；目录递归扫描整个项目）
-ctf --min-score <TAB>  # 补全取值（0.40 / 0.55 / 0.85 / 0.95）
-ctf -q <TAB>           # 只补文件（选项只在敲 "-" 之后出现）
-ctf uninstall <TAB>    # → -y / --yes
+ctfs<TAB>                   # 补全命令名 → ctfsweep（命令名只有这一个，无短别名）
+ctfsweep <TAB>              # 子命令 + 文件（不列选项，与 jtool/ptool 的位置驱动一致）
+ctfsweep -<TAB> / --<TAB>   # 全部选项；同义短/长合并为一行显示（如 "-f --file"，只出现一次）
+ctfsweep --ex<TAB>          # 按前缀补全（--extract / --extract-dir ...）
+ctfsweep -f<TAB>            # 补全短选项 → -f（--f<TAB> 同理 → --file）
+ctfsweep -f <TAB>           # 补全文件路径（--extract-dir <TAB> 补全目录）
+ctfsweep -F <TAB>           # 补全文件夹路径（-F/--folder；目录递归扫描整个项目）
+ctfsweep --min-score <TAB>  # 补全取值（0.40 / 0.55 / 0.85 / 0.95）
+ctfsweep -q <TAB>           # 只补文件（选项只在敲 "-" 之后出现）
+ctfsweep uninstall <TAB>    # → -y / --yes
 ```
 
 说明：
 
 - **位置驱动，选项在敲 `-` 之后出现**（与同仓库的 jtool/ptool 同规）：第一个参数位只出
-  「子命令 + 文件」——`ctf <TAB>` 一屏就是 5 条子命令加文件候选，不铺选项墙。
-  `ctf -q <TAB>`、`ctf a.pcap <TAB>` 因而只补文件；想知道有哪些选项就敲 `ctf -<TAB>`。
+  「子命令 + 文件」——`ctfsweep <TAB>` 一屏就是 5 条子命令加文件候选，不铺选项墙。
+  `ctfsweep -q <TAB>`、`ctfsweep a.pcap <TAB>` 因而只补文件；想知道有哪些选项就敲
+  `ctfsweep -<TAB>`。
 - **同义短/长选项合并显示**（如 `-f --file`，只出现一次）；`-f<TAB>` 与 `--f<TAB>` 均按前缀补全。
 - 已输入过的选项不会重复列出（`-f` 与 `--file` 视为同一个）。
 - **`update` 后补全自动生效**：补全文件里带一个包装函数（与 jtool/ptool 同规），
@@ -482,7 +482,6 @@ ctf uninstall <TAB>    # → -y / --yes
 # >>> ctfsweep >>>
 
 export PATH="<安装根>/bin:$PATH"
-alias ctf='ctfsweep'
 [ -f "<安装根>/completions/ctfsweep.zsh" ] && source "<安装根>/completions/ctfsweep.zsh"
 # <<< ctfsweep <<<
 ```
@@ -588,8 +587,13 @@ PATH 只该指向安装目录的 `bin/`，那里只有一个无后缀软链。
 
 **Q: 已经手工把仓库 `bin/` 加进 PATH 了，怎么收拾？**
 跑一次 `install.sh` 即可：`shell-setup.sh` 会把 rc 里的旧手工接线（指向
-`CtfSweep/bin` 的 `export PATH`、`alias ctf`、source 仓库补全的行）逐行删掉，再写入
-`# >>> ctfsweep >>>` 块。想彻底移除就 `ctfsweep uninstall`——扫描缓存始终保留。
+`CtfSweep/bin` 的 `export PATH`、1.10.5 及更早写过的 `alias ctf`、source 仓库补全的行）
+逐行删掉，再写入 `# >>> ctfsweep >>>` 块。想彻底移除就 `ctfsweep uninstall`——扫描缓存始终保留。
+
+**Q: 短命令 `ctf` 怎么没了？**
+1.10.6 起不再写这个别名：`ctf` 太通用，同一个环境里再装别的 CTF 工具必然撞名。
+跑一次 `ctfsweep update` 就会把 rc 里的旧别名摘掉（那时会提示重开终端或 `source`——
+接线确实变了，不像平常那样一字未动）。此后命令名只有 `ctfsweep` 一个。
 
 **Q: 需要装 Wireshark 或 scapy 吗？**
 不需要。解析器是纯 Python 实现（不到 200 行），这也是"零依赖"的一部分。

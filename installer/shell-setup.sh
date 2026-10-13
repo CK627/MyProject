@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ctfsweep shell 接线：PATH + 补全 + ctf 别名（macOS / Linux）
+# ctfsweep shell 接线：PATH + 补全（macOS / Linux）
 #
 # 用法:
 #   shell-setup.sh install <安装根>     写入（先摘旧块，幂等）
@@ -10,6 +10,11 @@
 # 写死路径的三行老格式无法定位块外那行空行，所以仍按行删一次（升级时清干净）。
 # 老格式那一段的标题注释（`# ctfsweep` / `# ctfsweep（源码直跑：…）`）也一起删——
 # 它就在被删的三行正上方，留着就是一句对不上现状的说明。
+#
+# ⚠️ `alias ctf='ctfsweep'` 是 1.10.5 及更早的接线写过的**一行**，现在**不再写**：
+#    `ctf` 这个短名太通用，同一个环境里再装别的 CTF 工具必然撞名（谁后接线谁赢）。
+#    但 _strip 里的识别/删除规则要**一直留着**——老装机升级时才能把它摘干净。
+#    对外只有 `ctfsweep` 一个命令名（无后缀软链），没有别名。
 #
 # sudo 场景：rc 要写到**登录用户**的家目录（root 的 rc 里写了也没人会 source），
 # 且 sed -i 会把文件属主改成 root，写完必须交还。
@@ -112,7 +117,7 @@ esac
 [ -d "$TARGET_HOME" ] || { echo "家目录不存在: $TARGET_HOME" >&2; exit 1; }
 [ -f "$RC" ] || : > "$RC"
 
-# 摘掉旧块，再写入固定四行（幂等：重复安装不会堆叠）
+# 摘掉旧块，再写入固定三行（幂等：重复安装不会堆叠）
 #
 # ⚠️ 「要不要重开终端」取决于这次**有没有真改到接线**：先记下 rc 的指纹，写完再比一次。
 #    升级（update）时块内容通常一字不变（路径与命令名都没变），此时提示重开终端是
@@ -124,7 +129,6 @@ _strip "$RC" "$INSTALL_DIR" || true
     echo "# >>> ctfsweep >>>"
     echo ""
     echo "export PATH=\"$INSTALL_DIR/bin:\$PATH\""
-    echo "alias ctf='ctfsweep'"
     echo "[ -f \"$INSTALL_DIR/completions/$COMP\" ] && source \"$INSTALL_DIR/completions/$COMP\""
     echo "# <<< ctfsweep <<<"
 } >> "$RC"

@@ -129,7 +129,7 @@ def check_completions():
     check(not any(s in bash for s in _REMOVED_SUBCOMMANDS),
           'bash 补全：无自学习子命令')
     # 反向断言：兜底分支不得再「选项 + 文件」并列（history: 旧语句让
-    # `ctf -q <TAB>` 把全部选项连 --config 一起倒出来——按字母排第一，最扎眼）。
+    # `ctfsweep -q <TAB>` 把全部选项连 --config 一起倒出来——按字母排第一，最扎眼）。
     # 也顺带守住第一个参数位：它现在只出「子命令 + 文件」，不该再出现这条并列。
     check('COMPREPLY=( $(compgen -W "$opts" -- "$cur") $(compgen -f -- "$cur") )' not in bash,
           'bash 补全：无「选项 + 文件」并列（位置驱动：选项只在敲 "-" 后出现）')
@@ -141,7 +141,7 @@ def check_completions():
 
 # 驱动补全函数、把它要加的候选打出来：覆写补全原语，不需要真实补全上下文。
 # 这是唯一能守住「哪个位置出哪些候选」的手段——静态体检看不见候选集合，
-# 上面那条 `ctf -q <TAB>` 倒出 --config 的缺陷正是从静态检查缝里漏过去的。
+# 上面那条 `ctfsweep -q <TAB>` 倒出 --config 的缺陷正是从静态检查缝里漏过去的。
 _COMPLETION_STUB_ZSH = r'''compadd() {
   local -a got=()
   while (( $# )); do
@@ -207,7 +207,7 @@ def _check_completion_behavior():
     """补全行为体检：位置驱动——选项只在当前词以「-」开头时出现。
 
     第一个参数位只出「子命令 + 文件」（对齐 jtool/ptool，不铺选项墙）；缺失这道
-    闸门时 `ctf -q <TAB>` 仍会把除 --brief 外的全部选项（含 --config）铺出来。
+    闸门时 `ctfsweep -q <TAB>` 仍会把除 --brief 外的全部选项（含 --config）铺出来。
     zsh 缺失的机器（如纯 bash 的 CI 镜像）跳过，不因此判失败。
     """
     for shell in ('bash', 'zsh'):

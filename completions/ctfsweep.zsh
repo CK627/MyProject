@@ -3,14 +3,15 @@
 # `# >>> ctfsweep >>>` 块（source 安装目录里的这一份）。手工使用也可直接 source 本文件。
 #
 # 候选为手写清单（不依赖 _arguments），位置驱动（对齐 jtool/ptool）：
-#   ctf <TAB>             → 子命令 + 文件；**不列选项**（选项在敲 "-" 之后出现）
-#   ctf -<TAB> / --<TAB>  → 全部选项；同义短/长选项合并为一行显示（如 "-f --file"）
-#   ctf -f<TAB>           → 直接补全 -f（短形式仍可按前缀补全；--f<TAB> → --file）
-#   ctf -f <TAB>          → 补全文件；-F <TAB> → 补全文件夹；--extract-dir <TAB> → 补全目录
-#   ctf -q <TAB>          → 只补文件（选项只在当前词以 "-" 开头时出现）
-#   ctf --min-score <TAB> → 0.40 / 0.55 / 0.85 / 0.95
-#   ctf -q               → 精简输出（控制台只打汇总块，明细在数据目录 cache/）
-#   ctf uninstall <TAB>   → -y / --yes
+#   ctfsweep <TAB>             → 子命令 + 文件；**不列选项**（选项在敲 "-" 之后出现）
+#   ctfsweep -<TAB> / --<TAB>  → 全部选项；同义短/长选项合并为一行显示（如 "-f --file"）
+#   ctfsweep -f<TAB>           → 直接补全 -f（短形式仍可按前缀补全；--f<TAB> → --file）
+#   ctfsweep -f <TAB>          → 补全文件；-F <TAB> → 补全文件夹；--extract-dir <TAB> → 补全目录
+#   ctfsweep -q <TAB>          → 只补文件（选项只在当前词以 "-" 开头时出现）
+#   ctfsweep --min-score <TAB> → 0.40 / 0.55 / 0.85 / 0.95
+#   ctfsweep -q                → 精简输出（控制台只打汇总块，明细在数据目录 cache/）
+#   ctfsweep uninstall <TAB>   → -y / --yes
+#（命令名只有 ctfsweep 一个：没有 ctf 短别名，所以本文件也不为它注册补全）
 #   已输入过的选项不会重复列出（-f 与 --file 视为同一个）
 
 # ---- 候选清单 ----
@@ -111,7 +112,7 @@ _ctfsweep() {
 
   # 选项只在当前词以 "-" 开头时作为候选出现（对齐 jtool/ptool 的位置驱动补全：
   # 第一个参数位只出「子命令 + 文件」，不铺选项墙）。缺失这道闸门时
-  # `ctf -q <TAB>` 会把除 --brief 外的全部 14 个选项连 --config 一起铺出来
+  # `ctfsweep -q <TAB>` 会把除 --brief 外的全部 14 个选项连 --config 一起铺出来
   # （按显示串排序，--config 恰好第一，最扎眼）。
   if [[ "$cur" == -* ]]; then
     # 收集已用过的选项（空格分隔串；-f / -k / -h 归一为对应长选项；--x=y 截到 --x）

@@ -25,7 +25,7 @@ ctfsweep 是面向 CTF / 应急响应的取证扫描 CLI：把 pcap/pcapng、evt
 
 ```bash
 # 跑工具（三种等价方式）
-ctf -f capture.pcap            # 已安装：PATH 上唯一的无后缀软链；ctf 是 shell-setup 写的 alias
+ctfsweep -f capture.pcap       # 已安装：PATH 上唯一的无后缀软链（命令名只有这一个，无别名）
 python3 -m ctfsweep <文件或目录> [选项]
 ./bin/ctfsweep.sh <文件或目录> [选项]   # 仓库启动器（macOS / Linux；.bat 是 Windows 版）
                                # ⚠️ 别把仓库 bin/ 加进 PATH（见「项目概览」第 2 条）
@@ -414,7 +414,7 @@ DNS 相关的 `KNOWN_INFRA_SUFFIXES` / `dns_lead_reason` 也在这里（见上�
   （一个条目只能给一个匹配词，同义短/长合并成一行 `-f --file` 做不出来）；
   同义短/长选项合并为一行显示（`-f --file` 只出现一次）。
   ⚠️ **候选结构是位置驱动的（对齐 jtool/ptool）**：选项**只在当前词以 `-` 开头时**出现，
-  第一个参数位只出「子命令 + 文件」。早期两份补全都无条件铺选项，于是 `ctf -q <TAB>`
+  第一个参数位只出「子命令 + 文件」。早期两份补全都无条件铺选项，于是 `ctfsweep -q <TAB>`
   把除 `--brief` 外的 14 个选项连 `--config` 一起倒出来（按显示串排序，`--config` 恰好
   第一，最扎眼）；更早还一度反过来要求"不敲 `-` 也能看到选项"，两版都不是位置驱动的。
   这条**静态体检看不见**（它只查字面量在场），由 `check_completions()` 里的
@@ -456,6 +456,15 @@ DNS 相关的 `KNOWN_INFRA_SUFFIXES` / `dns_lead_reason` 也在这里（见上�
   （命令本体本来就不需要刷新——启动器每次重新执行）。`update` 现在只多打一句
   `扫描缓存（数据目录）未受影响。`。回归位：`smoke.sh` 第 5 步断言重复安装报「shell 配置未变」、
   7.4 断言真更新时接线没变、7.6 断言 `清理完成`。
+- **命令名只有 `ctfsweep` 一个，不许再加短别名**：1.10.5 及更早的 shell 接线写过
+  `alias ctf='ctfsweep'`，已移除——`ctf` 太通用（macOS 自带 `ctf_insert`），
+  同一个环境里再装别的 CTF 工具必然撞名，谁后接线谁赢，而且撞了之后用户看到的是
+  别人的工具。因此：
+  ⚠️ `shell-setup.sh` 写块时**只写三行**（PATH / 补全 / 成对标记），别再写回 alias；
+  但 `_strip()` 里的 `^alias ctf='ctfsweep'$` 识别与删除**必须留着**——老装机升级/卸载时
+  靠它把旧别名摘干净（`smoke.sh` 7.6 就塞了一行老形态 alias 验证清理）。
+  文档/补全/FAQ 里凡是"短命令 ctf"的写法都要写成 `ctfsweep`；
+  `flag,ctf` 那类**关键词**完全是另一回事（扫描用的关键词表），一个字都别动。
 - **shell 脚本里 `$VAR` 后不得紧跟非 ASCII 字符**——bash 会把全角字符并入变量名。
   `check_shell_scripts()` 扫描所有 `*.sh`/`*.zsh`/`*.bash`/`bin/ctfsweep.sh` 强制这条。
   （`installer/shell-setup.sh` 里 `echo "…: $RC（…）"` 就是这么炸过一次，写成 `${RC}` 才行。）

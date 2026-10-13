@@ -84,6 +84,11 @@ _n_bin="$(ls -A "$_inst/bin" | wc -l | tr -d ' ')"
 if [ -f "$_tmp_home/.zshrc" ]; then
     _n_blk="$(grep -c '^# >>> ctfsweep >>>$' "$_tmp_home/.zshrc" || true)"
     [ "$_n_blk" = "1" ] || _fail5 "重复安装后 shell 块有 $_n_blk 个（应为 1）"
+    # 命令名只有 ctfsweep 一个：块里不许再写回 ctf 短别名（1.10.5 及更早写过，
+    # 短名会与别的 CTF 工具撞名）。7.6 另有一头反向断言——老形态残留必须被摘掉。
+    if grep -q "alias ctf" "$_tmp_home/.zshrc"; then
+        _fail5 "shell 接线又写回了 ctf 短别名（新增内容里不该有它）"
+    fi
 fi
 
 HOME="$_tmp_home" "$_inst/bin/ctfsweep" --version >/dev/null || _fail5 "启动器 --version 失败"
@@ -149,14 +154,14 @@ case "$(cat "$_stage_home/.u1.out")" in
 esac
 
 # 7.3 抬高镜像版本 → --check 只比对、不落盘
-printf '1.10.6\n' > "$_stage/VERSION"
-printf '1.10.6\n' > "$_stage/MyProject-CtfSweep/VERSION"
+printf '1.10.7\n' > "$_stage/VERSION"
+printf '1.10.7\n' > "$_stage/MyProject-CtfSweep/VERSION"
 (cd "$_stage" && rm -f ctfsweep-src.tar.gz && tar -czf ctfsweep-src.tar.gz MyProject-CtfSweep)
 _ver_before="$(cat "$_inst/VERSION")"
 HOME="$_stage_home" CTFSWEEP_MIRROR="file://$_stage" "$_csw" update --check > "$_stage_home/.u2.out" 2>&1 \
     || _fail "update --check 失败（退出码非 0）"
 case "$(cat "$_stage_home/.u2.out")" in
-    *"远端 v1.10.6 可用"*"--check：仅比对"*) : ;;
+    *"远端 v1.10.7 可用"*"--check：仅比对"*) : ;;
     *) _fail "update --check 输出异常：$(cat "$_stage_home/.u2.out")" ;;
 esac
 [ "$(cat "$_inst/VERSION")" = "$_ver_before" ] || _fail "update --check 竟然改动了 VERSION"
@@ -168,7 +173,7 @@ printf 'sentinel\n' > "$_inst/cache/sentinel-abc123/1.txt"
 HOME="$_stage_home" CTFSWEEP_MIRROR="file://$_stage" "$_csw" update > "$_stage_home/.u3.out" 2>&1 \
     || _fail "真更新失败：$(cat "$_stage_home/.u3.out")"
 case "$(cat "$_stage_home/.u3.out")" in
-    *"更新完成: v1.10.5 → v1.10.6"*) : ;;
+    *"更新完成: v1.10.6 → v1.10.7"*) : ;;
     *) _fail "真更新输出异常：$(cat "$_stage_home/.u3.out")" ;;
 esac
 # 本次更新的安装根与 rc 里已写的一致 → 接线没变，就不该再提示重开终端
@@ -176,12 +181,12 @@ case "$(cat "$_stage_home/.u3.out")" in
     *"shell 配置未变"*) : ;;
     *) _fail "更新时接线一字未动，却仍在提示重开终端：$(cat "$_stage_home/.u3.out")" ;;
 esac
-[ "$(cat "$_inst/VERSION")" = "1.10.6" ] || _fail "更新后 VERSION 未变：$(cat "$_inst/VERSION")"
+[ "$(cat "$_inst/VERSION")" = "1.10.7" ] || _fail "更新后 VERSION 未变：$(cat "$_inst/VERSION")"
 [ -f "$_inst/cache/sentinel-abc123/1.txt" ] || _fail "更新删掉了扫描缓存（cache/sentinel-abc123/1.txt 不见了）"
 [ "$(ls -A "$_inst/bin" | wc -l | tr -d ' ')" = "1" ] || _fail "更新后 bin/ 不止一个条目"
 [ -L "$_inst/bin/ctfsweep" ] || _fail "更新后 bin/ctfsweep 不再是软链"
 HOME="$_stage_home" "$_csw" --version >/dev/null || _fail "更新后启动器不可用"
-echo "真更新 OK（v1.10.5 → v1.10.6；扫描缓存与布局契约都在）"
+echo "真更新 OK（v1.10.6 → v1.10.7；扫描缓存与布局契约都在）"
 
 # 7.5 离线失败：镜像空 + 禁掉 GitHub 回退 → 必须明确报错且退出码非 0（绝不静默成功）
 if HOME="$_stage_home" CTFSWEEP_MIRROR="file://$_empty" CTFSWEEP_GITHUB=none \

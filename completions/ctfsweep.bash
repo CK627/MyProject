@@ -65,7 +65,7 @@ _ctfsweep() {
             ;;
     esac
     # 选项只在当前词以 "-" 开头时出现（位置驱动，与 zsh 版一致）。
-    # 缺失这道闸门时 `ctf -q <TAB>` 会把全部选项连 --config 一起铺出来。
+    # 缺失这道闸门时 `ctfsweep -q <TAB>` 会把全部选项连 --config 一起铺出来。
     if [[ "$cur" == -* ]]; then
         COMPREPLY=( $(compgen -W "$opts" -- "$cur") )
     else
