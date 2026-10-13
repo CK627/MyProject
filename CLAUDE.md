@@ -448,6 +448,14 @@ DNS 相关的 `KNOWN_INFRA_SUFFIXES` / `dns_lead_reason` 也在这里（见上�
   `运行模式: devtools 安装`、`已是最新版本`、`远端 vX 可用` + `--check：仅比对`、
   `更新完成: vA → vB`、`无法获取远端版本号`、`清理完成`。改 `cli.HELP` 里的三种运行方式说明
   同样要同步 README 的「安装」一节。
+  ⚠️ **「要不要重开终端」只在 `installer/shell-setup.sh` 一处判**：改写前后比对 rc 的 cksum，
+  改过 → `已写入 shell 配置: <rc>（重开终端或 source 后生效）`；没改 → `shell 配置未变: <rc>
+  （接线一致，无需重开终端）`——升级时 rc 通常一字不变，所以后者才是 update 的常态。
+  调用方（`install.sh` / `install-from-source.sh` / `selfmgr.cmd_update`）**都不得再补一句**
+  同样的话：历史上三处各打一句，一次 `update` 连报三遍「重开终端」，用户以为更新没生效
+  （命令本体本来就不需要刷新——启动器每次重新执行）。`update` 现在只多打一句
+  `扫描缓存（数据目录）未受影响。`。回归位：`smoke.sh` 第 5 步断言重复安装报「shell 配置未变」、
+  7.4 断言真更新时接线没变、7.6 断言 `清理完成`。
 - **shell 脚本里 `$VAR` 后不得紧跟非 ASCII 字符**——bash 会把全角字符并入变量名。
   `check_shell_scripts()` 扫描所有 `*.sh`/`*.zsh`/`*.bash`/`bin/ctfsweep.sh` 强制这条。
   （`installer/shell-setup.sh` 里 `echo "…: $RC（…）"` 就是这么炸过一次，写成 `${RC}` 才行。）

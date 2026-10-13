@@ -13,6 +13,12 @@
 #
 # sudo 场景：rc 要写到**登录用户**的家目录（root 的 rc 里写了也没人会 source），
 # 且 sed -i 会把文件属主改成 root，写完必须交还。
+#
+# 末尾那句提示是本脚本按「rc 到底改没改」自己判的，两种形态：
+#   改过 →「已写入 shell 配置: <rc>（重开终端或 source 后生效）」
+#   没改 →「shell 配置未变: <rc>（接线一致，无需重开终端）」——升级时的常态
+# 调用方（install.sh / install-from-source.sh / selfmgr.update）**不要再补一句**
+# 同样的话，否则一次更新会连报两三次「重开终端」。
 set -euo pipefail
 
 ACTION="${1:-}"
@@ -107,6 +113,12 @@ esac
 [ -f "$RC" ] || : > "$RC"
 
 # 摘掉旧块，再写入固定四行（幂等：重复安装不会堆叠）
+#
+# ⚠️ 「要不要重开终端」取决于这次**有没有真改到接线**：先记下 rc 的指纹，写完再比一次。
+#    升级（update）时块内容通常一字不变（路径与命令名都没变），此时提示重开终端是
+#    在提醒一件根本没发生的事——本脚本是这句提示的**唯一出处**，调用方不要自己再补一句。
+_rc_sum() { cksum < "$1" 2>/dev/null || true; }
+_rc_before="$(_rc_sum "$RC")"
 _strip "$RC" "$INSTALL_DIR" || true
 {
     echo "# >>> ctfsweep >>>"
@@ -118,4 +130,9 @@ _strip "$RC" "$INSTALL_DIR" || true
 } >> "$RC"
 _chown_back "$RC"
 
-echo "已写入 shell 配置: ${RC}（重开终端或 source 后生效）"
+# 指纹取不到（缺 cksum 等）时按「改过」处理——保守方向是让用户多 source 一次，不是少一次
+if [ -n "$_rc_before" ] && [ "$_rc_before" = "$(_rc_sum "$RC")" ]; then
+    echo "shell 配置未变: ${RC}（接线一致，无需重开终端）"
+else
+    echo "已写入 shell 配置: ${RC}（重开终端或 source 后生效）"
+fi

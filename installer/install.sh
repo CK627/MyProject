@@ -167,7 +167,9 @@ if [ "$_ctfsweep_action" = "install" ]; then
             fi
             echo "==> ctfsweep 安装完成，已刷新当前终端"
         else
-            echo "==> ctfsweep 安装完成，请重开终端（或 source 对应配置文件）使配置生效"
+            # 重开终端与否由 shell-setup.sh 按 rc 改没改如实报（就在上面几行），
+            # 这里不再复述——接线一字未变的重复安装不该再让人重开一次终端。
+            echo "==> ctfsweep 安装完成"
         fi
     else
         echo "错误: ctfsweep 安装失败（退出码 ${_ctfsweep_rc}）" >&2

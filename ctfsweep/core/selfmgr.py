@@ -423,7 +423,10 @@ def cmd_update(argv):
             print('已是最新版本 (v%s)，并补齐了缺失组件。' % snap_ver)
         else:
             print('更新完成: v%s → v%s' % (local_ver or '?', snap_ver))
-        print('  重开终端或 source 配置文件后生效；扫描缓存（数据目录）未受影响。')
+        # 「要不要重开终端」由 shell-setup.sh 按 rc 是否真被改动自己报（就是上面那行，
+        # 升级时通常是「shell 配置未变」）——这里不再复述：一句提示只留一处，别让同一次
+        # 更新把同样的话说三遍。命令本体本来也不需要刷新（启动器每次重新执行）。
+        print('  扫描缓存（数据目录）未受影响。')
         return 0
     finally:
         shutil.rmtree(workdir, ignore_errors=True)

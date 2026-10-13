@@ -131,7 +131,9 @@ if [ "$(id -u)" = "0" ] && [ -n "${SUDO_USER:-}" ] && [ -d "$USER_DIR" ]; then
     chown -R "$SUDO_USER" "$USER_DIR" 2>/dev/null || true
 fi
 
-echo "完成。重开终端后运行 'ctfsweep --help'（或短命令 'ctf --help'）开始使用。"
+# 「要不要重开终端」不在这里下结论：shell-setup.sh 上一行已按 rc 改没改如实报了
+# （首次安装通常是「已写入…重开终端或 source 后生效」，重复安装则是「接线一致」）。
+echo "完成。运行 'ctfsweep --help'（或短命令 'ctf --help'）开始使用。"
 # 提示反方向：现在是系统级默认，要装用户级才需要额外一个环境变量。
 # 引导 / 更新模式（从临时快照安装：install.sh 自举、ctfsweep update）不提示——
 # 那时 $0 指向临时快照，打出来是个马上就消失的路径
