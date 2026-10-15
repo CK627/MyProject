@@ -21,7 +21,7 @@ _ctfsweep_subcmds=(
   'install:显示安装方式（装到 devtools 目录）'
   'uninstall:卸载安装副本（保留扫描缓存）'
   'config:显示运行信息与配置（含扫描缓存占用）'
-  'clear:清空扫描缓存（-y 跳过确认）'
+  'clear:清空扫描缓存（可指定项目名；-y 跳过确认）'
   'help:显示帮助'
 )
 

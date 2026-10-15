@@ -43,6 +43,7 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+DATA = ''   # main() 里置为 <tmp>/data：测试用的数据目录（夹具住在 tmp 根，与它分开）
 sys.path.insert(0, ROOT)
 sys.path.insert(0, HERE)
 
@@ -71,6 +72,15 @@ def run_cli(args):
         cwd=ROOT, stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     return proc.returncode, proc.stdout.decode('utf-8', 'replace')
+
+
+def clear_cache(name=''):
+    """清缓存——测试里复现用户 workflow：同一目标重扫前先 `clear`。
+
+    运行时契约是"同一目标已有缓存就不覆盖、提示先 clear"（见 cli.cache_occupied），
+    所以任何"要看一次全新落盘"的断言都得先清。
+    """
+    return run_cli(['clear'] + ([name] if name else []) + ['-y'])
 
 
 def check_shell_scripts():
@@ -376,18 +386,22 @@ def check_judge(tmp):
 
 
 def check_scan_cache(tmp):
-    """每次扫描都落缓存，两种模式产出的缓存逐字节相同。
+    """每次扫描都尝试落缓存，两种模式产出的缓存逐字节相同。
 
     历史问题：默认模式（不加 -q）**完全不写任何结果文件**，跑完扫描用户拿不到
     可回看的报告，只得到一个自学习留存区（留存区已随自学习机制整体移除）。
     现在数据根下只有 `cache/`：<运行名>-<路径哈希>/1.txt|2.txt|3.txt + <运行名>_cache.txt。
     单文件时「一次运行 = 一个文件」，与旧的"每文件一份"逐字节相同。
+
+    ⚠️ 一次运行一份、**已有则不覆盖**（改了历史行为：从前是静默覆盖）。所以这里
+    比"两种模式内容相同"之前先 clear —— 两次都必须是**全新落盘**才谈得上相同。
     """
     fp = os.path.join(tmp, 't1.pcap')
+    clear_cache()   # 前面几节已经扫过它，缓存目录里有上一轮的文件
     rc, out = run_cli([fp])
     check('【扫描缓存】' in out, '默认模式：控制台报出本次扫描的缓存路径')
 
-    croot = os.path.join(tmp, 'cache')
+    croot = os.path.join(DATA, 'cache')
     cdirs = [d for d in (os.listdir(croot) if os.path.isdir(croot) else [])
              if d.startswith('t1-')]
     check(len(cdirs) == 1, '默认模式：缓存目录按「文件名-路径哈希」建立')
@@ -404,6 +418,7 @@ def check_scan_cache(tmp):
           '默认模式：缓存内容为该文件完整报告')
 
     # 缓存内容与模式无关：-q 只改变控制台是否上屏，缓存文件应逐字节相同。
+    clear_cache()   # 不覆盖契约：不清就不写第二份，也就比不出"两种模式相同"
     rc, out = run_cli([fp, '-q'])
     with open(fc, encoding='utf-8') as fh:
         brief_body = fh.read()
@@ -411,6 +426,28 @@ def check_scan_cache(tmp):
 
     check(not os.path.exists(os.path.join(tmp, 'judge')),
           '数据根下无 judge/ 残留（自学习留存区已移除）')
+
+    # —— 已有缓存不覆盖：同一目标第二次扫描只提示 clear，盘上那两份一字不改 ——
+    before = {}
+    for n in ('1.txt', '2.txt', '3.txt', 't1_cache.txt'):
+        p = os.path.join(cdir, n)
+        with open(p, 'rb') as fh:
+            before[n] = fh.read()
+    rc, out = run_cli([fp])
+    check(rc == 0 and '目录有文件' in out and 'ctfsweep clear' in out,
+          '重扫同一目标：提示缓存目录有文件、请用 clear（不再静默覆盖）')
+    check('【扫描缓存】' not in out, '重扫同一目标：不再打"已写入"块')
+    same = all(open(os.path.join(cdir, n), 'rb').read() == before[n]
+               for n in before)
+    check(same, '重扫同一目标：盘上旧缓存逐字节未动')
+    check('flag{plain-smoke-ok}' in out, '重扫同一目标：报告照常上屏（只是不再落盘）')
+
+    # clear 该项目 → 再扫又能落盘（用户 workflow：clear 完重扫）
+    rc, out = clear_cache('t1.pcap')
+    check(rc == 0 and not os.path.exists(cdir), 'clear <名称>：该项目缓存目录已删除')
+    rc, out = run_cli([fp])
+    check('【扫描缓存】' in out and os.path.isfile(fc),
+          'clear 后重扫：缓存重新落盘')
 
 
 def check_clear(tmp):
@@ -424,7 +461,7 @@ def check_clear(tmp):
       · ctfsweep.conf 是配置不是缓存，**必须保留**；
       · 非交互（无 tty）不带 -y 时拒绝执行——破坏性操作不能在管道里悄悄发生。
     """
-    root = tmp  # main() 已把 CTFSWEEP_DATA_DIR 指到 tmp
+    root = DATA  # main() 已把 CTFSWEEP_DATA_DIR 指到 DATA（tmp 下的子目录）
     conf = os.path.join(root, 'ctfsweep.conf')
     with open(conf, 'w', encoding='utf-8') as fh:
         fh.write('MIN_SCORE=0.5\n')
@@ -473,9 +510,37 @@ def check_clear(tmp):
     rc, out = run_cli(['clear', '-y'])
     check(rc == 0 and ('已是空' in out or '已清空' in out), 'clear -y：重复执行不报错')
 
-    # 4) 未知参数
+    # 4) 只清一个项目：`clear <名称>` 删该项目的图片目录 + `cache/<运行名>-<哈希>/`，
+    #    别的项目与功能项一个不动（用户 workflow：某个题重扫前先清它自己）
+    other_top = os.path.join(root, '另一题')
+    os.makedirs(os.path.join(root, 'capture4.pcapng'), exist_ok=True)
+    os.makedirs(other_top, exist_ok=True)
+    for d in ('capture4-aaaaaa', 'capture4-bbbbbb', '另一题-cccccc'):
+        os.makedirs(os.path.join(root, 'cache', d), exist_ok=True)
+        with open(os.path.join(root, 'cache', d, '1.txt'), 'w', encoding='utf-8') as fh:
+            fh.write('x')
+    rc, out = run_cli(['clear', 'capture4.pcapng', '-y'])
+    check(rc == 0 and 'capture4.pcapng' in out and '已清空' in out,
+          'clear <名称>：按项目名清理并报出删了什么')
+    check(not os.path.exists(os.path.join(root, 'capture4.pcapng'))
+          and not os.path.exists(os.path.join(root, 'cache', 'capture4-aaaaaa'))
+          and not os.path.exists(os.path.join(root, 'cache', 'capture4-bbbbbb')),
+          'clear <名称>：该项目的图片目录与全部同名运行缓存都删掉')
+    check(os.path.isdir(other_top) and os.path.isdir(os.path.join(root, 'cache', '另一题-cccccc')),
+          'clear <名称>：别的项目原封不动')
+    check(os.path.isfile(conf), 'clear <名称>：配置保留')
+
+    # 5) 名称撞上功能项/不存在的项目：拒绝 / 如实报"未找到"
+    rc, out = run_cli(['clear', 'VERSION', '-y'])
+    check(rc == 1 and '拒绝清理' in out, 'clear <功能项名>：拒绝（不给误删程序本体）')
+    rc, out = run_cli(['clear', '不存在的题', '-y'])
+    check(rc == 0 and '未找到' in out, 'clear <不存在的项目>：如实报未找到')
+
+    # 6) 未知参数 / 参数过多
     rc, out = run_cli(['clear', '--bogus'])
     check(rc == 2 and '未知参数' in out, 'clear：未知参数返回 2')
+    rc, out = run_cli(['clear', 'a', 'b'])
+    check(rc == 2 and '参数过多' in out, 'clear：参数过多返回 2')
 
 
 def check_dir_scan_cache(tmp):
@@ -488,7 +553,7 @@ def check_dir_scan_cache(tmp):
     的目录名肉眼还分不出对应关系（只有文件名相同、哈希不同）。
     本节目录扫描回归就是那次漏网的直接补丁。
     """
-    croot = os.path.join(tmp, 'cache')
+    croot = os.path.join(DATA, 'cache')
     proj = os.path.join(tmp, 'projdir')
     os.makedirs(os.path.join(proj, 'sub1'), exist_ok=True)
     os.makedirs(os.path.join(proj, 'sub2'), exist_ok=True)
@@ -540,6 +605,7 @@ def check_dir_scan_cache(tmp):
               '完整报告：两个文件都在，且带运行汇总尾段（files_total > 1）')
 
     # -q 目录模式：逐文件只报条数（路径不再逐文件重复），路径统一在运行级块出现一次
+    clear_cache()   # 上面那次默认扫描已写下同一份缓存，先清掉
     rc, qout = run_cli([proj, '-q'])
     check('[文件] sub1/one.pcap' in qout and '[文件] sub2/two.pcap' in qout,
           '-q 目录模式：逐文件标注相对路径（只报文件名就分不出是哪一个）')
@@ -1232,12 +1298,18 @@ def check_router_dispatch(tmp):
 
 
 def main():
+    global DATA
     tmp = tempfile.mkdtemp(prefix='ctfsweep-smoke-')
+    DATA = os.path.join(tmp, 'data')
     # 全程隔离：扫描缓存 / 留存区 / 模型 / 训练配置全部读写临时目录，
     # 不污染真实 ~/.devtools/ctfsweep 与项目 models/（所有 run_cli 子进程继承此环境）
     _prev_env = {k: os.environ.get(k) for k in ('CTFSWEEP_DATA_DIR', 'CTFSWEEP_MODELS_DIR')}
-    os.environ['CTFSWEEP_DATA_DIR'] = tmp
+    # ⚠️ 数据目录是 tmp 的**子目录**，不是 tmp 本身：夹具生成在 tmp 根下，
+    #    而 `clear`（无参数）会清空数据目录内容——两者同处一层的话，一次 clear 就把
+    #    夹具全端了（实测：t10-ftp.pcap 当场消失）。真实形态也是"数据目录里只有缓存"。
+    os.environ['CTFSWEEP_DATA_DIR'] = DATA
     os.environ['CTFSWEEP_MODELS_DIR'] = tmp
+    os.makedirs(DATA, exist_ok=True)
     try:
         print('== 生成测试样例 ==')
         names = gen_fixtures.generate(tmp)
@@ -1262,7 +1334,7 @@ def main():
               '--help 无训练/标注子命令（%s）' % '/'.join(_REMOVED_SUBCOMMANDS))
         # README 不随安装载荷发布，装机用户手上只有 --help，所以「说明」里
         # 缓存在哪/是否自动写必须自足。"留存区"是被替换掉的旧段名，反向断言防它漂回来
-        check('每次扫描都写缓存' in out and '留存区' not in out,
+        check('扫描缓存: ~/.devtools/ctfsweep/cache/' in out and '留存区' not in out,
               '--help 说明扫描缓存（替换原「留存区」段）')
         # 反向断言：散文墙别漂回来（history: 曾把置信度分数表 13 行 + 判断核 3 行 +
         # 缓存 5 行整块铺进帮助，共 63 行；改薄后 45 行）。上限留 5 行余量
@@ -1421,6 +1493,7 @@ def main():
         check('【flag 候选汇总】' not in out, '汇总：非 flag 文件不出 flag 候选组')
 
         print('== t10-ftp.pcap：-q/--brief 精简输出 ==')
+        clear_cache()   # 上面刚扫过它：不清的话本次会走"已有缓存不覆盖"分支
         rc, out = run_cli([os.path.join(tmp, 't10-ftp.pcap'), '-q'])
         check('【扫描统计】' in out and '高置信（可直接核验），具体信息：' in out,
               '精简块：标题与高置信行')
@@ -1429,7 +1502,7 @@ def main():
               '中/低档与完整缓存路径')
         check('[FTP会话]' not in out and '格式:' not in out,
               '控制台不再输出详细报告（只留分档块）')
-        croot = os.path.join(tmp, 'cache')
+        croot = os.path.join(DATA, 'cache')
         cdirs = [d for d in (os.listdir(croot) if os.path.isdir(croot) else [])
                  if d.startswith('t10-ftp-')]
         check(len(cdirs) == 1, '缓存目录按「文件名-路径哈希」命名')

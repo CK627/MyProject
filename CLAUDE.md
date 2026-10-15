@@ -33,7 +33,7 @@ python3 -m ctfsweep <文件或目录> [选项]
 # 安装 / 更新 / 卸载（改完安装逻辑必跑：tests/smoke.sh 第 5、7 步守着布局契约与真更新）
 sudo bash installer/install.sh     # 本机落地；用户级去掉 sudo（installer/install.sh 亦可）
 ctfsweep update [--check]
-ctfsweep clear [-y]                # 清空数据目录（唯一主动删数据的命令；-y 跳过确认）
+ctfsweep clear [名称] [-y]        # 清空数据目录（给名称只清那个项目；唯一主动删数据的命令）
 
 # 完整冒烟（语法门 + 单元冒烟 + shell 语法 + 启动器 + 安装/布局契约 + 引导模式 + 真更新）
 bash tests/smoke.sh
@@ -483,9 +483,14 @@ DNS 相关的 `KNOWN_INFRA_SUFFIXES` / `dns_lead_reason` 也在这里（见上�
   要扫同名文件得用 `-f 文件名` 或 `./文件名`。
 - **行尾契约**（`.gitattributes`）：`*.bat` 用 CRLF、`*.sh` 用 LF——改这些文件别让编辑器
   自动转换，否则 Windows 版启动器会解析错位。
-- **缓存是"每次都写"，不是 `-q` 专属**：两种模式都捕获详细输出写进
+- **缓存是"每次都尝试写"，不是 `-q` 专属**：两种模式都捕获详细输出写进
   `<数据目录>/cache/<运行名>-<路径哈希6位>/`（`1/2/3.txt` 分档明细 + `<运行名>_cache.txt`
   完整报告）。
+  ⚠️ **同一目标已有缓存则不再落盘**（`cli.cache_occupied()`，历史行为是静默覆盖）：
+  第二次扫同一个目标时打 `缓存目录：<dir>/ 目录有文件，请使用 clear 清除`（`brief_print_occupied`），
+  报告照常上屏、盘上旧文件一字不动。所以「两种模式内容相同」这类断言要先 `clear`——
+  `tests/test_smoke.py::clear_cache()` 就是干这个的；`tests/test_golden.py` 则**每个用例前
+  清空数据目录**（用带用例名的子目录会把路径写进 `-q` 输出，凭空多一堆基线差异）。
   ⚠️ **粒度是「一次运行」，不是「一个文件」**（历史缺陷：旧 `brief_cache_dir(fp)` 的注释
   写着按文件分是为了让 `a/capture.pcap` 与 `b/capture.pcap` 不互相覆盖——那个理由**只在
   目录扫描下成立**，`-f` 单文件时"一次运行 = 一个文件"两种粒度重合，所以一直没暴露；等到
@@ -519,9 +524,15 @@ DNS 相关的 `KNOWN_INFRA_SUFFIXES` / `dns_lead_reason` 也在这里（见上�
   ⚠️ **单文件 `-q` 的控制台输出仍必须逐字节不变**（golden `t10-ftp.pcap+brief.txt` 是回归位）；
   目录模式 `-q` 是本次新增的形态（逐文件只报条数 + 末尾一次运行级块），`dir.txt` 之外
   没有基线守它，由 `check_dir_scan_cache()` 断言。
-- **`ctfsweep clear` 只删数据，绝不删功能文件**：清空**数据目录**（`core/paths.py::data_root()`，
-  默认 `~/.devtools/ctfsweep`、`CTFSWEEP_DATA_DIR` 可覆盖）下的**内容**——`cache/` 结果缓存、
-  各题图片缓存目录、散落文件；**保留**目录本身与 `ctfsweep.conf`（配置不是缓存，删了等于丢设置）。
+- **`ctfsweep clear [名称] [-y]` 只删数据，绝不删功能文件**：清空**数据目录**
+  （`core/paths.py::data_root()`，默认 `~/.devtools/ctfsweep`、`CTFSWEEP_DATA_DIR` 可覆盖）下的
+  **内容**——`cache/` 结果缓存、各题图片缓存目录、散落文件；**保留**目录本身与 `ctfsweep.conf`
+  （配置不是缓存，删了等于丢设置）。⚠️ **带名称时只清那一个项目**（`_project_targets()`）：
+  数据根下的同名条目（如 `capture4.pcapng/` 这种提取出的图片缓存）+ `cache/capture4-<6位哈希>/`；
+  运行名同时试 `name` 与去扩展名的 `splitext(name)[0]`（扫描 `capture4.pcapng` 的运行名是
+  `capture4`，用户两种写法都该命中），匹配用 `^<名>-[0-9a-f]{6}$` 的严格正则、不是前缀匹配。
+  名称撞上功能项/配置时**直接拒绝**（`clear VERSION` 之类的误写要挡住），名称不存在则如实报
+  "未找到"并返回 0。
   ⚠️ 绝不可写成 `rmtree(data_root())`：**用户级安装下数据目录就是安装根**，`bin/ lib/ models/`
   都住在那儿，整删等于把 ctfsweep 删掉。破坏性闸门与 uninstall 同规：**非交互（无 tty）且不带
   `-y` 一律拒绝**（返回 1，提示 `ctfsweep clear -y`）；交互式先报路径 / 文件数 / 占用 / 保留项

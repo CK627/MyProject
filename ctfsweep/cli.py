@@ -44,7 +44,7 @@ HELP = """ctfsweep - CTF / 应急响应取证扫描器（零依赖，Python 3.8+
   ctfsweep install            显示安装方式（装到 devtools 目录）
   ctfsweep uninstall [-y]     卸载安装副本并摘除 shell 接线（扫描缓存保留；-y 跳过确认）
   ctfsweep config             显示运行信息与生效配置（含扫描缓存占用）
-  ctfsweep clear [-y]         清空扫描缓存（数据目录内容全删；-y 跳过确认）
+  ctfsweep clear [名称] [-y]  清空扫描缓存（给名称只清那个项目；-y 跳过确认）
   ctfsweep help               显示本帮助
 
 选项:
@@ -74,7 +74,7 @@ HELP = """ctfsweep - CTF / 应急响应取证扫描器（零依赖，Python 3.8+
 
 说明:
   结果按置信度分档: >= 0.85 高（可直接核验）/ >= 0.55 中（需人工确认）/ 其余低
-  每次扫描都写缓存: ~/.devtools/ctfsweep/cache/（一次运行一个目录，只增不减）
+  扫描缓存: ~/.devtools/ctfsweep/cache/（一次运行一个目录；同名已有则不覆盖，先 clear）
   清理缓存: ctfsweep clear（只清数据目录内容，程序本体与配置文件不受影响）
   判断核为轻量 MLP，加 --judge 才跑；模型随版本发布，离线训练见仓库 lab/train.py
 """
@@ -397,9 +397,32 @@ def brief_print_run_cache(cdir, run_name, files_total, is_dir_run, stream=None):
     # （`/<名>-<6位哈希>/` → `/<名>-<哈希>/`）能覆盖这一行
     _p('  %s%s' % (cdir, os.sep))
     if is_dir_run:
-        _p('  完整报告见 %s；占用与清理见 ctfsweep config' % (run_name + '_cache.txt'))
+        _p('  完整报告见 %s；占用见 ctfsweep config，清理用 ctfsweep clear' % (run_name + '_cache.txt'))
     else:
-        _p('  完整报告见各目录下的 <文件名>_cache.txt；占用与清理见 ctfsweep config')
+        _p('  完整报告见各目录下的 <文件名>_cache.txt；占用见 ctfsweep config，清理用 ctfsweep clear')
+
+
+def cache_occupied(cdir):
+    """本次运行的缓存目录**已存在且非空**？（是 → 不覆盖，提示用户先 clear）
+
+    历史行为是直接覆盖：扫第二遍时旧报告被静默替换，"上一次扫出来的东西"无声消失。
+    现在改成一次运行一份、用完由用户显式回收——`ctfsweep clear <名称> -y` 清单个项目，
+    `ctfsweep clear -y` 清全部。扫出来的报告照常上屏，只是不再往盘上写第二份。
+    """
+    try:
+        return os.path.isdir(cdir) and bool(os.listdir(cdir))
+    except OSError:
+        return False
+
+
+def brief_print_occupied(cdir, run_name, stream=None):
+    """缓存目录已被占用时的提示（默认模式与 -q 都打，替代「【扫描缓存】已写入」块）。"""
+    def _p(s):
+        print(s, file=stream) if stream is not None else print(s)
+
+    _p('\n缓存目录：%s%s 目录有文件，请使用 clear 清除（本次未覆盖，报告仍已上屏）'
+       % (cdir, os.sep))
+    _p('  只清这个项目: ctfsweep clear %s      清空全部: ctfsweep clear' % run_name)
 
 
 def brief_append_tail(tail_text, cache_path, files_total):
@@ -728,17 +751,21 @@ def main():
     # 本次运行的缓存**先落盘**（正文），汇总尾段随后追加：汇总区若中途出错，
     # 本次扫描的报告仍然在盘上。空目录（0 个文件）不建目录、不打块。
     cache_path = None
+    occupied = False
     if targets:
         cdir = run_cache_dir(run_name, run_spec)
-        tiers = tierize(_run_findings)
-        cache_path = brief_write_run(cdir, run_name, path, _run_buf, tiers,
-                                     is_dir_run, err_stream=_real_stdout)
-        if brief and cache_path is not None:
-            if is_dir_run:
-                brief_print_run_cache(cdir, run_name, len(targets), True,
-                                      stream=_real_stdout)
-            else:
-                brief_print_tiers(cdir, cache_path, tiers, stream=_real_stdout)
+        # 同一目标扫第二遍时旧缓存还在 → 不覆盖，提示先 clear（见 cache_occupied 注释）
+        occupied = cache_occupied(cdir)
+        if not occupied:
+            tiers = tierize(_run_findings)
+            cache_path = brief_write_run(cdir, run_name, path, _run_buf, tiers,
+                                         is_dir_run, err_stream=_real_stdout)
+            if brief and cache_path is not None:
+                if is_dir_run:
+                    brief_print_run_cache(cdir, run_name, len(targets), True,
+                                          stream=_real_stdout)
+                else:
+                    brief_print_tiers(cdir, cache_path, tiers, stream=_real_stdout)
 
     # 汇总区（元判断核 / 全局片段 / 汇总统计）也要进缓存：换成汇总缓冲，
     # 默认模式仍 tee 上屏。两种模式的缓存文件因此都带汇总尾段。
@@ -821,7 +848,10 @@ def main():
 
     # 默认模式：路径必须出现在控制台上（用户实测反馈"跑完看不到任何结果文件"）。
     # -q 单文件由 brief_print_tiers 的四行负责，此处不重复打（golden 逐字节守着）。
-    if not brief and cache_path is not None:
+    # 缓存被占用时两种模式都改打"请先 clear"——那才是这次真正发生的事。
+    if occupied:
+        brief_print_occupied(cdir, run_name, stream=_real_stdout)
+    elif not brief and cache_path is not None:
         brief_print_run_cache(cdir, run_name, len(targets), is_dir_run,
                               stream=_real_stdout)
     return 0

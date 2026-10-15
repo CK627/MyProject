@@ -39,4 +39,4 @@
 
 【扫描缓存】本次 1 个文件，报告与分档明细已写入:
   <TMP>/data/cache/<名>-<哈希>/
-  完整报告见各目录下的 <文件名>_cache.txt；占用与清理见 ctfsweep config
+  完整报告见各目录下的 <文件名>_cache.txt；占用见 ctfsweep config，清理用 ctfsweep clear

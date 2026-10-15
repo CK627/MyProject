@@ -511,12 +511,39 @@ def cmd_uninstall(argv):
         return 1
 
 
-def cmd_clear(argv):
-    """ctfsweep clear [-y]：清空数据目录（扫描缓存 cache/ + 各题图片缓存目录）。
+def _project_targets(root, name):
+    """按项目名找出要删的项：数据根下的同名条目 + `cache/<运行名>-<6位哈希>/`。
 
-    数据目录（~/.devtools/ctfsweep，CTFSWEEP_DATA_DIR 可覆盖）整体只装"扫描产物"：
-    cache/ 是每次扫描的结果缓存，其余按题目名分的目录是 --extract 提取的图片缓存。
-    两者都**只增不减**，此前唯一的清理方式是用户手动 rm —— 这里给一个官方入口。
+    运行名同时试 `name` 与去掉扩展名的 `splitext(name)[0]`：扫描 `capture4.pcapng`
+    的运行名是 `capture4`，而图片缓存目录名就是 `capture4.pcapng`——用户两种写法
+    都该命中同一个项目。
+    """
+    out = []
+    top = os.path.join(root, name)
+    if os.path.exists(top) or os.path.islink(top):
+        out.append(top)
+    runs = [name]
+    stem = os.path.splitext(name)[0]
+    if stem and stem != name:
+        runs.append(stem)
+    croot = os.path.join(root, 'cache')
+    if os.path.isdir(croot):
+        for d in sorted(os.listdir(croot)):
+            if any(re.match(r'^%s-[0-9a-f]{6}$' % re.escape(r), d) for r in runs):
+                out.append(os.path.join(croot, d))
+    return out
+
+
+def cmd_clear(argv):
+    """ctfsweep clear [名称] [-y]：清空数据目录，或只清一个项目的缓存。
+
+    无名称 → 清数据根下的**内容**（cache/ 结果缓存 + 各题图片缓存 + 散落文件）；
+    有名称 → 只清那个项目：数据根下的同名条目（如 --extract 留下的 `capture4.pcapng/`）
+    与 `cache/capture4-<哈希>/`。
+
+    数据目录（~/.devtools/ctfsweep，CTFSWEEP_DATA_DIR 可覆盖）只装"扫描产物"——
+    cache/ 是每次扫描的结果缓存，其余按题目名分的目录是提取出的图片缓存。两者都
+    **只增不减**（装/卸/更新都不碰），此前唯一清法是手动 rm，这里给官方入口。
 
     ⚠️ 清的是**数据目录下的内容**（逐项删子项，目录本身保留），不是安装根：
     安装根住着程序本体（bin/ lib/ …），与数据目录只有在用户级安装下才是同一个，
@@ -524,35 +551,57 @@ def cmd_clear(argv):
     用户级安装下那样删会把 ctfsweep 自己删掉、把用户设置删掉。
     """
     assume_yes = False
+    name = ''
     for a in argv:
         if a in ('-y', '--yes'):
             assume_yes = True
-        else:
-            print('未知参数: %s（用法: ctfsweep clear [-y]）' % a)
+        elif a.startswith('-'):
+            print('未知参数: %s（用法: ctfsweep clear [名称] [-y]）' % a)
             return 2
+        elif name:
+            print('参数过多: %s（用法: ctfsweep clear [名称] [-y]）' % a)
+            return 2
+        else:
+            name = a
 
     root = paths.data_root()
     if not os.path.isdir(root):
         print('数据目录不存在: %s（尚未扫描过，无需清理）' % root)
         return 0
 
-    total_files, total_size = _usage(root)
-    names = sorted(os.listdir(root))
-    entries = [n for n in names if n not in _CLEAR_KEEP]
-    kept = [n for n in names if n in _CLEAR_KEEP]
-    if not entries:
-        print('数据目录已是空的: %s' % root)
-        return 0
+    if name:
+        # 功能项/配置即使重名也不给删（clear VERSION 之类的误写要挡住）
+        if name in _CLEAR_KEEP:
+            print('拒绝清理: %s 是功能文件/配置，不在 clear 的范围内（用法: ctfsweep clear [名称]）'
+                  % name)
+            return 1
+        targets = _project_targets(root, name)
+        if not targets:
+            print('未找到该项目的缓存: %s（数据目录: %s）' % (name, root))
+            return 0
+        what = '项目 %s 的缓存' % name
+    else:
+        names = sorted(os.listdir(root))
+        targets = [os.path.join(root, n) for n in names if n not in _CLEAR_KEEP]
+        if not targets:
+            print('数据目录已是空的: %s' % root)
+            return 0
+        what = '数据目录内容'
 
-    desc = '共 %d 个文件，%.1f MB' % (total_files, total_size / 1048576.0)
+    total_files = total_size = 0
+    for p in targets:
+        f, b = _usage(p) if os.path.isdir(p) and not os.path.islink(p) else (1, _filesize(p))
+        total_files += f
+        total_size += b
+    show = [os.path.relpath(p, root) for p in targets]
+
     if not assume_yes:
         if not sys.stdin.isatty():
             print('检测到非交互环境，请加 -y 跳过确认: ctfsweep clear -y')
             return 1
-        print('将清空数据目录: %s（%s）' % (root, desc))
-        print('  删除: %s' % '、'.join(entries))
-        if kept:
-            print('  保留: %s' % '、'.join(kept))
+        print('将清空 %s: %s（共 %d 个文件，%.1f MB）'
+              % (what, root, total_files, total_size / 1048576.0))
+        print('  删除: %s' % '、'.join(show))
         try:
             ans = input('确定要删除吗？(y/n): ')
         except EOFError:
@@ -562,8 +611,7 @@ def cmd_clear(argv):
             return 0
 
     removed = 0
-    for name in entries:
-        p = os.path.join(root, name)
+    for p in targets:
         try:
             if os.path.isdir(p) and not os.path.islink(p):
                 shutil.rmtree(p)
@@ -572,11 +620,18 @@ def cmd_clear(argv):
             removed += 1
         except OSError as ex:
             print('删除失败: %s (%r)' % (p, ex))
-    print('已清空数据目录: %s（删除 %d 项）' % (root, removed))
-    if kept:
-        print('  保留: %s（功能文件与配置不受影响）' % '、'.join(kept))
+    print('已清空 %s: %s（删除 %d 项）' % (what, root, removed))
+    print('  删除: %s' % '、'.join(show))
     print('  下次扫描会重新写入缓存。')
     return 0
+
+
+def _filesize(path):
+    """单个文件的字节数（取不到按 0 计）。"""
+    try:
+        return os.path.getsize(path)
+    except OSError:
+        return 0
 
 
 def _usage(path):

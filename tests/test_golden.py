@@ -113,6 +113,12 @@ def main():
     fails = []
     for name, argv in cases():
         path = os.path.join(GOLDEN_DIR, name + '.txt')
+        # ⚠️ 每个用例开始前**清空数据目录**（而不是给它一个带用例名的子目录：
+        # 那会把路径写进 -q 的输出里，基线凭空多出一堆路径差异）。
+        # 不清的话，同文件的第二个用例（t4.pcap 与 t4.pcap+extract、t10-ftp.pcap
+        # 与它的 -q）会走"缓存已存在、不覆盖"分支，把回归位顶掉。
+        shutil.rmtree(DATADIR, ignore_errors=True)
+        os.makedirs(DATADIR)
         rc, out = run_case(argv)
         if rc != 0:
             fails.append('%s：退出码 %d' % (name, rc))
