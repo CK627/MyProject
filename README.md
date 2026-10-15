@@ -122,8 +122,9 @@ Windows 运行 `bin\ctfsweep.bat <文件或目录>`，或把项目根目录加�
 | 配置文件（可选） | `~/.devtools/ctfsweep/ctfsweep.conf` | 扫描行为配置 |
 
 > ⚠️ **缓存永不自动删除**：`ctfsweep update` 只覆盖功能文件，`ctfsweep uninstall` 也只删功能
-> 文件与 shell 接线——`cache/` 一律保留。要腾地方或重扫某个项目，用 `ctfsweep clear`
-> （`ctfsweep config` 报出占用与路径）。
+> 文件与 shell 接线——`cache/` 一律保留（想清就在**卸载之前** `ctfsweep clear`，卸完命令
+> 就没了）。卸载后系统级的 devtools 根（`/Library/devtools`、`/usr/local/devtools`）只在
+> 空的时候才收掉，里面还有 jtool/ptool 之类就原样留着。
 >
 > 模型是**离线统一训练**的产物，随版本发布；用户要自己重训（例如用自己的题库），
 > 用仓库里的 `python3 lab/train.py`——运行时命令行**不提供**任何训练/标注入口。
@@ -153,7 +154,8 @@ ctfsweep uninstall            # 带确认提示（-y 跳过）
 
 > 默认是系统级安装，所以 `./installer/uninstall.sh` 需要 `sudo` 才能删掉
 > `/Library/devtools/ctfsweep`（脚本会明确告诉你哪一项没权限，重跑一次带 sudo 即可）。
-> 卸载只删功能文件与 shell 接线，**扫描缓存一律保留**（见下文「数据与模型」）。
+> 卸载只删功能文件与 shell 接线，**扫描缓存一律保留**（要清就在卸载**之前** `ctfsweep clear`）；
+> 系统级的 devtools 根只在空时收掉（里面还有 jtool/ptool 就留着）。
 
 ## 功能特性
 

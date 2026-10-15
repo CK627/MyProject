@@ -154,14 +154,14 @@ case "$(cat "$_stage_home/.u1.out")" in
 esac
 
 # 7.3 抬高镜像版本 → --check 只比对、不落盘
-printf '1.10.10\n' > "$_stage/VERSION"
-printf '1.10.10\n' > "$_stage/MyProject-CtfSweep/VERSION"
+printf '1.10.11\n' > "$_stage/VERSION"
+printf '1.10.11\n' > "$_stage/MyProject-CtfSweep/VERSION"
 (cd "$_stage" && rm -f ctfsweep-src.tar.gz && tar -czf ctfsweep-src.tar.gz MyProject-CtfSweep)
 _ver_before="$(cat "$_inst/VERSION")"
 HOME="$_stage_home" CTFSWEEP_MIRROR="file://$_stage" "$_csw" update --check > "$_stage_home/.u2.out" 2>&1 \
     || _fail "update --check 失败（退出码非 0）"
 case "$(cat "$_stage_home/.u2.out")" in
-    *"远端 v1.10.10 可用"*"--check：仅比对"*) : ;;
+    *"远端 v1.10.11 可用"*"--check：仅比对"*) : ;;
     *) _fail "update --check 输出异常：$(cat "$_stage_home/.u2.out")" ;;
 esac
 [ "$(cat "$_inst/VERSION")" = "$_ver_before" ] || _fail "update --check 竟然改动了 VERSION"
@@ -173,7 +173,7 @@ printf 'sentinel\n' > "$_inst/cache/sentinel-abc123/1.txt"
 HOME="$_stage_home" CTFSWEEP_MIRROR="file://$_stage" "$_csw" update > "$_stage_home/.u3.out" 2>&1 \
     || _fail "真更新失败：$(cat "$_stage_home/.u3.out")"
 case "$(cat "$_stage_home/.u3.out")" in
-    *"更新完成: v1.10.9 → v1.10.10"*) : ;;
+    *"更新完成: v1.10.10 → v1.10.11"*) : ;;
     *) _fail "真更新输出异常：$(cat "$_stage_home/.u3.out")" ;;
 esac
 # 本次更新的安装根与 rc 里已写的一致 → 接线没变，就不该再提示重开终端
@@ -181,12 +181,12 @@ case "$(cat "$_stage_home/.u3.out")" in
     *"shell 配置未变"*) : ;;
     *) _fail "更新时接线一字未动，却仍在提示重开终端：$(cat "$_stage_home/.u3.out")" ;;
 esac
-[ "$(cat "$_inst/VERSION")" = "1.10.10" ] || _fail "更新后 VERSION 未变：$(cat "$_inst/VERSION")"
+[ "$(cat "$_inst/VERSION")" = "1.10.11" ] || _fail "更新后 VERSION 未变：$(cat "$_inst/VERSION")"
 [ -f "$_inst/cache/sentinel-abc123/1.txt" ] || _fail "更新删掉了扫描缓存（cache/sentinel-abc123/1.txt 不见了）"
 [ "$(ls -A "$_inst/bin" | wc -l | tr -d ' ')" = "1" ] || _fail "更新后 bin/ 不止一个条目"
 [ -L "$_inst/bin/ctfsweep" ] || _fail "更新后 bin/ctfsweep 不再是软链"
 HOME="$_stage_home" "$_csw" --version >/dev/null || _fail "更新后启动器不可用"
-echo "真更新 OK（v1.10.9 → v1.10.10；扫描缓存与布局契约都在）"
+echo "真更新 OK（v1.10.10 → v1.10.11；扫描缓存与布局契约都在）"
 
 # 7.4b clear：清空数据目录。用户级安装下**数据根就是安装根**（bin/ lib/ VERSION 都在这儿），
 # 所以这条同时守着两件事：缓存真的被删，以及功能项一个都没被碰。

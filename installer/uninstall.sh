@@ -5,7 +5,8 @@
 #   · 用户级: 只删除 ~/.devtools/ctfsweep/ 下的功能文件（bin/ lib/ completions/
 #     config/ VERSION uninstall deploy.sh shell-setup.sh），**保留数据目录**
 #     （cache/ 扫描结果缓存 + 各题图片缓存——永不自动删除）；
-#   · 系统级: 删除 /Library/devtools/ctfsweep（纯安装产物，无扫描缓存）；
+#   · 系统级: 删除 /Library/devtools/ctfsweep（纯安装产物，无扫描缓存）；devtools 根
+#     （/Library/devtools、/usr/local/devtools）只在**空**时收掉（同 ptool / jtool）；
 #   · 旧版软链 ~/.local/bin/ctfsweep 一并清理；
 #   · 摘除 .zshrc/.bashrc 里的 `# >>> ctfsweep >>>` 块（由 shell-setup.sh remove 负责）。
 #
@@ -51,7 +52,7 @@ if [ -d "$USR_INSTALL" ]; then
     if rmdir "$USR_INSTALL" 2>/dev/null; then
         echo "（空目录已移除: ${USR_INSTALL}）"
     else
-        echo "扫描缓存保留: ${USR_INSTALL}/（如需彻底删除请手动处理）"
+        echo "扫描缓存保留: ${USR_INSTALL}/（卸载前用 ctfsweep clear 可清空；卸载后只能手动删）"
     fi
 fi
 
@@ -63,6 +64,13 @@ if [ -d "$SYS_INSTALL" ]; then
     else
         echo "无权限删除: ${SYS_INSTALL}（请用 sudo 重跑本脚本）"
     fi
+fi
+# devtools 根（/Library/devtools、/usr/local/devtools）只在**空**时收掉：
+# 里面还住着别的工具时 rmdir 失败，正合预期（与 ptool / jtool 同规）。
+# ⚠️ 不要改成 rm -rf —— 那是同目录其他工具的安装根。
+_DIRNAME="$(dirname "$SYS_INSTALL")"
+if [ -d "$_DIRNAME" ] && rmdir "$_DIRNAME" 2>/dev/null; then
+    echo "（空目录已移除: ${_DIRNAME}）"
 fi
 
 if [ -L "$OLD_LINK" ]; then
