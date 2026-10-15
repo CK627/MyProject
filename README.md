@@ -31,12 +31,29 @@ ctfsweep <文件或目录> [选项]
 ctfsweep update               # 更新到最新版（--check 只比对版本，不落盘）
 ```
 
+Windows（PowerShell，与 ptool / jtool 同规的一键安装：下载快照 → 装到
+`%USERPROFILE%\.devtools\ctfsweep` → 把 `bin` 挂进用户 PATH，**不需要管理员**）：
+
+```powershell
+irm https://raw.githubusercontent.com/CK627/MyProject/CtfSweep/installer/install.ps1 | iex
+```
+
+已下载源码快照/仓库时也可以右键运行 `installer\windows\install.bat`（同一个安装动作）。
+卸载用 `ctfsweep uninstall -y`，或右键 `installer\windows\uninstall.bat`：摘掉 PATH 项、
+删掉功能文件，**扫描缓存一律保留**。Windows 需要 Python 3.8+ 在 PATH 上（`python` 或
+`python3` 均可）。
+
 ### 国内镜像（无需 VPN）
 
 GitHub 的 `raw` / `api` 域名在国内不保证可达。镜像服务器在国内，产物与 GitHub 分支逐字节相同：
 
 ```bash
 source <(curl -fsSL http://101.132.165.98/dist/ctfsweep/install.sh)
+```
+
+```powershell
+# Windows
+irm http://101.132.165.98/dist/ctfsweep/install.ps1 | iex
 ```
 
 安装脚本**先访问镜像，拿不到再回退 GitHub**，`ctfsweep update` 同样如此。换源用环境变量：
@@ -101,7 +118,7 @@ Windows 运行 `bin\ctfsweep.bat <文件或目录>`，或把项目根目录加�
 | 内容 | 位置 | 说明 |
 |------|------|------|
 | **判断核模型 + 训练配置** | 安装目录 `lib/models/`（未安装时是项目内 `models/`） | 训练产物与超参数，随版本一起发布；升级模型参数无需改代码 |
-| **扫描缓存** | `~/.devtools/ctfsweep/cache/<运行名>-<路径哈希6位>/` | `1.txt`/`2.txt`/`3.txt` 高/中/低分档明细 + `<运行名>_cache.txt` 本次运行的完整报告。**一次运行一个目录**（目录扫描时明细每行带 `← <相对路径>` 标出来源），**每次扫描都尝试写**（默认模式与 `-q` 内容相同；同一目标已有缓存则不覆盖、提示先 `clear`），跑完即可回看 |
+| **扫描缓存** | `~/.devtools/ctfsweep/cache/<运行名>-<路径哈希6位>/`（Windows 同形：`%USERPROFILE%\.devtools\ctfsweep\cache\…`） | `1.txt`/`2.txt`/`3.txt` 高/中/低分档明细 + `<运行名>_cache.txt` 本次运行的完整报告。**一次运行一个目录**（目录扫描时明细每行带 `← <相对路径>` 标出来源），**每次扫描都尝试写**（默认模式与 `-q` 内容相同；同一目标已有缓存则不覆盖、提示先 `clear`），跑完即可回看 |
 | 配置文件（可选） | `~/.devtools/ctfsweep/ctfsweep.conf` | 扫描行为配置 |
 
 > ⚠️ **缓存永不自动删除**：`ctfsweep update` 只覆盖功能文件，`ctfsweep uninstall` 也只删功能

@@ -561,6 +561,31 @@ DNS 相关的 `KNOWN_INFRA_SUFFIXES` / `dns_lead_reason` 也在这里（见上�
   **它属于安装载荷**（见上文 `models_dir()`）。改 `models/` 下任何文件都要走一次
   `bash tests/smoke.sh`（第 5 步断言安装后模型就位）。
 
+### Windows（nt 分支）
+
+`os.name == 'nt'` 时**整条安装链换一套**（没有 bash、没有 rc 文件）：
+
+- **安装形态**：`%USERPROFILE%\.devtools\ctfsweep`（**用户级、不需要管理员**），
+  PATH 上挂 `<根>\bin\ctfsweep.bat`。与 macOS/Linux 用户级一致——**安装根就是数据目录**，
+  所以 `_CLEAR_KEEP`（含 `bin`/`lib`）在这里同样是"别把程序删掉"的那道闸门。
+- **入口**：`installer/install.ps1`（一键：下载快照 → 解压 → 交给 `ctfsweep install`
+  → 刷新当前会话 PATH）、`installer/windows/install.bat` / `uninstall.bat`（右键运行）。
+  `publish-mirror.sh` 同步发 `install.ps1`（Windows 那行 `irm … | iex` 读它）。
+- **PATH 走注册表** `HKCU\Environment`（`winreg`，REG_EXPAND_SZ）——**不用 `setx`**：
+  它会把超过 1024 字符的 PATH 截断。增删是 `win_path_join` / `win_path_drop` 两个
+  纯函数（大小写不敏感、容忍尾斜杠、空段清理、**不碰无关条目**），`test_smoke.py::
+  check_windows_path_helpers()` 逐条守着——写坏 PATH 是全机器级事故。
+- **部署**：`selfmgr.deploy_nt()` 按同一份 `_PAYLOAD_REPO` 拷文件 + 写启动器，
+  替代 shell 的 `deploy.sh`；`cmd_update` 在 nt 上走它，`_shell_setup()` 直接返回 0。
+- ⚠️ **`.bat` 一律纯 ASCII**：无 BOM 的 UTF-8 `.bat` 会被 cmd 按 ANSI 代码页（简中 GBK）
+  解析，中文被从中间劈开、cmd 转头执行文本碎片（ptool 的 build-remote.bat 记着这笔）。
+  ⚠️ **`.ps1` 必须带 UTF-8 BOM**：Windows PowerShell 5.1 对无 BOM 的 `.ps1` 按 ANSI 读，
+  中文整段乱码。两条相反的要求，别搞混。
+- **控制台编码**：`cli._console_utf8()` 在入口把重定向的 stdout/stderr 切到 UTF-8 +
+  `errors='replace'`（真控制台只加 `errors='replace'`）。不这么做，Windows 上
+  `ssh`/管道/`> file` 一遇到 GBK 编不出的字符（主机表 `↔`、会话告警 `⚠️`）就
+  UnicodeEncodeError，连「扫描出错」的告警都会跟着炸（实测 t6-hosts.pcap 必崩）。
+
 ## 工作流
 
 - 仓库是 monorepo（`main` 是作品集索引，本项目专用分支是 `CtfSweep`，也是当前分支）。

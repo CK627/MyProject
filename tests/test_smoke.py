@@ -83,6 +83,44 @@ def clear_cache(name=''):
     return run_cli(['clear'] + ([name] if name else []) + ['-y'])
 
 
+def check_windows_path_helpers():
+    """Windows PATH 串的增删（纯函数，跨平台可测）。
+
+    Windows 上装/卸的唯一"接线"就是 HKCU\Environment 里的 Path——写坏它是**全机器**级
+    的事故（PATH 没了，用户的 cmd 连 ls 都敲不出来）。所以这段逻辑单独拎出来测：
+    大小写不敏感、容忍尾部反斜杠、空段清理、以及**不碰无关条目**（真实 PATH 里就有
+    `"%JAVA_HOME%\bin;%JAVA_HOME%\jre\bin;"` 这种带引号含分号的老条目）。
+    """
+    from ctfsweep.core import selfmgr
+    entry = r'C:\Users\x\.devtools\ctfsweep\bin'
+    other = r'C:\Windows;C:\Program Files\Git\cmd'
+
+    got, changed = selfmgr.win_path_join('', entry)
+    check(got == entry and changed, 'win PATH：空 PATH 直接写入该项')
+
+    got, changed = selfmgr.win_path_join(other, entry)
+    check(got.split(';')[0] == entry and other.split(';')[0] in got and changed,
+          'win PATH：新项插到最前（其余条目保留）')
+
+    for cur in (other + ';' + entry,
+                other + ';' + entry.upper(),
+                other + ';' + entry + '\\'):
+        got, changed = selfmgr.win_path_join(cur, entry)
+        check(not changed and got == cur,
+              'win PATH：已存在（大小写/尾斜杠不同）原样返回、不重复添加')
+
+    weird = r'C:\A;"%JAVA_HOME%\bin;%JAVA_HOME%\jre\bin;";C:\B'
+    got, changed = selfmgr.win_path_drop(weird + ';' + entry, entry)
+    check(changed and got == weird, 'win PATH：摘除时不动无关条目（含带引号的老条目）')
+
+    got, changed = selfmgr.win_path_drop(other, entry)
+    check(not changed and got == other, 'win PATH：本来就没有该项时不变更')
+
+    joined, _ = selfmgr.win_path_join(other, entry)
+    got, changed = selfmgr.win_path_drop(joined, entry)
+    check(changed and got == other, 'win PATH：加进去再摘掉回到原样')
+
+
 def check_shell_scripts():
     """体检 shell 脚本：$VAR 后不得紧跟非 ASCII 字符（bash 会把全角字符并入变量名导致解析错误）"""
     pat = re.compile(r'\$[A-Za-z_][A-Za-z0-9_]*[^\x00-\x7f]')
@@ -1345,6 +1383,9 @@ def main():
         rc, out = run_cli(['config'])
         check(rc == 0 and '扫描缓存:' in out,
               'config：报出扫描缓存占用（清理入口是 ctfsweep clear）')
+
+        print('== Windows PATH 增删（纯函数）==')
+        check_windows_path_helpers()
 
         print('== shell 脚本体检 ==')
         check_shell_scripts()

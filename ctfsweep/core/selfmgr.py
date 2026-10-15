@@ -178,6 +178,11 @@ def _missing_artifacts(root):
     for key in _INSTALLED_ITEMS:
         if not os.path.exists(os.path.join(root, key)):
             missing.append(key)
+    if os.name == 'nt':
+        # Windows 没有软链，入口是 bin\ctfsweep.bat
+        if not os.path.isfile(os.path.join(root, 'bin', 'ctfsweep.bat')):
+            missing.append('bin\\ctfsweep.bat（启动器）')
+        return missing
     entry = os.path.join(root, 'bin', 'ctfsweep')
     if not os.path.islink(entry) or os.path.exists(os.path.join(root, 'bin', 'ctfsweep.sh')):
         missing.append('bin/ctfsweep（软链）')
@@ -331,12 +336,132 @@ def _deploy(srcdir, root):
     return _run_root(['bash', script, srcdir, root], root)
 
 
+# ============================================================================
+# Windows（nt）：没有 bash、也没有 rc 文件，安装形态换成
+#   安装根 = %USERPROFILE%\\.devtools\\ctfsweep（与数据目录同址，和 macOS/Linux
+#            用户级安装一致），PATH 上挂 <根>\\bin\\ctfsweep.bat。
+# PATH 走 HKCU\Environment（用户级，不需要管理员）——不用 setx：它会把超过 1024
+# 字符的 PATH 截断，是老牌事故。
+# ============================================================================
+_WIN_FUNC_ITEMS = ('bin', 'lib', 'completions', 'config', 'VERSION',
+                   'uninstall', 'deploy.sh', 'shell-setup.sh')
+
+# ⚠️ 纯 ASCII：无 BOM 的 UTF-8 .bat 会被 cmd 按 ANSI 代码页（简中是 GBK）解析，
+#    中文会被从中间劈开、cmd 转头去执行文本碎片（ptool 的 build-remote.bat 踩过）。
+#    所有面向用户的文案都在 Python 侧，那里有 _console_utf8() 兜底。
+_WIN_LAUNCHER = (
+    '@echo off\r\n'
+    'rem ctfsweep launcher (Windows): put <install>\\lib on PYTHONPATH, then run python\r\n'
+    'setlocal\r\n'
+    'set "ROOT=%~dp0.."\r\n'
+    'set "PYTHONPATH=%ROOT%\\lib;%PYTHONPATH%"\r\n'
+    'python -B -m ctfsweep %*\r\n'
+)
+
+
+def _win_install_root():
+    return os.path.join(os.path.expanduser('~'), '.devtools', 'ctfsweep')
+
+
+def win_path_join(cur, entry):
+    """把 entry 并进 PATH 串（大小写不敏感去重；空串/分隔符残留都收拾干净）。"""
+    parts = [p.strip() for p in (cur or '').split(';')]
+    parts = [p for p in parts if p]
+    want = entry.rstrip('\\')
+    for p in parts:
+        if p.rstrip('\\').lower() == want.lower():
+            return ';'.join(parts), False
+    parts.insert(0, want)
+    return ';'.join(parts), True
+
+
+def win_path_drop(cur, entry):
+    """从 PATH 串里摘掉 entry（大小写不敏感），返回 (新串, 是否改动了)。"""
+    parts = [p.strip() for p in (cur or '').split(';')]
+    parts = [p for p in parts if p]
+    want = entry.rstrip('\\').lower()
+    keep = [p for p in parts if p.rstrip('\\').lower() != want]
+    return ';'.join(keep), len(keep) != len(parts)
+
+
+def _win_path_read():
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, 'Environment') as k:
+            v, _t = winreg.QueryValueEx(k, 'Path')
+            return v or ''
+    except OSError:
+        return ''
+
+
+def _win_path_write(value):
+    import winreg
+    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, 'Environment', 0,
+                        winreg.KEY_SET_VALUE) as k:
+        # REG_EXPAND_SZ：PATH 里常有 %USERPROFILE% 这类变量，写成 REG_SZ 就不再展开
+        winreg.SetValueEx(k, 'Path', 0, winreg.REG_EXPAND_SZ, value)
+
+
+def _win_path_ensure(entry):
+    """把 entry 加进用户 PATH，返回 True 表示这次真的改了。"""
+    cur = _win_path_read()
+    new, changed = win_path_join(cur, entry)
+    if changed:
+        _win_path_write(new)
+    return changed
+
+
+def _win_path_remove(entry):
+    cur = _win_path_read()
+    new, changed = win_path_drop(cur, entry)
+    if changed:
+        _win_path_write(new)
+    return changed
+
+
+def deploy_nt(srcdir, root):
+    """Windows 部署：按 _PAYLOAD_REPO 拷功能文件 + 写 bin\\ctfsweep.bat（不用 bash）。
+
+    只删功能项，数据（cache/ 等）永不动——与 deploy.sh 的契约逐条对齐。
+    """
+    os.makedirs(root, exist_ok=True)
+    for rel in _WIN_FUNC_ITEMS:
+        p = os.path.join(root, rel)
+        if os.path.isdir(p) and not os.path.islink(p):
+            shutil.rmtree(p, ignore_errors=True)
+        elif os.path.exists(p) or os.path.islink(p):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+    for src_rel, dst_rel in _PAYLOAD_REPO:
+        src = os.path.join(srcdir, src_rel)
+        dst = os.path.join(root, dst_rel)
+        if not os.path.exists(src):
+            raise RuntimeError('源码快照缺少 %s' % src_rel)
+        parent = os.path.dirname(dst)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        if os.path.isdir(src):
+            shutil.copytree(src, dst,
+                            ignore=shutil.ignore_patterns('__pycache__', *_SKIP_NAMES))
+        else:
+            shutil.copy2(src, dst)
+    bindir = os.path.join(root, 'bin')
+    os.makedirs(bindir, exist_ok=True)
+    with open(os.path.join(bindir, 'ctfsweep.bat'), 'w', encoding='utf-8', newline='') as fh:
+        fh.write(_WIN_LAUNCHER)
+    return 0
+
+
 def _shell_setup(action, root):
     """shell 接线：以**调用者**身份运行。
 
     这里刻意不走 sudo —— sudo 之后 HOME 会变成 root 的，rc 就写错地方了；
     shell-setup.sh 自己认 SUDO_USER 来决定写谁家的 rc。
     """
+    if os.name == 'nt':
+        return 0        # Windows 没有 rc 接线：PATH 走注册表，由 cmd_install / deploy_nt 管
     script = os.path.join(root, 'shell-setup.sh')
     if not os.path.isfile(script):
         return 0
@@ -414,8 +539,12 @@ def cmd_update(argv):
             return 1
 
         try:
-            rc = _deploy(snapshot, root)
+            # Windows 没有 bash：走同一份载荷清单的 Python 版部署（deploy_nt）
+            rc = deploy_nt(snapshot, root) if os.name == 'nt' else _deploy(snapshot, root)
         except RuntimeError as ex:
+            print('部署失败: %s' % ex)
+            return 1
+        except Exception as ex:
             print('部署失败: %s' % ex)
             return 1
         if rc != 0:
@@ -427,7 +556,7 @@ def cmd_update(argv):
             print('警告: 部署后校验不一致（%d 个文件未落全）: %s' % (len(bad), '、'.join(bad[:5])))
             return 1
 
-        _shell_setup('install', root)
+        _shell_setup('install', root)      # nt 上直接返回 0（PATH 在注册表，安装时已处理）
 
         if snap_ver == local_ver:
             print('已是最新版本 (v%s)，并补齐了缺失组件。' % snap_ver)
@@ -442,12 +571,101 @@ def cmd_update(argv):
         shutil.rmtree(workdir, ignore_errors=True)
 
 
+def _win_install(mode, src):
+    """Windows 用户级安装：拷到 %USERPROFILE%\\.devtools\\ctfsweep 并把 bin 挂进用户 PATH。
+
+    与 macOS/Linux 用户级的形态逐条对齐：安装根就是数据目录（cache/ 等住在同一层），
+    所以只删/写功能项；PATH 走注册表（不需要管理员），不用 setx（会截断长 PATH）。
+    """
+    dest = _win_install_root()
+    if mode == 'installed' and os.path.normcase(os.path.abspath(src)) == os.path.normcase(os.path.abspath(dest)):
+        print('ctfsweep 已安装: %s（v%s）' % (dest, _read_version(dest) or '?'))
+        print('  更新: ctfsweep update      卸载: ctfsweep uninstall')
+        return 0
+    if mode not in ('repo', 'installed'):
+        print('无法识别当前布局，找不到要安装的源码（在源码目录里运行 install.bat）。')
+        return 1
+    print('ctfsweep 安装（Windows · 用户级）')
+    print('  源码: %s' % src)
+    print('  目标: %s' % dest)
+    try:
+        deploy_nt(src, dest)
+    except Exception as ex:
+        print('安装失败: %s' % ex)
+        return 1
+    changed = _win_path_ensure(os.path.join(dest, 'bin'))
+    print('已安装: %s（v%s）' % (dest, _read_version(dest) or '?'))
+    print('  PATH: %s' % ('已加入用户 PATH' if changed else '用户 PATH 里已有'))
+    print('  数据目录: %s（扫描缓存等；卸载不删）' % paths.data_root())
+    print('  重开一个终端后可直接敲 ctfsweep（当前终端的 PATH 还是旧的）。')
+    return 0
+
+
+def _win_uninstall(argv):
+    """Windows 卸载：摘 PATH 项 + 删功能文件，**保留数据**（与 POSIX 契约一致）。"""
+    assume_yes = False
+    for a in argv:
+        if a in ('-y', '--yes'):
+            assume_yes = True
+        else:
+            print('未知参数: %s（用法: ctfsweep uninstall [-y]）' % a)
+            return 2
+    dest = _win_install_root()
+    if not os.path.isdir(dest):
+        print('未安装: %s（无需卸载）' % dest)
+        return 0
+    if not assume_yes:
+        if not sys.stdin.isatty():
+            print('检测到非交互环境，请加 -y 跳过确认: ctfsweep uninstall -y')
+            return 1
+        try:
+            ans = input('确定要卸载 ctfsweep 吗？（扫描缓存会保留）(y/n): ')
+        except EOFError:
+            ans = ''
+        if ans.strip().lower() not in ('y', 'yes'):
+            print('已取消')
+            return 0
+
+    print('ctfsweep 卸载程序（Windows）')
+    print('安装目录: %s' % dest)
+    if _win_path_remove(os.path.join(dest, 'bin')):
+        print('已从用户 PATH 摘除: %s' % os.path.join(dest, 'bin'))
+    else:
+        print('用户 PATH 里没有这一项（可能已摘除）')
+    removed = []
+    for rel in _WIN_FUNC_ITEMS:
+        p = os.path.join(dest, rel)
+        if os.path.isdir(p) and not os.path.islink(p):
+            shutil.rmtree(p, ignore_errors=True)
+        elif os.path.exists(p) or os.path.islink(p):
+            try:
+                os.remove(p)
+            except OSError:
+                continue
+        if not os.path.exists(p):
+            removed.append(rel)
+    print('已删除功能项: %s' % '、'.join(removed))
+    left = sorted(os.listdir(dest)) if os.path.isdir(dest) else []
+    if left:
+        print('保留: %s（扫描缓存等数据，clear 可清）' % '、'.join(left))
+    else:
+        print('安装目录已空: %s' % dest)
+    print('清理完成。重开一个终端后 PATH 才彻底刷新。')
+    return 0
+
+
 def cmd_install(argv):
-    """ctfsweep install：安装指引（真安装要 sudo 与交互，交给 installer/install.sh）。"""
+    """ctfsweep install：安装指引（真安装要 sudo 与交互，交给 installer/install.sh）。
+
+    Windows 上是**真装**（没有 sudo 与 rc 的概念，纯用户级拷贝 + 注册表 PATH），
+    见 _win_install()。
+    """
     if argv:
         print('未知参数: %s（用法: ctfsweep install）' % argv[0])
         return 2
     mode, root, _devtools = self_info()
+    if os.name == 'nt':
+        return _win_install(mode, root)
     if mode == 'installed':
         print('ctfsweep 已安装: %s（v%s）' % (root, _read_version(root) or '?'))
         print('  更新: ctfsweep update      卸载: ctfsweep uninstall')
@@ -474,8 +692,7 @@ def cmd_uninstall(argv):
             print('未知参数: %s（用法: ctfsweep uninstall [-y]）' % a)
             return 2
     if os.name == 'nt':
-        print('ctfsweep uninstall 目前仅支持 macOS / Linux。')
-        return 1
+        return _win_uninstall(argv)
 
     mode, root, _devtools = self_info()
     if mode == 'installed':
