@@ -1,17 +1,24 @@
-﻿# ctfsweep 一键安装脚本（Windows）
+# ctfsweep one-click installer (Windows, PowerShell 5.1+)
 #
-# 用法（PowerShell，装完自动刷新当前会话的 PATH）:
+# Usage (refreshes PATH in the current session when done):
 #   irm https://raw.githubusercontent.com/CK627/MyProject/CtfSweep/installer/install.ps1 | iex
 #
-# 国内镜像（无需 VPN，同一份脚本，只是换个下载地址）:
+# China mirror (no VPN needed, same script, different download host):
 #   irm http://101.132.165.98/dist/ctfsweep/install.ps1 | iex
 #
-# 形态与 ptool / jtool 的 Windows 一键安装一致：下载源码快照 → 交给快照里的
-# ctfsweep install 落地（用户级 %USERPROFILE%\.devtools\ctfsweep，不需要管理员）。
-# 换源：$env:CTFSWEEP_MIRROR='<url>'（'none' = 只走 GitHub）。
+# Same shape as ptool / jtool: download the source snapshot, then hand it to the
+# snapshot's own "ctfsweep install" (user-level %USERPROFILE%\.devtools\ctfsweep,
+# no administrator rights needed). Switch source with $env:CTFSWEEP_MIRROR='<url>'
+# ('none' = GitHub only).
 #
-# ⚠️ 本文件必须带 UTF-8 BOM 保存：Windows PowerShell 5.1 对无 BOM 的 .ps1 按 ANSI
-#    代码页读，中文会整段乱码（.bat 也有同类坑，那边的做法是纯 ASCII）。
+# ASCII only, and deliberately NO BOM:
+#   * "irm ... | iex" passes the body to Invoke-Expression as a string. A leading BOM
+#     becomes part of the first line, so PowerShell tries to run a command literally
+#     named "<BOM>#" and dies with CommandNotFoundException.
+#   * Non-ASCII text piped that way is decoded with the ANSI code page and arrives
+#     mangled. The .bat files next to this one are ASCII-only for the same reason.
+# Every Chinese message the user sees comes from Python (which owns its console
+# encoding); this script speaks English on purpose.
 
 $ErrorActionPreference = 'Stop'
 
@@ -19,13 +26,13 @@ $mirror = if ($env:CTFSWEEP_MIRROR) { $env:CTFSWEEP_MIRROR } else { 'http://101.
 $github = 'https://github.com/CK627/MyProject/archive/refs/heads/CtfSweep.tar.gz'
 
 function Info([string]$msg) { Write-Host "==> $msg" }
-function Die([string]$msg) { Write-Host "错误: $msg" -ForegroundColor Red; exit 1 }
+function Die([string]$msg) { Write-Host "ERROR: $msg" -ForegroundColor Red; exit 1 }
 
-# ---- 1. 依赖检查 ----
+# ---- dependencies ----
 $py = Get-Command python -ErrorAction SilentlyContinue
 if (-not $py) { $py = Get-Command python3 -ErrorAction SilentlyContinue }
-if (-not $py) { Die '需要 Python 3.8+（装好并让 python 进 PATH 后再来）' }
-if (-not (Get-Command tar -ErrorAction SilentlyContinue)) { Die '需要 tar（Windows 10 1803+ 自带）' }
+if (-not $py) { Die 'Python 3.8+ required (install it and make sure python is on PATH)' }
+if (-not (Get-Command tar -ErrorAction SilentlyContinue)) { Die 'tar required (bundled with Windows 10 1803+)' }
 Info "python: $($py.Source)"
 
 $work = Join-Path $env:TEMP ("ctfsweep-install-" + [System.IO.Path]::GetRandomFileName())
@@ -35,31 +42,31 @@ try {
     $got = $false
     if ($mirror -ne 'none') {
         $url = "$mirror/ctfsweep-src.tar.gz"
-        Info "下载源码快照（镜像）: $url"
+        Info "downloading snapshot (mirror): $url"
         try {
             Invoke-WebRequest -Uri $url -OutFile $tgz -UseBasicParsing
             if ((Get-Item $tgz).Length -gt 0) { $got = $true }
-        } catch { Info '镜像不可用，回退 GitHub' }
+        } catch { Info 'mirror unavailable, falling back to GitHub' }
     }
     if (-not $got) {
-        Info "下载源码快照: $github"
+        Info "downloading snapshot: $github"
         Invoke-WebRequest -Uri $github -OutFile $tgz -UseBasicParsing
     }
 
-    Info '解压'
+    Info 'extracting'
     tar -xzf $tgz -C $work
     $src = Get-ChildItem -Path $work -Directory | Select-Object -First 1
-    if (-not $src) { Die '快照结构异常（解压后没有目录）' }
+    if (-not $src) { Die 'unexpected snapshot layout (no directory after extraction)' }
 
-    Info "安装到 $env:USERPROFILE\.devtools\ctfsweep"
+    Info "installing to $env:USERPROFILE\.devtools\ctfsweep"
     $env:PYTHONPATH = $src.FullName
     & $py.Source -B -m ctfsweep install
-    if ($LASTEXITCODE -ne 0) { Die "安装失败（退出码 $LASTEXITCODE）" }
+    if ($LASTEXITCODE -ne 0) { Die "install failed (exit code $LASTEXITCODE)" }
 
-    # 当前会话立即可用（新终端靠注册表里那行 PATH）
+    # make it usable in this very session (new shells read the registry PATH)
     $bindir = Join-Path $env:USERPROFILE '.devtools\ctfsweep\bin'
     if ($env:Path -notlike "*$bindir*") { $env:Path = "$bindir;$env:Path" }
-    Info '完成。当前窗口可直接敲: ctfsweep --help'
+    Info 'done. Try "ctfsweep --help" in this window.'
 } finally {
     Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
 }

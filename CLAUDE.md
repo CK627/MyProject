@@ -579,8 +579,10 @@ DNS 相关的 `KNOWN_INFRA_SUFFIXES` / `dns_lead_reason` 也在这里（见上�
   替代 shell 的 `deploy.sh`；`cmd_update` 在 nt 上走它，`_shell_setup()` 直接返回 0。
 - ⚠️ **`.bat` 一律纯 ASCII**：无 BOM 的 UTF-8 `.bat` 会被 cmd 按 ANSI 代码页（简中 GBK）
   解析，中文被从中间劈开、cmd 转头执行文本碎片（ptool 的 build-remote.bat 记着这笔）。
-  ⚠️ **`.ps1` 必须带 UTF-8 BOM**：Windows PowerShell 5.1 对无 BOM 的 `.ps1` 按 ANSI 读，
-  中文整段乱码。两条相反的要求，别搞混。
+  ⚠️ **`.ps1` 同样纯 ASCII、且不要 BOM**：`irm … | iex` 是把响应体当**字符串**喂给
+  Invoke-Expression——开头那个 BOM 会并进第一行，PowerShell 转头去执行一个叫 `<BOM>#`
+  的命令（实测 `CommandNotFoundException (ï»¿#)`）；非 ASCII 文本经这条路会按 ANSI 代码页
+  解码、整段乱码。用户可见的中文一律由 Python 侧打印（它自己管控制台编码）。
 - **控制台编码**：`cli._console_utf8()` 在入口把重定向的 stdout/stderr 切到 UTF-8 +
   `errors='replace'`（真控制台只加 `errors='replace'`）。不这么做，Windows 上
   `ssh`/管道/`> file` 一遇到 GBK 编不出的字符（主机表 `↔`、会话告警 `⚠️`）就
