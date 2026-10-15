@@ -123,6 +123,14 @@ REM denied instead of returning $null, so the $null check below never fires by
 REM itself and a non-elevated run would fall into the generic error branch.
 powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $shim='%SHIMS_DIR%'; $bin='%BIN_DIR%'; $legacy='%USERPROFILE%\.devtools\ptool\shims'; function N($s){ $s.Trim().TrimEnd('\').ToUpperInvariant() }; try { $k=[Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('SYSTEM\CurrentControlSet\Control\Session Manager\Environment',$true); if($null -eq $k){ Write-Output 'NEED_ADMIN'; exit 3 }; $p=[string]$k.GetValue('Path',''); $keep=@($p -split ';' | Where-Object { $_ -and (N $_) -ne (N $shim) -and (N $_) -ne (N $bin) }); $k.SetValue('Path', ((@($shim)+$keep+@($bin)) -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString); $k.Close(); $u=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment',$true); if($u -and $null -ne $u.GetValue('Path')){ $up=[string]$u.GetValue('Path'); $ukeep=@($up -split ';' | Where-Object { $_ -and (N $_) -ne (N $legacy) }); $u.SetValue('Path', ($ukeep -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString); $u.Close() }; Write-Output 'OK' } catch { if($_.Exception -is [System.UnauthorizedAccessException] -or $_.Exception -is [System.Security.SecurityException]) { Write-Output 'NEED_ADMIN'; exit 3 } else { Write-Output ('ERROR: ' + $_.Exception.Message); exit 2 } }"
 
+REM Clear the pre-2.2.18 layout under %USERPROFILE%\.devtools\ptool (shims /
+REM completions / repo). The new layout keeps everything inside the install dir, so
+REM that dotfolder is dead weight: this side only ever stripped its PATH entry,
+REM while the POSIX uninstall already deletes the directories themselves
+REM (module/common.sh). The parent dirs go only when EMPTY -- another tool's data
+REM under %USERPROFILE%\.devtools must survive.
+powershell -NoProfile -Command "$root=Join-Path $env:USERPROFILE '.devtools\ptool'; foreach ($d in 'shims','completions','repo') { Remove-Item -Recurse -Force (Join-Path $root $d) -ErrorAction SilentlyContinue }; foreach ($p in @($root, (Join-Path $env:USERPROFILE '.devtools'))) { if ((Test-Path $p) -and -not @(Get-ChildItem -Force $p).Count) { Remove-Item -Force $p -ErrorAction SilentlyContinue } }; Write-Output 'legacy ~/.devtools/ptool cleaned'"
+
 REM Check the exit code: without this a failed write (no admin) would still fall
 REM through to the "Install complete" banner below, which is a lie.
 if !errorlevel! equ 3 (
