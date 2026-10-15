@@ -276,6 +276,24 @@ end;
 // 这里在 ssPostInstall 兜一刀，把结果做成确定的、与上面那种语义无关的：
 //   {app}\shims 在最前（才压得过 Oracle 的 javapath），{app}\bin 在最后。
 // 幂等：装几遍、装的是全新还是升级，结果都一样。
+
+// 清掉 2.2.18 之前的用户级布局：%USERPROFILE%\.devtools\<tool>\{shims,completions,repo}。
+// 新布局把所有产物收进 {app}，那个隐藏目录是死重量；而这里此前**只**摘掉了它的
+// PATH 项，目录本身一直留在盘上（POSIX 的 do_uninstall 是连目录一起删的）。
+// 父目录只在**空**时收掉：RemoveDir 在非空时自己失败，别的工具的数据不会被动。
+// 时机：装完兜一次（老机器升级上来时清），卸载时再兜一次（与 PATH 清理同一处）。
+procedure CleanLegacyUserLayout;
+var
+  Root: string;
+begin
+  Root := ExpandConstant('{%USERPROFILE}\.devtools\@TOOL@');
+  DelTree(Root + '\shims', True, True, True);
+  DelTree(Root + '\completions', True, True, True);
+  DelTree(Root + '\repo', True, True, True);
+  RemoveDir(Root);
+  RemoveDir(ExpandConstant('{%USERPROFILE}\.devtools'));
+end;
+
 procedure SetMachinePathOrder;
 var
   OrigPath, NewPath, Rest, Seg, Shims, Bin: string;
@@ -334,6 +352,7 @@ begin
   begin
     SetMachinePathOrder;
     RemoveFromUserPath(ExpandConstant('{%USERPROFILE}\.devtools\@TOOL@\shims'));
+    CleanLegacyUserLayout;
   end;
 end;
 
@@ -353,5 +372,6 @@ begin
     RemoveFromPath(ExpandConstant('{app}\bin'));
     RemoveFromPath(ExpandConstant('{app}\shims'));
     RemoveFromUserPath(ExpandConstant('{%USERPROFILE}\.devtools\@TOOL@\shims'));
+    CleanLegacyUserLayout;
   end;
 end;
