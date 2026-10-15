@@ -80,6 +80,39 @@ HELP = """ctfsweep - CTF / 应急响应取证扫描器（零依赖，Python 3.8+
 """
 
 
+def _console_utf8():
+    """把 stdout/stderr 调成「编不出的字符不致命」。
+
+    Windows 上这不是可选项：控制台走 PEP 528 是 UTF-8，可一旦输出被**重定向**
+    （ssh、管道、`> out.txt`），Python 的 stdout 就退回 ANSI 代码页（简体中文是
+    cp936/GBK）——而报告里有 GBK 编不出的字符（主机表的 `↔`、会话告警的 `⚠️`），
+    一打印就 UnicodeEncodeError。实测 Windows + ssh 管道扫 t6-hosts.pcap 直接崩：
+    先是 `[主机表]` 那行打印失败，接着「扫描出错」的告警**也**因同一个字符再炸一次。
+
+    做法：
+      · 重定向（非 tty）→ 切 UTF-8 + errors='replace'。UTF-8 能把中文与箭头原样带出去，
+        管道另一头（ssh 客户端、编辑器）几乎都是 UTF-8；GBK 字节流在那里是乱码。
+      · 真控制台（tty）→ **只**加 errors='replace'，不动编码：Windows 控制台本就是
+        UTF-8，而设了 PYTHONLEGACYWINDOWSSTDIO 的老控制台是 GBK，改编码反而全乱。
+    编码本来就是 UTF-8 时跳过（POSIX 下 PEP 538/540 已把 C locale 提升成 UTF-8，
+    所以这条在 Linux/macOS 上通常是空操作）。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            enc = (getattr(stream, 'encoding', '') or '').lower().replace('-', '').replace('_', '')
+            if stream.isatty():
+                if enc in ('utf8', 'cp65001'):
+                    continue
+                stream.reconfigure(errors='replace')
+            else:
+                if enc in ('utf8', 'cp65001', ''):
+                    stream.reconfigure(errors='replace')
+                else:
+                    stream.reconfigure(encoding='utf-8', errors='replace')
+        except Exception:
+            pass
+
+
 def _load_conf(path):
     """读取 KEY=value 配置文件（# / ; 注释，未知键忽略）"""
     conf = {}
@@ -441,6 +474,7 @@ def brief_append_tail(tail_text, cache_path, files_total):
 
 
 def main():
+    _console_utf8()
     args = sys.argv[1:]
     # 管理子命令（update / install / uninstall / clear / config / help）
     if args and args[0] in ('update', 'install', 'uninstall', 'clear', 'config', 'help'):
