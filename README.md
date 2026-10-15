@@ -285,7 +285,7 @@ python3 lab/train.py --epochs 500
 
 - ⚡ **零第三方依赖**：任意 Python 3.8+，无需 pip install 任何东西
 - 📁 目录递归扫描；260MB 注册表全量 10 秒内、常规抓包亚秒级
-- 🔁 自助管理：`ctfsweep update`（真更新，镜像优先）/ `install` / `uninstall` / `config`（运行信息含缓存占用）/ `help`
+- 🔁 自助管理：`ctfsweep update`（真更新，镜像优先）/ `install` / `uninstall` / `config`（运行信息含缓存占用）/ `clear`（清空缓存）/ `help`
 - 🧰 完整工程配套：CLI 包装器、shell 补全、配置文件、冒烟测试、CI
 
 ## 使用方法
@@ -344,9 +344,10 @@ ctfsweep Security.evtx -k flag1,flag2,flag3
 | `ctfsweep install` | 显示安装方式（一键 / 镜像 / 本地源码，装到 devtools 目录） |
 | `ctfsweep uninstall [-y]` | 卸载安装副本并摘除 shell 接线（**扫描缓存保留**；`-y` 跳过确认） |
 | `ctfsweep config` | 显示运行信息、数据目录与生效配置（含扫描缓存占用与可删路径） |
+| `ctfsweep clear [-y]` | **清空扫描缓存**（数据目录下的内容全删，含各题图片缓存；保留 `ctfsweep.conf`；`-y` 跳过确认） |
 | `ctfsweep help` | 显示帮助 |
 
-> 子命令名（update / install / uninstall / config / help）优先于文件路径解析——
+> 子命令名（update / install / uninstall / clear / config / help）优先于文件路径解析——
 > 若要扫描恰好同名的文件，请用 `-f 文件名` 或 `./文件名`。
 >
 > **没有训练/标注子命令**：`train` / `label` / `auto-label` / `mark` / `learning` / `gen-data`
@@ -365,7 +366,8 @@ ctfsweep /path/to/logs/              # 扫描（默认模式：报告上屏 + �
 #     完整报告见 logs_cache.txt；占用与清理见 ctfsweep config
 
 ctfsweep /path/to/logs/ -q           # 精简输出：控制台只留分档统计块，明细照旧落盘
-ctfsweep config                      # 报出缓存占用与路径（唯一清理入口）
+ctfsweep config                      # 报出缓存占用与路径
+ctfsweep clear                       # 清空缓存（确认后执行；-y 跳过确认）
 ```
 
 **一次运行一个目录** `cache/<运行名>-<路径哈希6位>/`：运行名取扫描根目录名（单文件取
@@ -377,7 +379,10 @@ ctfsweep config                      # 报出缓存占用与路径（唯一清�
 > `<文件名>-<哈希>` 平铺目录，`sub1/a.pcap` 与 `sub2/a.pcap` 的目录名肉眼还分不出对应关系。
 > 重新扫描同一个目录会**覆盖**该运行目录（旧文件里已被删掉的命中随之消失）。
 
-**缓存只增不减**（`update` / `uninstall` 都不碰），确认不需要后手动整体删除即可。
+**缓存只增不减**（`update` / `uninstall` 都不碰，也不自动过期）：需要腾地方时用
+`ctfsweep clear` —— 它清空数据目录下的**内容**（`cache/` 结果缓存 + 各题图片缓存），
+保留目录本身与配置文件 `ctfsweep.conf`，程序本体不受影响；不带 `-y` 时会先列出行数与
+占用、等一次确认（非交互环境必须显式加 `-y`）。
 `-q` 与默认模式写出的缓存**内容相同**——`-q` 只决定控制台是否上屏。
 
 ### 典型场景
@@ -461,7 +466,7 @@ ctfsweep uninstall <TAB>    # → -y / --yes
 说明：
 
 - **位置驱动，选项在敲 `-` 之后出现**（与同仓库的 jtool/ptool 同规）：第一个参数位只出
-  「子命令 + 文件」——`ctfsweep <TAB>` 一屏就是 5 条子命令加文件候选，不铺选项墙。
+  「子命令 + 文件」——`ctfsweep <TAB>` 一屏就是 6 条子命令加文件候选，不铺选项墙。
   `ctfsweep -q <TAB>`、`ctfsweep a.pcap <TAB>` 因而只补文件；想知道有哪些选项就敲
   `ctfsweep -<TAB>`。
 - **同义短/长选项合并显示**（如 `-f --file`，只出现一次）；`-f<TAB>` 与 `--f<TAB>` 均按前缀补全。

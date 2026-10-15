@@ -11,6 +11,7 @@
 #   ctfsweep --min-score <TAB> → 0.40 / 0.55 / 0.85 / 0.95
 #   ctfsweep -q                → 精简输出（控制台只打汇总块，明细在数据目录 cache/）
 #   ctfsweep uninstall <TAB>   → -y / --yes
+#   ctfsweep clear <TAB>       → -y / --yes
 #（命令名只有 ctfsweep 一个：没有 ctf 短别名，所以本文件也不为它注册补全）
 #   已输入过的选项不会重复列出（-f 与 --file 视为同一个）
 
@@ -20,6 +21,7 @@ _ctfsweep_subcmds=(
   'install:显示安装方式（装到 devtools 目录）'
   'uninstall:卸载安装副本（保留扫描缓存）'
   'config:显示运行信息与配置（含扫描缓存占用）'
+  'clear:清空扫描缓存（-y 跳过确认）'
   'help:显示帮助'
 )
 
@@ -51,7 +53,8 @@ _ctfsweep_opts_pairs=(
   '-q --brief:精简输出（明细写缓存文件）'
 )
 
-_ctfsweep_opts_uninstall=(
+# uninstall / clear 共用：这两个子命令都只有一个"跳过确认"开关
+_ctfsweep_opts_confirm=(
   '-y:跳过确认'
   '--yes:跳过确认'
 )
@@ -70,7 +73,11 @@ _ctfsweep() {
         return 0
         ;;
       uninstall)
-        _describe -O 'uninstall 选项' _ctfsweep_opts_uninstall
+        _describe -O 'uninstall 选项' _ctfsweep_opts_confirm
+        return 0
+        ;;
+      clear)
+        _describe -O 'clear 选项' _ctfsweep_opts_confirm
         return 0
         ;;
       install|config|help)

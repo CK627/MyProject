@@ -33,6 +33,7 @@ python3 -m ctfsweep <文件或目录> [选项]
 # 安装 / 更新 / 卸载（改完安装逻辑必跑：tests/smoke.sh 第 5、7 步守着布局契约与真更新）
 sudo bash installer/install.sh     # 本机落地；用户级去掉 sudo（installer/install.sh 亦可）
 ctfsweep update [--check]
+ctfsweep clear [-y]                # 清空数据目录（唯一主动删数据的命令；-y 跳过确认）
 
 # 完整冒烟（语法门 + 单元冒烟 + shell 语法 + 启动器 + 安装/布局契约 + 引导模式 + 真更新）
 bash tests/smoke.sh
@@ -478,7 +479,7 @@ DNS 相关的 `KNOWN_INFRA_SUFFIXES` / `dns_lead_reason` 也在这里（见上�
   会以**字节巧合**出现，而 latin-1 视角下"貌似可打印"（JPEG 实测可打印率约 75%，旧 0.7
   闸门挡不住）。ascii 通道用严格文本判定（ASCII 占比 / 可严格 UTF-8 解码）；utf-16 通道
   维持原检查。`tests/gen_fixtures.py::build_t10()` 同时含正例与字节巧合，负样本同题。
-- **子命令名优先于文件路径**：`update`/`install`/`uninstall`/`config`/`help` 会被当子命令。
+- **子命令名优先于文件路径**：`update`/`install`/`uninstall`/`clear`/`config`/`help` 会被当子命令。
   要扫同名文件得用 `-f 文件名` 或 `./文件名`。
 - **行尾契约**（`.gitattributes`）：`*.bat` 用 CRLF、`*.sh` 用 LF——改这些文件别让编辑器
   自动转换，否则 Windows 版启动器会解析错位。
@@ -513,11 +514,22 @@ DNS 相关的 `KNOWN_INFRA_SUFFIXES` / `dns_lead_reason` 也在这里（见上�
   ⚠️ 块首行「本次 N 个文件」必须用 **`len(targets)`**：换成"写出的缓存文件数"（现在是 0/1）
   会让 15 个文件的目录扫描印出"本次 1 个文件"。
   `tests/test_golden.py::normalize()` 把该哈希归一化掉，否则基线随 `$TMPDIR` 漂移。
-  该缓存**只增不减**（数据目录内的文件永不自动删除），清理入口只有
-  `ctfsweep config` 里那行「扫描缓存: <路径>（N 个文件，X MB）」——改缓存布局时同步它。
+  该缓存**只增不减**（**自动**路径 —— 装/卸/更新 —— 永不碰它），唯一的清理入口是
+  `ctfsweep clear [-y]`（用户显式发起，见下一条）；`ctfsweep config` 报占用与路径。
   ⚠️ **单文件 `-q` 的控制台输出仍必须逐字节不变**（golden `t10-ftp.pcap+brief.txt` 是回归位）；
   目录模式 `-q` 是本次新增的形态（逐文件只报条数 + 末尾一次运行级块），`dir.txt` 之外
   没有基线守它，由 `check_dir_scan_cache()` 断言。
+- **`ctfsweep clear` 只删数据，绝不删功能文件**：清空**数据目录**（`core/paths.py::data_root()`，
+  默认 `~/.devtools/ctfsweep`、`CTFSWEEP_DATA_DIR` 可覆盖）下的**内容**——`cache/` 结果缓存、
+  各题图片缓存目录、散落文件；**保留**目录本身与 `ctfsweep.conf`（配置不是缓存，删了等于丢设置）。
+  ⚠️ 绝不可写成 `rmtree(data_root())`：**用户级安装下数据目录就是安装根**，`bin/ lib/ models/`
+  都住在那儿，整删等于把 ctfsweep 删掉。破坏性闸门与 uninstall 同规：**非交互（无 tty）且不带
+  `-y` 一律拒绝**（返回 1，提示 `ctfsweep clear -y`）；交互式先报路径 / 文件数 / 占用 / 保留项
+  再等一次确认；`-y --yes` 跳过。用户级安装下它天然"只清数据"，系统级安装下数据目录里只有数据，
+  等于整目录清空。回归位 `tests/test_smoke.py::check_clear()`。
+  加子命令要同步四处：`cli.HELP`（子命令段严格一行，**总行数 ≤ 50** 的反向断言仍在）、
+  两份补全（zsh `_ctfsweep_subcmds` 与参数分支 / bash `subcmds=` 与 case —— clear 与
+  uninstall 同收 `-y --yes`）、README 的子命令表与「子命令名优先」清单。
 
 ## lab/ 与 models/
 

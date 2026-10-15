@@ -9,7 +9,7 @@ _ctfsweep() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     opts="-f --file -F --folder -k --keywords --min-score --no-decode --depth --limit --extract --extract-dir --pwd-file --judge -q --brief --config --version -h --help"
-    subcmds="update install uninstall config help"
+    subcmds="update install uninstall clear config help"
 
     # 子命令专属参数（ctfsweep update --check / ctfsweep uninstall -y）
     if [ "$COMP_CWORD" -ge 2 ]; then
@@ -18,7 +18,7 @@ _ctfsweep() {
                 COMPREPLY=( $(compgen -W "--check" -- "$cur") )
                 return 0
                 ;;
-            uninstall)
+            uninstall|clear)
                 COMPREPLY=( $(compgen -W "-y --yes" -- "$cur") )
                 return 0
                 ;;

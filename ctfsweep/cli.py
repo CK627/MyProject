@@ -44,6 +44,7 @@ HELP = """ctfsweep - CTF / 应急响应取证扫描器（零依赖，Python 3.8+
   ctfsweep install            显示安装方式（装到 devtools 目录）
   ctfsweep uninstall [-y]     卸载安装副本并摘除 shell 接线（扫描缓存保留；-y 跳过确认）
   ctfsweep config             显示运行信息与生效配置（含扫描缓存占用）
+  ctfsweep clear [-y]         清空扫描缓存（数据目录内容全删；-y 跳过确认）
   ctfsweep help               显示本帮助
 
 选项:
@@ -74,6 +75,7 @@ HELP = """ctfsweep - CTF / 应急响应取证扫描器（零依赖，Python 3.8+
 说明:
   结果按置信度分档: >= 0.85 高（可直接核验）/ >= 0.55 中（需人工确认）/ 其余低
   每次扫描都写缓存: ~/.devtools/ctfsweep/cache/（一次运行一个目录，只增不减）
+  清理缓存: ctfsweep clear（只清数据目录内容，程序本体与配置文件不受影响）
   判断核为轻量 MLP，加 --judge 才跑；模型随版本发布，离线训练见仓库 lab/train.py
 """
 
@@ -135,7 +137,7 @@ def _cmd_config():
     croot = brief_cache_root()
     if os.path.isdir(croot):
         cnum, csize = _dir_usage(croot)
-        print('扫描缓存: %s（%d 个文件，%.1f MB；每次扫描自动写入，确认不需要后可整体删除）'
+        print('扫描缓存: %s（%d 个文件，%.1f MB；每次扫描自动写入，ctfsweep clear 清空）'
               % (croot, cnum, csize / 1048576.0))
     else:
         print('扫描缓存: %s（尚未使用；每次扫描会自动写入）' % croot)
@@ -417,8 +419,8 @@ def brief_append_tail(tail_text, cache_path, files_total):
 
 def main():
     args = sys.argv[1:]
-    # 管理子命令（update / install / uninstall / config / help）
-    if args and args[0] in ('update', 'install', 'uninstall', 'config', 'help'):
+    # 管理子命令（update / install / uninstall / clear / config / help）
+    if args and args[0] in ('update', 'install', 'uninstall', 'clear', 'config', 'help'):
         sub, rest = args[0], args[1:]
         if sub == 'help':
             print(HELP)
@@ -429,6 +431,8 @@ def main():
             return selfmgr.cmd_update(rest)
         if sub == 'install':
             return selfmgr.cmd_install(rest)
+        if sub == 'clear':
+            return selfmgr.cmd_clear(rest)
         return selfmgr.cmd_uninstall(rest)
     if not args:
         print(HELP)

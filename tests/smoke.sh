@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ctfsweep 冒烟（macOS / Linux）：语法门 + 单元冒烟 + 启动器 + 安装/布局契约 + 引导模式 + 自管理子命令
 # （5/7 守布局契约：PATH 上只能有一个无后缀软链；7/7 用 file:// 镜像跑真更新与离线失败路径，
-#   全程无需网络与 sudo，同时守住「部署/卸载都不碰扫描缓存」这条硬契约）
+#   全程无需网络与 sudo，同时守住「部署/卸载都不碰扫描缓存」与「clear 只清数据、不碰功能项」）
 #
 # ⚠️ 安装层级一律显式写 CTFSWEEP_USER=1（用户级）：默认层级是系统级 /Library/devtools
 #    （与 jtool / ptool 一致），CI 里既没有 tty 也没有免密 sudo，跑默认路径会卡在密码提示上。
@@ -154,14 +154,14 @@ case "$(cat "$_stage_home/.u1.out")" in
 esac
 
 # 7.3 抬高镜像版本 → --check 只比对、不落盘
-printf '1.10.7\n' > "$_stage/VERSION"
-printf '1.10.7\n' > "$_stage/MyProject-CtfSweep/VERSION"
+printf '1.10.8\n' > "$_stage/VERSION"
+printf '1.10.8\n' > "$_stage/MyProject-CtfSweep/VERSION"
 (cd "$_stage" && rm -f ctfsweep-src.tar.gz && tar -czf ctfsweep-src.tar.gz MyProject-CtfSweep)
 _ver_before="$(cat "$_inst/VERSION")"
 HOME="$_stage_home" CTFSWEEP_MIRROR="file://$_stage" "$_csw" update --check > "$_stage_home/.u2.out" 2>&1 \
     || _fail "update --check 失败（退出码非 0）"
 case "$(cat "$_stage_home/.u2.out")" in
-    *"远端 v1.10.7 可用"*"--check：仅比对"*) : ;;
+    *"远端 v1.10.8 可用"*"--check：仅比对"*) : ;;
     *) _fail "update --check 输出异常：$(cat "$_stage_home/.u2.out")" ;;
 esac
 [ "$(cat "$_inst/VERSION")" = "$_ver_before" ] || _fail "update --check 竟然改动了 VERSION"
@@ -173,7 +173,7 @@ printf 'sentinel\n' > "$_inst/cache/sentinel-abc123/1.txt"
 HOME="$_stage_home" CTFSWEEP_MIRROR="file://$_stage" "$_csw" update > "$_stage_home/.u3.out" 2>&1 \
     || _fail "真更新失败：$(cat "$_stage_home/.u3.out")"
 case "$(cat "$_stage_home/.u3.out")" in
-    *"更新完成: v1.10.6 → v1.10.7"*) : ;;
+    *"更新完成: v1.10.7 → v1.10.8"*) : ;;
     *) _fail "真更新输出异常：$(cat "$_stage_home/.u3.out")" ;;
 esac
 # 本次更新的安装根与 rc 里已写的一致 → 接线没变，就不该再提示重开终端
@@ -181,12 +181,37 @@ case "$(cat "$_stage_home/.u3.out")" in
     *"shell 配置未变"*) : ;;
     *) _fail "更新时接线一字未动，却仍在提示重开终端：$(cat "$_stage_home/.u3.out")" ;;
 esac
-[ "$(cat "$_inst/VERSION")" = "1.10.7" ] || _fail "更新后 VERSION 未变：$(cat "$_inst/VERSION")"
+[ "$(cat "$_inst/VERSION")" = "1.10.8" ] || _fail "更新后 VERSION 未变：$(cat "$_inst/VERSION")"
 [ -f "$_inst/cache/sentinel-abc123/1.txt" ] || _fail "更新删掉了扫描缓存（cache/sentinel-abc123/1.txt 不见了）"
 [ "$(ls -A "$_inst/bin" | wc -l | tr -d ' ')" = "1" ] || _fail "更新后 bin/ 不止一个条目"
 [ -L "$_inst/bin/ctfsweep" ] || _fail "更新后 bin/ctfsweep 不再是软链"
 HOME="$_stage_home" "$_csw" --version >/dev/null || _fail "更新后启动器不可用"
-echo "真更新 OK（v1.10.6 → v1.10.7；扫描缓存与布局契约都在）"
+echo "真更新 OK（v1.10.7 → v1.10.8；扫描缓存与布局契约都在）"
+
+# 7.4b clear：清空数据目录。用户级安装下**数据根就是安装根**（bin/ lib/ VERSION 都在这儿），
+# 所以这条同时守着两件事：缓存真的被删，以及功能项一个都没被碰。
+# stdin 显式接 /dev/null：交互式跑 smoke 时终端是 tty，不接的话会停在确认提示上。
+# 写法与 7.5 同规（if 判失败）：拒绝执行本来就返回 1，裸命令会被 set -e 当成脚本错误中断。
+if HOME="$_stage_home" "$_csw" clear < /dev/null > "$_stage_home/.c1.out" 2>&1; then
+    _fail "clear 无 -y 且非交互时竟然返回成功（应拒绝并返回 1）"
+fi
+case "$(cat "$_stage_home/.c1.out")" in
+    *"请加 -y"*) : ;;
+    *) _fail "clear 无 -y 且非交互时未拒绝：$(cat "$_stage_home/.c1.out")" ;;
+esac
+[ -f "$_inst/cache/sentinel-abc123/1.txt" ] || _fail "clear 拒绝执行时竟删了缓存"
+HOME="$_stage_home" "$_csw" clear -y > "$_stage_home/.c2.out" 2>&1 \
+    || _fail "clear -y 失败：$(cat "$_stage_home/.c2.out")"
+case "$(cat "$_stage_home/.c2.out")" in
+    *"已清空"*) : ;;
+    *) _fail "clear -y 输出异常：$(cat "$_stage_home/.c2.out")" ;;
+esac
+[ ! -e "$_inst/cache" ] || _fail "clear -y 后 cache/ 仍在"
+[ -f "$_inst/VERSION" ] || _fail "clear -y 删掉了 VERSION（功能项不该被碰）"
+[ -d "$_inst/lib/models" ] || _fail "clear -y 删掉了 lib/（用户级安装下数据根就是安装根）"
+[ -L "$_inst/bin/ctfsweep" ] || _fail "clear -y 删掉了 bin/ctfsweep"
+HOME="$_stage_home" "$_csw" --version >/dev/null || _fail "clear -y 后启动器不可用"
+echo "clear OK（清空数据目录 · 功能项与配置保留）"
 
 # 7.5 离线失败：镜像空 + 禁掉 GitHub 回退 → 必须明确报错且退出码非 0（绝不静默成功）
 if HOME="$_stage_home" CTFSWEEP_MIRROR="file://$_empty" CTFSWEEP_GITHUB=none \
@@ -199,6 +224,9 @@ case "$(cat "$_stage_home/.u4.out")" in
 esac
 
 # 7.6 uninstall -y：摘除功能文件与 shell 接线，扫描缓存保留
+# 哨兵在上一步 clear 里被删掉了，重新埋一个——这样「卸载不碰缓存」仍是当场验证的
+mkdir -p "$_inst/cache/sentinel-abc123"
+printf 'sentinel\n' > "$_inst/cache/sentinel-abc123/1.txt"
 # 先把「老格式手工接线」原样塞回 rc（就是本机 ~/.zshrc 的真实形态）：
 # 标题注释 + 指向仓库 bin 的 PATH + alias + source 仓库补全。卸载必须连注释一起清掉——
 # 只删三行会留下一句对不上现状的 `# ctfsweep（源码直跑：…）`。

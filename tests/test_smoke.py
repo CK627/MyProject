@@ -64,9 +64,12 @@ def check(cond, msg):
 
 
 def run_cli(args):
+    # stdin 显式接 /dev/null：破坏性命令（uninstall / clear）靠 isatty() 判"有没有人在旁边"，
+    # 而交互式终端里跑测试时 stdin 正是 tty —— 不接就会停在确认提示上等输入。
     proc = subprocess.run(
         [sys.executable, '-B', '-m', 'ctfsweep'] + list(args),
-        cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        cwd=ROOT, stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     return proc.returncode, proc.stdout.decode('utf-8', 'replace')
 
 
@@ -408,6 +411,71 @@ def check_scan_cache(tmp):
 
     check(not os.path.exists(os.path.join(tmp, 'judge')),
           '数据根下无 judge/ 残留（自学习留存区已移除）')
+
+
+def check_clear(tmp):
+    """clear 子命令：清空数据目录内容（缓存 + 图片缓存），保留 ctfsweep.conf。
+
+    数据目录在安装形态下就是扫描产物的家（cache/ 结果缓存 + 按题名分的图片缓存），
+    此前「只增不减」的清理方式只有用户手动 rm —— clear 是它的官方入口。
+    三条硬契约在这里守住：
+      · 清的是**内容**（目录本身保留），不是 rmtree(数据根)——用户级安装下数据目录
+        就是安装根，整删会把 ctfsweep 自己删掉；
+      · ctfsweep.conf 是配置不是缓存，**必须保留**；
+      · 非交互（无 tty）不带 -y 时拒绝执行——破坏性操作不能在管道里悄悄发生。
+    """
+    root = tmp  # main() 已把 CTFSWEEP_DATA_DIR 指到 tmp
+    conf = os.path.join(root, 'ctfsweep.conf')
+    with open(conf, 'w', encoding='utf-8') as fh:
+        fh.write('MIN_SCORE=0.5\n')
+    cache_dir = os.path.join(root, 'cache', 't1-abc123')
+    img_dir = os.path.join(root, 'some题')
+    os.makedirs(cache_dir, exist_ok=True)
+    os.makedirs(img_dir, exist_ok=True)
+    for p in (os.path.join(cache_dir, '1.txt'), os.path.join(img_dir, 'a.png'),
+              os.path.join(root, '杂项.txt')):
+        with open(p, 'w', encoding='utf-8') as fh:
+            fh.write('x')
+    # 用户级安装的形态：数据根 == 安装根，功能项就在这里——clear 一个都不能碰
+    func = []
+    for rel in ('VERSION', os.path.join('lib', 'ctfsweep', '__init__.py'),
+                os.path.join('bin', 'ctfsweep'), os.path.join('config', 'ctfsweep.conf'),
+                'uninstall', 'deploy.sh', 'shell-setup.sh'):
+        p = os.path.join(root, rel)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, 'w', encoding='utf-8') as fh:
+            fh.write('functional\n')
+        func.append(p)
+
+    # 1) 无 -y 且非交互：必须拒绝（破坏性操作的闸门）
+    rc, out = run_cli(['clear'])
+    check(rc == 1 and '-y' in out and '已删除' not in out,
+          'clear：非交互且无 -y 时拒绝执行')
+    check(os.path.isdir(cache_dir) and os.path.isfile(conf),
+          'clear：拒绝时什么都不删')
+
+    # 2) -y：清掉缓存与图片目录，保留 conf 与数据目录本身
+    rc, out = run_cli(['clear', '-y'])
+    check(rc == 0 and '已清空' in out, 'clear -y：正常完成')
+    check(not os.path.exists(os.path.join(root, 'cache')),
+          'clear -y：cache/ 已删除')
+    check(not os.path.exists(img_dir) and not os.path.exists(os.path.join(root, '杂项.txt')),
+          'clear -y：图片缓存目录与散落文件一并删除')
+    check(os.path.isfile(conf), 'clear -y：ctfsweep.conf（配置）保留')
+    check(os.path.isdir(root), 'clear -y：数据目录本身保留（不 rmtree 根）')
+    # 用户级安装下数据根就是安装根：功能项若被误删，ctfsweep 自己就没了
+    missing = [p for p in func if not os.path.exists(p)]
+    check(not missing,
+          'clear -y：功能项（bin/lib/VERSION/uninstall …）全部保留%s'
+          % ('' if not missing else '，缺: %s' % '、'.join(os.path.relpath(p, root) for p in missing)))
+
+    # 3) 空目录再 clear：幂等、报"已是空的"
+    rc, out = run_cli(['clear', '-y'])
+    check(rc == 0 and ('已是空' in out or '已清空' in out), 'clear -y：重复执行不报错')
+
+    # 4) 未知参数
+    rc, out = run_cli(['clear', '--bogus'])
+    check(rc == 2 and '未知参数' in out, 'clear：未知参数返回 2')
 
 
 def check_dir_scan_cache(tmp):
@@ -1187,8 +1255,8 @@ def main():
         # 帮助是 ptool 形态的薄索引（标题/用法/子命令/选项/示例/说明）；
         # 「示例」段是这套形态的招牌，也当作"这确实是那份帮助"的锚点
         check(rc == 0 and '用法' in out and '示例' in out, '--help 返回 0（薄索引形态）')
-        check(all(s in out for s in ('update', 'install', 'uninstall', 'config', 'help')),
-              '--help 含管理子命令（update/install/uninstall/config/help）')
+        check(all(s in out for s in ('update', 'install', 'uninstall', 'clear', 'config', 'help')),
+              '--help 含管理子命令（update/install/uninstall/clear/config/help）')
         check(not any(re.search(r'^\s*ctfsweep\s+%s\b' % re.escape(s), out, re.M)
                       for s in _REMOVED_SUBCOMMANDS),
               '--help 无训练/标注子命令（%s）' % '/'.join(_REMOVED_SUBCOMMANDS))
@@ -1204,7 +1272,7 @@ def main():
         check(rc == 2, '路径不存在时返回 2')
         rc, out = run_cli(['config'])
         check(rc == 0 and '扫描缓存:' in out,
-              'config：报出扫描缓存占用与可删路径（唯一清理入口）')
+              'config：报出扫描缓存占用（清理入口是 ctfsweep clear）')
 
         print('== shell 脚本体检 ==')
         check_shell_scripts()
@@ -1490,6 +1558,12 @@ def main():
         check(rc == 0, '-F 指定文件夹')
         rc, out = run_cli(['--folder', tmp])
         check(rc == 0, '--folder 长选项等价')
+
+        # ⚠️ clear 放**最后**：它清空整个数据目录，而 tmp 同时是模型目录、还住着上面
+        # 各小节要用的夹具——放中间会把它们一并删掉，表现为后续小节莫名其妙地失败
+        # （实测：夹具被删后 check_sni_render 连 '[TLS SNI]' 都拿不到）。
+        print('== clear 子命令（清空数据目录）==')
+        check_clear(tmp)
     finally:
         for k, v in _prev_env.items():
             if v is None:
