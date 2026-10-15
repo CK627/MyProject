@@ -94,6 +94,15 @@ echo [Done] Machine PATH cleaned
 if not exist "%INSTALL_DIR%" (
     echo [Skip] Install dir not found
     goto :uninstall_done
+REM Clear the pre-2.2.18 layout under %USERPROFILE%\.devtools\jtool (shims /
+REM completions / repo). The new layout keeps everything inside the install dir, so
+REM that dotfolder is dead weight: this side only ever stripped its PATH entry,
+REM while the POSIX uninstall already deletes the directories themselves
+REM (module/common.sh, same as ptool). Parent dirs go only when EMPTY -- another
+REM tool's data under %USERPROFILE%\.devtools must survive.
+powershell -NoProfile -Command "$root=Join-Path $env:USERPROFILE '.devtools\jtool'; foreach ($d in 'shims','completions','repo') { Remove-Item -Recurse -Force (Join-Path $root $d) -ErrorAction SilentlyContinue }; foreach ($p in @($root, (Join-Path $env:USERPROFILE '.devtools'))) { if ((Test-Path $p) -and -not @(Get-ChildItem -Force $p).Count) { Remove-Item -Force $p -ErrorAction SilentlyContinue } }; Write-Output 'legacy ~/.devtools/jtool cleaned'"
+
+
 )
 
 REM In the repo layout INSTALL_DIR resolves to the checkout root, so a plain

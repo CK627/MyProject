@@ -7,6 +7,8 @@
 #   2) 裸调用 / 未知命令的退出码
 #   3) update 复制 .bat 后使用的 CRLF 归一化表达式（内容不损坏、不写 BOM）
 #   4) PowerShell 语法门：install.ps1 与 .bat 内嵌的 -Command 片段都必须能解析
+#   5) 老布局 %USERPROFILE%\.devtools\jtool 的清理（删 shims/completions/repo，
+#      父目录只在空时收掉——与 POSIX 的 do_uninstall 对齐，和 ptool 同规）
 #
 # 归一化片段与 bin/jtool.bat 的 :to_crlf 保持同步。
 
@@ -77,6 +79,51 @@ foreach ($f in $batFiles) {
             } catch {
                 Check $false "内嵌 PS 不可解析: $($f.Name):$i -> $($_.Exception.Message)"
             }
+        }
+    }
+}
+
+Write-Host "== 老布局 %USERPROFILE%\.devtools\jtool 的清理 =="
+# 片段直接从 uninstall.bat 里取（跑的就是应用的那一行），在**假 HOME** 下验两个分支：
+#   A 只剩老布局 → .devtools\jtool 与 .devtools 都收掉；
+#   B 老布局 + 别的工具的数据 → 只删 jtool 那几个目录，父目录保留（只有空时才收）。
+$cleanBat = Join-Path $repo 'installer\windows\uninstall.bat'
+$line = $null
+if (Test-Path $cleanBat) {
+    $line = Select-String -Path $cleanBat -Pattern '^\s*powershell\s+[^\r\n]*-Command\s+"(.+)"\s*$' |
+        Where-Object { $_.Line -match '\$root=Join-Path' } | Select-Object -First 1
+}
+Check ($null -ne $line) '能从 uninstall.bat 取到清理老布局的片段'
+if ($null -ne $line) {
+    $code = $null
+    if ($line.Line -match '^\s*powershell\s+[^\r\n]*-Command\s+"(.+)"\s*$') {
+        $code = $Matches[1] -replace '\\"', '"'
+    }
+    Check ($null -ne $code) '片段能整行截出来（应用跑的就是它）'
+    if ($null -ne $code) {
+        $savedHome = $env:USERPROFILE
+        $fake = Join-Path $env:TEMP ('jtool-legacy-' + [IO.Path]::GetRandomFileName())
+        try {
+            foreach ($case in 'A', 'B') {
+                $h = Join-Path $fake $case
+                New-Item -ItemType Directory -Force -Path "$h\.devtools\jtool\shims", "$h\.devtools\jtool\completions", "$h\.devtools\jtool\repo" | Out-Null
+                Set-Content "$h\.devtools\jtool\shims\java.bat" 'x'
+                if ($case -eq 'B') {
+                    New-Item -ItemType Directory -Force -Path "$h\.devtools\othertool" | Out-Null
+                    Set-Content "$h\.devtools\othertool\keep.txt" 'keep'
+                }
+                $env:USERPROFILE = $h
+                Invoke-Expression $code
+                Check (-not (Test-Path "$h\.devtools\jtool")) "老布局目录已删除（场景 $case）"
+                if ($case -eq 'A') {
+                    Check (-not (Test-Path "$h\.devtools")) '空父目录一并收掉（场景 A）'
+                } else {
+                    Check (Test-Path "$h\.devtools\othertool\keep.txt") '别的工具的数据保留（场景 B）'
+                }
+            }
+        } finally {
+            $env:USERPROFILE = $savedHome
+            Remove-Item -Recurse -Force $fake -ErrorAction SilentlyContinue
         }
     }
 }
