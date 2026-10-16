@@ -60,7 +60,25 @@ Root: HKCU; Subkey: "Environment"; \
   ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}\bin"; \
   Flags: preservestringtype; Check: NeedsAddPath('{app}\bin')
 
+[InstallDelete]
+; 清掉**历史版本**留下的 POSIX 侧文件。早期版本的 deploy_nt 遍历的是 POSIX 载荷表，
+; 把 deploy.sh / shell-setup.sh / uninstall / completions\ / lib\ctfsweep.sh 也拷进了
+; Windows 安装目录（见 selfmgr._WIN_FUNC_ITEMS 里的同一条说明）。
+; 老用户升级到本版时不清就会一直留着——实测确认过，重装后那几样原封不动。
+Type: filesandordirs; Name: "{app}\completions"
+Type: files; Name: "{app}\deploy.sh"
+Type: files; Name: "{app}\shell-setup.sh"
+Type: files; Name: "{app}\uninstall"
+Type: files; Name: "{app}\lib\ctfsweep.sh"
+
 [UninstallDelete]
+; bin 与 lib 是**安装器生成/专属**的目录，卸载后 Inno 只会删掉它认识的文件，
+; 目录本身会留下空壳（bin 里本来就只有生成出来的 ctfsweep.bat）。
+; ptool 的 .iss 里记着同一个教训（shims 目录），这里显式收掉。
+; ⚠️ 不要顺手把 {app} 通配进来：用户级安装下安装根就是数据根，
+;    里面住着 cache/ 扫描缓存（"永不自动删除"）与用户自己的 config。
+Type: filesandordirs; Name: "{app}\bin"
+Type: filesandordirs; Name: "{app}\lib"
 ; 只清功能项之外的散落物。注意**不要**把 {app} 通配进来：
 ; 用户级安装下安装根就是数据根，里面住着 cache/ 扫描缓存 ——
 ; 那是「永不自动删除」，只能由用户显式 ctfsweep clear 清。

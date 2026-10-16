@@ -108,11 +108,20 @@ def check_windows_payload():
     check('VERSION' in win_dsts and 'config/ctfsweep.conf' in win_dsts,
           'Windows 载荷含 VERSION 与配置文件')
 
-    for bad in ('completions', 'uninstall', 'deploy.sh', 'shell-setup.sh'):
-        check(bad not in selfmgr._WIN_FUNC_ITEMS,
-              'Windows 功能项清单里没有 %s' % bad)
-    check('bin' in selfmgr._WIN_FUNC_ITEMS,
-          'Windows 功能项清单含 bin（启动器是生成的，卸载要删）')
+    # ⚠️ 功能项清单与载荷清单是**两件事**，断言必须分开：
+    #   载荷 = 要装什么（不许有 POSIX 项）
+    #   功能项 = 部署前先删、卸载时删什么——这里**应该**含历史遗留的 POSIX 名字，
+    #            否则老用户升级上来时那几样会一直留在盘上（实测过）。
+    for legacy in ('completions', 'uninstall', 'deploy.sh', 'shell-setup.sh'):
+        check(legacy in selfmgr._WIN_FUNC_ITEMS,
+              'Windows 功能项清单含历史遗留 %s（升级时顺手清掉）' % legacy)
+    for need in ('bin', 'lib', 'config', 'VERSION'):
+        check(need in selfmgr._WIN_FUNC_ITEMS,
+              'Windows 功能项清单含 %s' % need)
+    # ★ 最要紧的一条：功能项里**绝不能**出现用户数据——那是"永不自动删除"的东西。
+    for data in ('cache', 'whitelist.json', 'backups', 'scans'):
+        check(data not in selfmgr._WIN_FUNC_ITEMS,
+              'Windows 功能项清单**不含**用户数据 %s' % data)
 
     # POSIX 载荷**不能**被削——那边这些文件都是必需的
     posix = [dst for _src, dst in selfmgr._PAYLOAD_REPO]

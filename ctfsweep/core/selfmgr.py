@@ -366,8 +366,16 @@ _PAYLOAD_WIN = (
     ('config/ctfsweep.conf', 'config/ctfsweep.conf'),
 )
 
-# Windows 卸载时删除的功能项（bin\ctfsweep.bat 由 deploy_nt 生成，所以 bin 在列）
-_WIN_FUNC_ITEMS = ('bin', 'lib', 'config', 'VERSION')
+# Windows 的功能项（deploy_nt 部署前先删这批，_win_uninstall 也按它删）。
+#
+# 除了本版真正要装的四项，还**必须列上历史版本的 POSIX 遗留**
+# （completions / deploy.sh / shell-setup.sh / uninstall）：早期版本的 deploy_nt
+# 遍历的是 POSIX 载荷表，把它们也拷进了 Windows 安装目录。老用户升级上来时，
+# 不显式删就会一直留在盘上——实测在一台装过旧版的机器上重装后，这四样原封不动。
+# 它们不参与运行，但属于"装完不干净"，而且会让人以为 Windows 上也有那套 shell 侧设施。
+_WIN_FUNC_ITEMS = ('bin', 'lib', 'config', 'VERSION',
+                   # 历史遗留（新版不再装，装上时要顺手清掉）
+                   'completions', 'deploy.sh', 'shell-setup.sh', 'uninstall')
 
 # Windows 安装态应有的组件
 _INSTALLED_ITEMS_WIN = ('lib/ctfsweep', 'lib/models', 'VERSION',
