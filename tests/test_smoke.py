@@ -1259,6 +1259,58 @@ def check_eof_is_noninteractive():
     check_eq(ok2, True, '交互输入 y 时 confirm 返回 True')
 
 
+def check_windows_payload_is_clean():
+    section('Windows 载荷：不该装 POSIX 专有的东西（对齐 ptool 的干净布局）')
+
+    # ptool 在 Windows 上只装 bin\\ptool.bat · module\\install.bat · config\\ptool.conf · VERSION
+    # ——一个多余的 .sh 都没有。照搬 POSIX 载荷表会把 deploy.sh / shell-setup.sh /
+    # uninstall / zsh+bash 补全一起丢进用户目录，而它们在那台机器上一个都用不上。
+    sys.path.insert(0, ROOT)
+    from startupctl.core import selfmgr
+
+    win_dsts = [dst for _src, dst in selfmgr._PAYLOAD_WIN]
+    joined = ' '.join(win_dsts)
+
+    check(not any(d.endswith('.sh') for d in win_dsts),
+          'Windows 载荷里没有 .sh（%s）' % win_dsts)
+    check('completions' not in joined,
+          'Windows 载荷里没有 completions（bash/zsh 补全在那边无从接线）')
+    check('uninstall' not in win_dsts,
+          'Windows 载荷里没有 uninstall 脚本（卸载由 _win_uninstall 实现）')
+    check('deploy.sh' not in win_dsts and 'shell-setup.sh' not in win_dsts,
+          'Windows 载荷里没有 deploy.sh / shell-setup.sh')
+
+    # 该有的必须有
+    check('lib/startupctl' in win_dsts, 'Windows 载荷含 Python 包')
+    check('VERSION' in win_dsts, 'Windows 载荷含 VERSION')
+    check('config/startupctl.conf' in win_dsts, 'Windows 载荷含配置文件')
+
+    # 功能项清单（卸载时删的）也要一致
+    for bad in ('completions', 'uninstall', 'deploy.sh', 'shell-setup.sh'):
+        check(bad not in selfmgr._WIN_FUNC_ITEMS,
+              'Windows 功能项清单里没有 %s' % bad)
+    check('bin' in selfmgr._WIN_FUNC_ITEMS,
+          'Windows 功能项清单含 bin（启动器是生成出来的，卸载要删）')
+
+    # POSIX 载荷表反而**必须**含那些东西——别为了"统一"把 POSIX 也削了
+    posix_dsts = [dst for _src, dst in selfmgr._PAYLOAD_REPO]
+    for need in ('deploy.sh', 'shell-setup.sh', 'uninstall',
+                 'completions/startupctl.zsh', 'lib/startupctl.sh'):
+        check(need in posix_dsts, 'POSIX 载荷仍含 %s' % need)
+
+    # 探测"装残了"用的清单也要分平台
+    saved = os.name
+    try:
+        os.name = 'nt'
+        check_eq(selfmgr._installed_items(), selfmgr._INSTALLED_ITEMS_WIN,
+                 'os.name=nt 时用 Windows 的组件清单')
+        os.name = 'posix'
+        check_eq(selfmgr._installed_items(), selfmgr._INSTALLED_ITEMS,
+                 'POSIX 时用 POSIX 的组件清单')
+    finally:
+        os.name = saved
+
+
 def check_cli_contracts():
     section('CLI 契约：HELP 行数 / 对齐 / 退出码')
     sys.path.insert(0, ROOT)
@@ -1338,6 +1390,7 @@ def main():
     check_no_posix_only_calls()
     check_windows_name_forms()
     check_eof_is_noninteractive()
+    check_windows_payload_is_clean()
     check_gui_picker()
     check_writeback_verified()
     check_cli_contracts()

@@ -79,6 +79,37 @@ _INSTALLED_ITEMS = (
     'uninstall', 'deploy.sh', 'shell-setup.sh',
 )
 
+# ---------------------------------------------------------------- Windows 载荷
+# **刻意比 POSIX 短。** 上面那张表里的 deploy.sh / shell-setup.sh / uninstall /
+# completions/*.zsh|.bash 全是 POSIX 专有——bash 脚本、zsh/bash 补全，Windows 上
+# 既用不到也不该装。它们的作用在 Windows 上各有替代：
+#   · deploy.sh      → deploy_nt()（Python 重写，不依赖 bash）
+#   · shell-setup.sh → Windows 没有 rc 文件，PATH 走 HKCU 注册表
+#   · uninstall      → _win_uninstall()（Python 实现）
+#   · completions    → 没有可 source 的 rc，补全无从接线
+#
+# 这条与 ptool 的 Windows 布局对齐。ptool 在 Windows 上只装
+#   {app}\bin\ptool.bat · {app}\module\install.bat · {app}\config\ptool.conf · {app}\VERSION
+# 干净、一个多余的 .sh 都没有。照搬 POSIX 表会把一堆用不上的 shell 脚本丢进用户目录。
+_PAYLOAD_WIN = (
+    ('startupctl', 'lib/startupctl'),              # Python 包（含 core/ 与 backends/）
+    ('VERSION', 'VERSION'),
+    ('config/startupctl.conf', 'config/startupctl.conf'),
+)
+
+# Windows 卸载时删除的功能项（bin\startupctl.bat 由 deploy_nt 生成，所以 bin 在列）
+_WIN_FUNC_ITEMS = ('bin', 'lib', 'config', 'VERSION')
+
+# Windows 安装态应有的组件
+_INSTALLED_ITEMS_WIN = ('lib/startupctl', 'VERSION', 'config/startupctl.conf')
+
+
+def _installed_items():
+    """本平台安装态应有的组件。探测"版本号已最新但装残了"时用。"""
+    if os.name == 'nt':
+        return _INSTALLED_ITEMS_WIN
+    return _INSTALLED_ITEMS
+
 
 def _mirror():
     return os.environ.get('STARTUPCTL_MIRROR', MIRROR_DEFAULT)
@@ -193,7 +224,7 @@ def _missing_artifacts(root):
     软链缺失或退化成旧布局只能在这里发现。
     """
     missing = []
-    for key in _INSTALLED_ITEMS:
+    for key in _installed_items():
         if not os.path.exists(os.path.join(root, key)):
             missing.append(key)
     if os.name == 'nt':
@@ -365,9 +396,6 @@ def _deploy(srcdir, root):
 # PATH 走 HKCU\Environment（用户级，不需要管理员）——不用 setx：它会把超过 1024
 # 字符的 PATH 截断，是老牌事故。
 # ============================================================================
-_WIN_FUNC_ITEMS = ('bin', 'lib', 'completions', 'config', 'VERSION',
-                   'uninstall', 'deploy.sh', 'shell-setup.sh')
-
 # ⚠️ 纯 ASCII：无 BOM 的 UTF-8 .bat 会被 cmd 按 ANSI 代码页（简中是 GBK）解析，
 #    中文会被从中间劈开、cmd 转头去执行文本碎片（ptool 的 build-remote.bat 踩过）。
 #    所有面向用户的文案都在 Python 侧，那里有 _console_utf8() 兜底。
@@ -442,9 +470,13 @@ def _win_path_remove(entry):
 
 
 def deploy_nt(srcdir, root):
-    """Windows 部署：按 _PAYLOAD_REPO 拷功能文件 + 写 bin\\startupctl.bat（不用 bash）。
+    """Windows 部署：按 **_PAYLOAD_WIN** 拷功能文件 + 生成 bin\\startupctl.bat（不用 bash）。
 
-    只删功能项，数据（cache/ 等）永不动——与 deploy.sh 的契约逐条对齐。
+    用 Windows 自己的载荷表，不是 POSIX 那张——后者会把 deploy.sh / shell-setup.sh /
+    uninstall / bash+zsh 补全一起丢进用户目录，而它们在 Windows 上一个都用不上
+    （各自的替代见 _PAYLOAD_WIN 的注释）。ptool 的 Windows 布局就是干净的。
+
+    只删功能项，数据（whitelist.json · backups/ · scans/）永不动——与 deploy.sh 的契约一致。
     """
     os.makedirs(root, exist_ok=True)
     for rel in _WIN_FUNC_ITEMS:
@@ -456,7 +488,7 @@ def deploy_nt(srcdir, root):
                 os.remove(p)
             except OSError:
                 pass
-    for src_rel, dst_rel in _PAYLOAD_REPO:
+    for src_rel, dst_rel in _PAYLOAD_WIN:
         src = os.path.join(srcdir, src_rel)
         dst = os.path.join(root, dst_rel)
         if not os.path.exists(src):
