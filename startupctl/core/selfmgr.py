@@ -94,6 +94,16 @@ def _github_tarball():
 
 
 def _system_root():
+    """默认（系统级）安装根。
+
+    ⚠️ **Windows 上没有系统级安装**：没有 sudo / rc 的概念，装法是纯用户级拷贝 +
+    HKCU 里的 PATH。所以这里必须先判 Windows 并返回用户级路径——原来直接落到
+    `/usr/local/devtools/startupctl`，于是 `print-install-dir` 在一台 Windows 机器上
+    打印出一个根本不存在的 POSIX 路径，而 `install` 实际装到了 `%USERPROFILE%`。
+    两者说的不是一回事，脚本据此判断就会错。
+    """
+    if sys.platform == 'win32' or os.name == 'nt':
+        return _win_install_root()
     if sys.platform == 'darwin':
         return '/Library/devtools/startupctl'
     return '/usr/local/devtools/startupctl'
@@ -710,6 +720,7 @@ def cmd_print_install_dir(argv):
     elif os.environ.get('STARTUPCTL_USER') == '1':
         root = os.path.join(os.path.expanduser('~'), '.devtools', 'startupctl')
     else:
+        # Windows 上这一步会返回用户级路径（那边没有系统级安装）——见 _system_root。
         root = _system_root()
     print(root)
     return 0
