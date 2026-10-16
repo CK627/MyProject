@@ -241,6 +241,31 @@ else
     pass "卸载后安装目录已删除（shim/补全随之清除）"
 fi
 
+# ------------------------------- 9) README 骨架章节（devtool 系列一致）
+# 系列以本项目的 README 为基准，13 个顶级章节是这套文档的招牌。只要求"至少包含"
+# ——各项目可以有额外章节。缺任何一个都算漂了。
+# ------------------------------- shell 文本体检（$VAR 后不得紧跟非 ASCII）
+# 变量名后面**直接**跟一个非 ASCII 字符（例如全角括号）时，shell 会把紧跟的
+# 多字节字符一起看进变量名，行为随 locale 而变。
+# ⚠️ 连注释里也别原样写出那个模式——体检不区分注释与代码（区分要写半个 shell
+#    解析器，还会有漏判），所以举例时把变量名与括号**隔开**写。
+# ⚠️ 用 Python 而不是 grep：BSD grep 不支持 \xNN 转义，早先那种
+#    `grep -E '[^\x00-\x7f]'` 会以 rc=2 报 invalid character range 退出，
+#    而 `if grep ...; then` 把命令出错当成"没匹配"，检查会**永远报 ok**。
+echo "== shell 文本体检（\$VAR 后不得紧跟非 ASCII）=="
+if _cv="$(python3 -I tests/check_shell_vars.py installer bin completions tests module 2>&1)"; then
+    pass "\$VAR 后没有紧跟非 ASCII"
+else
+    fail "shell 变量名体检（${_cv}）"
+fi
+
+echo "== README 骨架章节 =="
+if _rd="$(python3 -I tests/check_readme.py README.md 2>&1)"; then
+    pass "$_rd"
+else
+    fail "README 骨架章节（${_rd}）"
+fi
+
 echo
 if [ "$FAIL" -eq 0 ]; then
     echo "全部通过"
