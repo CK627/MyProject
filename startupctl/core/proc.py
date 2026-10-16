@@ -82,14 +82,15 @@ def enumerate_procs(ctx, backend=None):
     plat = ctx.platform if ctx else 'linux'
     errors = []
     if plat == 'darwin':
-        procs = _procs_posix(platform='darwin')
+        procs, perr = _procs_posix(platform='darwin')
+        errors.extend(perr)
     elif plat == 'win32':
         procs, werr = _procs_windows()
         errors.extend(werr)
     else:
         procs, perr = _procs_proc()
         if procs is None:
-            procs = _procs_posix(platform='linux')
+            procs, perr = _procs_posix(platform='linux')
         errors.extend(perr)
     for p in procs:
         classify_proc(p, plat)
@@ -106,9 +107,17 @@ def _procs_posix(platform='darwin'):
     在 macOS 上**任何"聪明地重新切分 args"都是 bug 工厂**（参数本身含空格）。
     """
     procs = []
+    errors = []
     r1 = run(['/bin/ps', '-axo', 'pid=,ppid=,uid=,user=,stat=,comm='], timeout=10)
     if not r1.ok:
-        return procs
+        # ⚠️ **不要静默返回空表**。`ps` 不存在（比如把 darwin 后端跑在 Windows 上只
+        #    为验夹具逻辑）、或它超时挂死，都会走到这里；静默返回 [] 会让上层显示
+        #    "共 0 个进程"，用户以为机器上真的没进程，而不是"枚举根本没跑起来"。
+        #    这两件事必须能分辨——与"扫描不完整"同一个道理。
+        errors.append(scan_error('/bin/ps', 'ps',
+                                 '进程枚举不可用（%s）' % (r1.reason or '未知'),
+                                 detail=(r1.err or '')[:120]))
+        return procs, errors
     for line in r1.out.splitlines():
         parts = line.strip().split(None, 5)
         if len(parts) < 6:
@@ -139,7 +148,7 @@ def _procs_posix(platform='darwin'):
             p = by_pid.get(pid)
             if p is not None:
                 p.args_str = parts[1].strip()
-    return procs
+    return procs, errors
 
 
 def _procs_proc():

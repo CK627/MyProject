@@ -16,6 +16,11 @@ import sys
 import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# 宿主原生平台。run_cli 默认把平台钉成 darwin（夹具是 darwin 的），但凡是**依赖
+# 真实进程表**的断言都必须用这个值——把 darwin 后端跑在 Windows 上时它会去调
+# /bin/ps，那里没有，于是枚举为空、"共 0 个进程"，断言就会莫名其妙地挂。
+NATIVE_PLATFORM = ('darwin' if sys.platform.startswith('darwin')
+                   else 'win32' if sys.platform.startswith('win') else 'linux')
 FIXTURES = os.path.join(ROOT, 'tests', 'fixtures', 'roots')
 
 FAILS = []
@@ -846,8 +851,11 @@ def check_guard_lock_cli():
     rc, out = run_cli(['guard', 'unlock', 'VendorHelper'], env)
     check_eq(rc, 0, 'guard unlock 退出 0')
 
-    rc, out = run_cli(['guard', 'check'], env)
-    check('还能操作' in out, 'guard check 说明 shell/终端受「还能操作」保障')
+    # ★ 这条要看**宿主真实进程表**里有没有 shell/终端，所以必须用原生平台，
+    #   不能跟着 run_cli 的 darwin 默认走（Windows 上没有 /bin/ps）。
+    rc, out = run_cli(['guard', 'check'], dict(env, STARTUPCTL_PLATFORM=NATIVE_PLATFORM))
+    check('还能操作' in out,
+          'guard check 说明 shell/终端受「还能操作」保障（平台 %s）' % NATIVE_PLATFORM)
 
 
 def check_guard_cli():
