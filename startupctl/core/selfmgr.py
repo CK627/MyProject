@@ -671,7 +671,15 @@ def _win_uninstall(argv):
     if left:
         print('保留: %s（白名单 · 备份 · 快照；clear 只清快照）' % '、'.join(left))
     else:
-        print('安装目录已空: %s' % dest)
+        # 空目录收掉，与 POSIX 侧 install/uninstall.sh 的行为一致。
+        # ⚠️ 只在**空**时删：用户级安装下安装根就是数据根，里面可能住着
+        #    whitelist.json / backups / scans —— 那些"永不自动删除"。
+        #    rmdir 只在目录为空时成功，所以这一句天然安全。
+        try:
+            os.rmdir(dest)
+            print('（空目录已移除: %s）' % dest)
+        except OSError:
+            print('安装目录已空: %s' % dest)
     print('清理完成。重开一个终端后 PATH 才彻底刷新。')
     return 0
 
