@@ -175,7 +175,7 @@ def _missing_artifacts(root):
     软链缺失或退化成旧布局只能在这里发现。
     """
     missing = []
-    for key in _INSTALLED_ITEMS:
+    for key in _installed_items():
         if not os.path.exists(os.path.join(root, key)):
             missing.append(key)
     if os.name == 'nt':
@@ -343,8 +343,46 @@ def _deploy(srcdir, root):
 # PATH 走 HKCU\Environment（用户级，不需要管理员）——不用 setx：它会把超过 1024
 # 字符的 PATH 截断，是老牌事故。
 # ============================================================================
-_WIN_FUNC_ITEMS = ('bin', 'lib', 'completions', 'config', 'VERSION',
-                   'uninstall', 'deploy.sh', 'shell-setup.sh')
+# Windows 的安装载荷。**刻意比 POSIX 短。**
+#
+# 上面那张 _PAYLOAD_REPO 里的 deploy.sh / shell-setup.sh / uninstall /
+# lib/ctfsweep.sh / completions/*.zsh|.bash 全是 POSIX 专有，Windows 上用不到也不该装；
+# 它们各自在 Windows 上都有替代：
+#   · deploy.sh      → deploy_nt()（Python 重写，不依赖 bash）
+#   · shell-setup.sh → Windows 没有 rc 文件，PATH 走 HKCU 注册表
+#   · uninstall      → _win_uninstall()（Python 实现）
+#   · 启动器 .sh     → bin\ctfsweep.bat（deploy_nt 生成）
+#   · completions    → 没有可 source 的 rc，补全无从接线
+#
+# 对齐 ptool 的 Windows 布局：只装 {app}\bin\ptool.bat · module\install.bat ·
+# config\ptool.conf · VERSION，一个多余的 .sh 都没有。
+#
+# ⚠️ models/ 必须留：judge.project_dir() 在安装态解析为 <安装根>/lib，
+#    不装的话 --judge 会**静默**退化成「未训练」。
+_PAYLOAD_WIN = (
+    ('ctfsweep', 'lib/ctfsweep'),          # Python 包
+    ('models', 'lib/models'),              # 判断核模型（必须一起装）
+    ('VERSION', 'VERSION'),
+    ('config/ctfsweep.conf', 'config/ctfsweep.conf'),
+)
+
+# Windows 卸载时删除的功能项（bin\ctfsweep.bat 由 deploy_nt 生成，所以 bin 在列）
+_WIN_FUNC_ITEMS = ('bin', 'lib', 'config', 'VERSION')
+
+# Windows 安装态应有的组件
+_INSTALLED_ITEMS_WIN = ('lib/ctfsweep', 'lib/models', 'VERSION',
+                        'config/ctfsweep.conf')
+
+
+def _installed_items():
+    """本平台安装态应有的组件。探测"版本号已最新但装残了"时用。
+
+    不分平台的话，Windows 上会拿 POSIX 的清单去比对——那里面有一堆 Windows
+    本来就不该有的东西（deploy.sh / completions / …），判定结果就成了巧合。
+    """
+    if os.name == 'nt':
+        return _INSTALLED_ITEMS_WIN
+    return _INSTALLED_ITEMS
 
 # ⚠️ 纯 ASCII：无 BOM 的 UTF-8 .bat 会被 cmd 按 ANSI 代码页（简中是 GBK）解析，
 #    中文会被从中间劈开、cmd 转头去执行文本碎片（ptool 的 build-remote.bat 踩过）。
@@ -420,7 +458,11 @@ def _win_path_remove(entry):
 
 
 def deploy_nt(srcdir, root):
-    """Windows 部署：按 _PAYLOAD_REPO 拷功能文件 + 写 bin\\ctfsweep.bat（不用 bash）。
+    """Windows 部署：按 **_PAYLOAD_WIN** 拷功能文件 + 生成 bin\\ctfsweep.bat（不用 bash）。
+
+    用 Windows 自己的载荷表，不是 POSIX 那张——后者会把 deploy.sh / shell-setup.sh /
+    uninstall / ctfsweep.sh / bash+zsh 补全一起丢进用户目录，而它们在 Windows 上
+    一个都用不上（各自的替代见 _PAYLOAD_WIN 的注释）。
 
     只删功能项，数据（cache/ 等）永不动——与 deploy.sh 的契约逐条对齐。
     """
@@ -434,7 +476,7 @@ def deploy_nt(srcdir, root):
                 os.remove(p)
             except OSError:
                 pass
-    for src_rel, dst_rel in _PAYLOAD_REPO:
+    for src_rel, dst_rel in _PAYLOAD_WIN:
         src = os.path.join(srcdir, src_rel)
         dst = os.path.join(root, dst_rel)
         if not os.path.exists(src):
@@ -621,7 +663,17 @@ def _win_uninstall(argv):
         try:
             ans = input('确定要卸载 ctfsweep 吗？（扫描缓存会保留）(y/n): ')
         except EOFError:
-            ans = ''
+            # ★ 读到 EOF 就是**非交互**，不是"用户没回答"。必须按同一条路报出去。
+            #
+            #   Windows 上这点尤其要紧：stdin 接 NUL 设备时 `isatty()` 返回 **True**
+            #   （NUL 是字符设备，实测：cmd 的 `< NUL` 与 subprocess.DEVNULL 都如此），
+            #   于是上面那道闸拦不住，会走到这里。原来只是静默 ans=''，用户看到的是
+            #   「已取消」、退出码 0 —— 既没提示该加 -y，脚本也分不清"用户拒绝"
+            #   和"非交互取消"。
+            print('')
+            print('检测到非交互环境，未做任何改动。')
+            print('  确认无误后请加 -y 跳过确认: ctfsweep uninstall -y')
+            return 1
         if ans.strip().lower() not in ('y', 'yes'):
             print('已取消')
             return 0
@@ -649,7 +701,14 @@ def _win_uninstall(argv):
     if left:
         print('保留: %s（扫描缓存等数据，clear 可清）' % '、'.join(left))
     else:
-        print('安装目录已空: %s' % dest)
+        # 空目录收掉，与 POSIX 侧 installer/uninstall.sh 的行为一致。
+        # ⚠️ 只在**空**时删：用户级安装下安装根就是数据根，里面住着 cache/ 等
+        #    扫描缓存 —— 那些"永不自动删除"。rmdir 只在目录为空时成功，天然安全。
+        try:
+            os.rmdir(dest)
+            print('（空目录已移除: %s）' % dest)
+        except OSError:
+            print('安装目录已空: %s' % dest)
     print('清理完成。重开一个终端后 PATH 才彻底刷新。')
     return 0
 
@@ -822,7 +881,12 @@ def cmd_clear(argv):
         try:
             ans = input('确定要删除吗？(y/n): ')
         except EOFError:
-            ans = ''
+            # 同 _win_uninstall：EOF = 非交互（Windows 上 NUL 的 isatty 为真），
+            # 要按非交互报出去，而不是静默当成"取消"、退 0。
+            print('')
+            print('检测到非交互环境，未做任何改动。')
+            print('  确认无误后请加 -y 跳过确认: ctfsweep clear -y')
+            return 1
         if ans.strip().lower() not in ('y', 'yes'):
             print('已取消')
             return 0

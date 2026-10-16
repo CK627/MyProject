@@ -83,6 +83,106 @@ def clear_cache(name=''):
     return run_cli(['clear'] + ([name] if name else []) + ['-y'])
 
 
+def check_windows_payload():
+    """Windows 载荷：不该装 POSIX 专有的东西（对齐 ptool 的干净布局）。
+
+    ptool 在 Windows 上只装 bin\\ptool.bat · module\\install.bat · config\\ptool.conf
+    · VERSION —— 一个多余的 .sh 都没有。照搬 POSIX 载荷表会把 deploy.sh /
+    shell-setup.sh / uninstall / ctfsweep.sh / bash+zsh 补全一起丢进用户目录，
+    而它们在那台机器上一个都用不上。
+    """
+    from ctfsweep.core import selfmgr
+
+    win_dsts = [dst for _src, dst in selfmgr._PAYLOAD_WIN]
+    joined = ' '.join(win_dsts)
+
+    check(not any(d.endswith('.sh') for d in win_dsts),
+          'Windows 载荷里没有 .sh（%s）' % win_dsts)
+    check('completions' not in joined, 'Windows 载荷里没有 completions')
+    check('uninstall' not in win_dsts, 'Windows 载荷里没有 uninstall 脚本')
+    check('deploy.sh' not in win_dsts and 'shell-setup.sh' not in win_dsts,
+          'Windows 载荷里没有 deploy.sh / shell-setup.sh')
+    check('lib/ctfsweep' in win_dsts, 'Windows 载荷含 Python 包')
+    check('lib/models' in win_dsts,
+          'Windows 载荷含判断核模型（缺了 --judge 会静默退化成「未训练」）')
+    check('VERSION' in win_dsts and 'config/ctfsweep.conf' in win_dsts,
+          'Windows 载荷含 VERSION 与配置文件')
+
+    for bad in ('completions', 'uninstall', 'deploy.sh', 'shell-setup.sh'):
+        check(bad not in selfmgr._WIN_FUNC_ITEMS,
+              'Windows 功能项清单里没有 %s' % bad)
+    check('bin' in selfmgr._WIN_FUNC_ITEMS,
+          'Windows 功能项清单含 bin（启动器是生成的，卸载要删）')
+
+    # POSIX 载荷**不能**被削——那边这些文件都是必需的
+    posix = [dst for _src, dst in selfmgr._PAYLOAD_REPO]
+    for need in ('deploy.sh', 'shell-setup.sh', 'uninstall',
+                 'completions/ctfsweep.zsh', 'lib/ctfsweep.sh'):
+        check(need in posix, 'POSIX 载荷仍含 %s' % need)
+
+    # 探测"装残了"的清单要分平台
+    saved = os.name
+    try:
+        os.name = 'nt'
+        check(selfmgr._installed_items() == selfmgr._INSTALLED_ITEMS_WIN,
+              'os.name=nt 时用 Windows 的组件清单')
+        os.name = 'posix'
+        check(selfmgr._installed_items() == selfmgr._INSTALLED_ITEMS,
+              'POSIX 时用 POSIX 的组件清单')
+    finally:
+        os.name = saved
+
+
+def check_eof_is_noninteractive():
+    """确认环节读到 EOF 也要按「非交互」报出来。
+
+    Windows 上 stdin 接 NUL 设备时 isatty() 返回 **True**（NUL 是字符设备，实测
+    cmd 的 `< NUL` 与 subprocess.DEVNULL 都如此），于是非交互那道闸拦不住，会走到
+    input() 并立刻 EOF。若那时只是静默 ans=''，用户看到的是「已取消」退出码 0——
+    既没提示该加 -y，脚本也分不清"用户拒绝"和"非交互取消"。
+    """
+    import io as _io
+    from ctfsweep.core import selfmgr as _sm
+
+    class _FakeTTY(object):
+        """isatty 说"是终端"，但一读就 EOF —— 正是 Windows NUL 的行为。"""
+        def isatty(self):
+            return True
+
+        def readline(self, *a):
+            raise EOFError()
+
+        def read(self, *a):
+            return ''
+
+    # 直接验"EOF 会走非交互提示"这一条：把 isatty 换成 True、stdin 换成假终端，
+    # 调 _win_uninstall 会先去摸注册表——所以这里只验那个分支的判断逻辑，
+    # 用一段与源码同形的代码不合适。改为**静态断言**源码里没有"静默吞掉 EOF"。
+    import inspect
+    src = inspect.getsource(_sm._win_uninstall)
+    check('except EOFError:' in src, '_win_uninstall 处理了 EOFError')
+    # 关键：except 分支里必须打印非交互提示并 return 1，而不是 ans = ''
+    i = src.index('except EOFError:')
+    # 窗口要放得下那段解释性注释——按 500 字符截会把 print/return 切在注释里，
+    # 断言于是失败得莫名其妙（注释越长越容易踩）。
+    seg = src[i:i + 1200]
+    check('非交互环境' in seg,
+          '_win_uninstall 的 EOF 分支打印「非交互环境」（不再静默当成取消）')
+    check('return 1' in seg, '_win_uninstall 的 EOF 分支返回 1')
+    check("ans = ''" not in seg.split('return 1')[-1][:120] or '非交互环境' in seg,
+          '_win_uninstall 的 EOF 分支不再把 ans 置空后走「已取消」')
+
+    csrc = inspect.getsource(_sm.cmd_clear)
+    j = csrc.index('except EOFError:')
+    cseg = csrc[j:j + 1200]
+    check('非交互环境' in cseg, 'cmd_clear 的 EOF 分支打印「非交互环境」')
+    check('return 1' in cseg, 'cmd_clear 的 EOF 分支返回 1')
+
+    # _win_uninstall 结尾要收掉空目录（与 POSIX 侧 uninstall.sh 一致）
+    check('os.rmdir(dest)' in src,
+          '_win_uninstall 收掉空的安装目录（与 POSIX 侧一致）')
+
+
 def check_windows_path_helpers():
     """Windows PATH 串的增删（纯函数，跨平台可测）。
 
@@ -1678,6 +1778,10 @@ def main():
         # （实测：夹具被删后 check_sni_render 连 '[TLS SNI]' 都拿不到）。
         print('== clear 子命令（清空数据目录）==')
         check_clear(tmp)
+
+        print('== Windows 载荷 / 非交互确认 ==')
+        check_windows_payload()
+        check_eof_is_noninteractive()
     finally:
         for k, v in _prev_env.items():
             if v is None:
