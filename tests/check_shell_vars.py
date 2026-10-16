@@ -11,10 +11,6 @@
    于是这条检查会**永远报 ok**（实测：它在 startupctl 里从来没生效过，
    直到换到 CtfSweep 上才被发现）。检查器自己出错必须能被看见。
 
-⚠️ 本检查**不区分注释与代码**：注释里原样写出那个模式也会被报出来。
-   区分需要写半个 shell 解析器，而且漏判（把真违规当注释跳过）比误报更糟。
-   所以举例时请把变量名与后面的字符**隔开**写。
-
 只扫 shell 文件（.sh/.bash/.zsh 以及 bin/ 下无扩展名的启动器）——
 Python 源码里出现 `$VAR` 加中文是正常的（正则、字符串模板），不该被误报。
 """
@@ -37,19 +33,24 @@ def is_shell_file(path, roots):
     return False
 
 
+# 整仓扫描时跳过的目录：只有元数据与构建产物，不该有源码；
+# dist/ 里是安装包（几十 MB 的 dmg），走进去纯属浪费。
+SKIP_DIRS = ('__pycache__', '.git', 'dist', 'build', 'node_modules', '.win-stage',
+             '.cache', '.claude', '.workbuddy', 'lab')
+
+
 def main(argv):
-    if not argv:
-        print('用法: check_shell_vars.py <目录>...', file=sys.stderr)
-        return 2
+    # 不传参 = 扫整个仓库。四个项目都用这一种调用方式，行为完全一致。
+    roots = argv or ['.']
     bad = []
-    for root in argv:
+    for root in roots:
         if not os.path.isdir(root):
             continue
         for dp, dn, fn in os.walk(root):
-            dn[:] = [d for d in dn if d not in ('__pycache__', '.git')]
+            dn[:] = [d for d in dn if d not in SKIP_DIRS]
             for f in sorted(fn):
                 p = os.path.join(dp, f)
-                if not is_shell_file(p, argv):
+                if not is_shell_file(p, roots):
                     continue
                 try:
                     with open(p, encoding='utf-8', errors='replace') as fh:
