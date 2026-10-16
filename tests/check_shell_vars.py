@@ -33,19 +33,24 @@ def is_shell_file(path, roots):
     return False
 
 
+# 整仓扫描时跳过的目录：只有元数据与构建产物，不该有源码；
+# dist/ 里是安装包（几十 MB 的 dmg），走进去纯属浪费。
+SKIP_DIRS = ('__pycache__', '.git', 'dist', 'build', 'node_modules', '.win-stage',
+             '.cache', '.claude', '.workbuddy', 'lab')
+
+
 def main(argv):
-    if not argv:
-        print('用法: check_shell_vars.py <目录>...', file=sys.stderr)
-        return 2
+    # 不传参 = 扫整个仓库。四个项目都用这一种调用方式，行为完全一致。
+    roots = argv or ['.']
     bad = []
-    for root in argv:
+    for root in roots:
         if not os.path.isdir(root):
             continue
         for dp, dn, fn in os.walk(root):
-            dn[:] = [d for d in dn if d not in ('__pycache__', '.git')]
+            dn[:] = [d for d in dn if d not in SKIP_DIRS]
             for f in sorted(fn):
                 p = os.path.join(dp, f)
-                if not is_shell_file(p, argv):
+                if not is_shell_file(p, roots):
                     continue
                 try:
                     with open(p, encoding='utf-8', errors='replace') as fh:

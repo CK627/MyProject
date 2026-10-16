@@ -91,7 +91,7 @@ fi
 #    而 `if grep ...; then` 把命令出错当成了"没匹配"——于是这条检查在本项目里
 #    从来没生效过（一直是假阴性，直到把同一套用法搬到 CtfSweep 上才暴露）。
 #    改用 Python 检查器：精确、可移植，而且**它自己出错会以非零退出**，能被看见。
-if _cjk_out="$("$PY" tests/check_shell_vars.py installer bin completions 2>&1)"; then
+if _cjk_out="$("$PY" tests/check_shell_vars.py 2>&1)"; then
     ok "\$VAR 后没有紧跟中文"
 else
     _cjk_rc=$?
@@ -284,7 +284,7 @@ stage "10/10 README 骨架章节（devtool 系列一致）"
 if _rd_out="$("$PY" tests/check_readme.py README.md 2>&1)"; then
     ok "$_rd_out"
 else
-    bad "README 骨架章节（$_rd_out）"
+    bad "README 骨架章节（${_rd_out}）"
 fi
 
 # ================================================================ 汇总
