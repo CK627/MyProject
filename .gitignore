@@ -28,3 +28,9 @@ dist/
 lab/*.jsonl
 lab/*.ctfj
 lab/output/
+
+# Windows 安装包构建的暂存与缓存（build-from-mac.sh 用）
+.win-stage/
+.cache/
+.*-win-src.tar.gz
+.build-remote.bat.crlf

@@ -51,14 +51,31 @@ echo "    + ctfsweep-src.tar.gz install.sh install.ps1"
 # VERSION 最后发：它是 update 的入口信号，先发的话会有一段「版本号是新的、快照还是旧的」
 # 窗口（ctfsweep 侧虽有校验兜底不落盘，但白跑一趟）
 scp -q "$REPO_DIR/VERSION" "$MIRROR_HOST:$MIRROR_ROOT/$TOOL/VERSION"
-echo "    + VERSION ($(tr -d '\n' < "$REPO_DIR/VERSION"))"
+# VERSION.txt 是同一份内容的带扩展名副本：httpd 对无扩展名文件发
+# application/octet-stream，PowerShell 的 Invoke-WebRequest 会把它当 byte[]（ptool 踩过）
+scp -q "$REPO_DIR/VERSION" "$MIRROR_HOST:$MIRROR_ROOT/$TOOL/VERSION.txt"
+echo "    + VERSION ($(tr -d '\n' < "$REPO_DIR/VERSION")) + VERSION.txt"
+
+# ---- 版本化目录：与 jtool / ptool 同规的「每次发布一个目录」----
+VER="$(tr -d '[:space:]' < "$REPO_DIR/VERSION")"
+ssh "$MIRROR_HOST" "mkdir -p '$MIRROR_ROOT/$TOOL/$VER'"
+scp -q "$TMP/ctfsweep-src.tar.gz" "$MIRROR_HOST:$MIRROR_ROOT/$TOOL/$VER/${TOOL}-${VER}-src.tar.gz"
+EXE="$REPO_DIR/dist/${TOOL}-setup-${VER}.exe"
+if [ -f "$EXE" ]; then
+    scp -q "$EXE" "$MIRROR_HOST:$MIRROR_ROOT/$TOOL/$VER/"
+    echo "    + $VER/${TOOL}-${VER}-src.tar.gz ${TOOL}-setup-${VER}.exe"
+else
+    # 不静默跳过：缺 exe 是发布内容不完整，必须让人看见
+    echo "    + $VER/${TOOL}-${VER}-src.tar.gz"
+    echo "    - 跳过 ${TOOL}-setup-${VER}.exe（dist/ 里没有；先跑 installer/windows/build-from-mac.sh）"
+fi
 
 # httpd 以 apache 用户读文件，root 建的目录默认权限可能挡住它
 ssh "$MIRROR_HOST" "chmod -R a+rX '$MIRROR_ROOT/$TOOL'"
 
 # 真下载一次：403/404 不会体现在 scp 的退出码里，只有 HTTP 能暴露
 echo "==> 校验"
-for f in install.sh install.ps1 ctfsweep-src.tar.gz VERSION; do
+for f in install.sh install.ps1 ctfsweep-src.tar.gz VERSION VERSION.txt; do
     code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$MIRROR_URL/$TOOL/$f" || echo 000)"
     echo "    $f -> HTTP $code"
     if [ "$code" != "200" ]; then
@@ -66,5 +83,17 @@ for f in install.sh install.ps1 ctfsweep-src.tar.gz VERSION; do
         exit 1
     fi
 done
+# 版本化目录里的产物单独校验（exe 有才验）
+if [ -f "$EXE" ]; then
+    code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$MIRROR_URL/$TOOL/$VER/${TOOL}-setup-${VER}.exe" || echo 000)"
+    echo "    $VER/${TOOL}-setup-${VER}.exe -> HTTP $code"
+    [ "$code" = "200" ] || { echo "错误: exe 镜像自检失败（HTTP ${code}）" >&2; exit 1; }
+fi
 echo "==> 一键安装（国内）:"
 echo "    source <(curl -fsSL $MIRROR_URL/$TOOL/install.sh)"
+echo "==> Windows 安装包:"
+if [ -f "$EXE" ]; then
+    echo "    $MIRROR_URL/$TOOL/$VER/${TOOL}-setup-${VER}.exe"
+else
+    echo "    （本次未发布 exe）"
+fi

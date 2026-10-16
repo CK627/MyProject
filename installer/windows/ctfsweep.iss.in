@@ -1,0 +1,183 @@
+; ctfsweep Windows 安装脚本（Inno Setup 6）
+;
+; 由 build-from-mac.sh 渲染：@TOOL@ / @VERSION@ 会被替换成实际值。
+; 刻意不用 Inno 的预处理器（ISPP），纯文本替换即可，少一个依赖。
+;
+; ⚠️ 这里装出来的布局**必须与 Python 侧 deploy_nt()/_win_install() 逐项一致**：
+;       <安装根>\bin\@TOOL@.bat      启动器（deploy_nt 生成的那份，同一来源）
+;       <安装根>\config\@TOOL@.conf  配置（只在不存在时装）
+;       <安装根>\lib\@TOOL@\         Python 包
+;       <安装根>\VERSION
+;     安装根 = {%USERPROFILE}\.devtools\@TOOL@
+;    两条安装路径（exe 与 install.ps1）给出同一个结果，否则 update 会按一边的
+;    形状去校验另一边的产物。tests/smoke.sh 里对两者都有布局断言。
+;
+; 与 ptool 的 .iss 的关键差别：ptool 是**机器级**安装（HKLM PATH + shims + 提权），
+; 本项目是**用户级**（HKCU PATH，不需要管理员）——所以这里 PrivilegesRequired=lowest，
+; 且没有 shim 那一套。
+
+[Setup]
+AppId={{@APPID@}
+AppName=@TOOL@
+AppVersion=@VERSION@
+AppVerName=@TOOL@ @VERSION@
+AppPublisher=CK627
+; 用户级：与 _win_install_root() 一致，不需要管理员
+DefaultDirName={%USERPROFILE}\.devtools\@TOOL@
+DisableDirPage=yes
+DisableProgramGroupPage=yes
+OutputDir=.
+OutputBaseFilename=@TOOL@-setup-@VERSION@
+Compression=lzma2/max
+SolidCompression=yes
+; 纯用户级安装，绝不提权：写 HKCU 不需要，写 HKLM 只会静默失败
+PrivilegesRequired=lowest
+ChangesEnvironment=yes
+UninstallDisplayName=@TOOL@ @VERSION@
+WizardStyle=modern
+DisableWelcomePage=no
+
+[Files]
+Source: "src\lib\@TOOL@\*";        DestDir: "{app}\lib\@TOOL@"; Excludes: "__pycache__\*,.DS_Store"; Flags: ignoreversion recursesubdirs createallsubdirs
+; ⚠️ models/ 必须一起装：judge.project_dir() 在安装态解析为 <安装根>/lib，
+;    缺了 --judge 会**静默**退化成「未训练」——不报错，只是悄悄不判分。
+Source: "src\lib\models\*";     DestDir: "{app}\lib\models"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "src\bin\@TOOL@.bat";      DestDir: "{app}\bin";         Flags: ignoreversion
+Source: "src\VERSION";             DestDir: "{app}";             Flags: ignoreversion
+; 配置只在不存在时安装，升级时保留用户已有设置
+Source: "src\config\@TOOL@.conf";  DestDir: "{app}\config";      Flags: onlyifdoesntexist
+
+[Dirs]
+; 数据目录与安装根同址（用户级安装的既定形态）：cache/ 等扫描缓存住在这里。
+; 不给它单独的 ACL —— 整棵树都在用户自己的家目录下。
+
+[Registry]
+; 把 bin 追加到**用户级** PATH（与 win_path_join 的做法一致：大小写不敏感去重）。
+;   {olddata}           保留已有内容
+;   preservestringtype   维护原有的 REG_SZ / REG_EXPAND_SZ 类型
+;   NeedsAddPath        已存在时不重复追加（重复安装/升级的关键）
+Root: HKCU; Subkey: "Environment"; \
+  ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}\bin"; \
+  Flags: preservestringtype; Check: NeedsAddPath('{app}\bin')
+
+[UninstallDelete]
+; 只清功能项之外的散落物。注意**不要**把 {app} 通配进来：
+; 用户级安装下安装根就是数据根，里面住着 cache/ 扫描缓存 ——
+; 那是「永不自动删除」，只能由用户显式 ctfsweep clear 清。
+; 功能文件由 Inno 按安装日志逐个删，这里无需列。
+
+[Code]
+const
+  UserEnvironmentKey = 'Environment';
+
+// 去掉首尾空白和结尾的反斜杠，再统一大小写。
+// Windows 的 PATH 比较必须这样处理：注册表里可能存着 C:\PROGRA~1\... 这类短名，
+// 也可能带结尾反斜杠。
+function NormalizeEntry(S: string): string;
+begin
+  S := Trim(S);
+  while (Length(S) > 0) and (S[Length(S)] = '\') do
+    Delete(S, Length(S), 1);
+  Result := Uppercase(S);
+end;
+
+// 按 ';' 分段比较，而不是整串子串匹配 —— 后者会被 "C:\a" 命中 "C:\ab"，
+// 也处理不了段内带结尾反斜杠的情况。与 win_path_join/win_path_drop 同口径。
+function PathContains(Path, Entry: string): Boolean;
+var
+  Rest, Seg: string;
+  P: Integer;
+begin
+  Result := False;
+  Rest := Path;
+  while Rest <> '' do
+  begin
+    P := Pos(';', Rest);
+    if P > 0 then
+    begin
+      Seg := Copy(Rest, 1, P - 1);
+      Delete(Rest, 1, P);
+    end
+    else
+    begin
+      Seg := Rest;
+      Rest := '';
+    end;
+    if (Seg <> '') and (NormalizeEntry(Seg) = NormalizeEntry(Entry)) then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
+end;
+
+function NeedsAddPath(Param: string): Boolean;
+var
+  OrigPath, Target: string;
+begin
+  // 关键: Check 参数里的常量不一定被展开，必须自己展开一次。
+  // 少了这一步，Param 会是字面量 '{app}\bin'，永远匹配不上，
+  // 每装一次就往 PATH 里追加一条重复项。（ExpandConstant 幂等）
+  Target := ExpandConstant(Param);
+  Result := True;
+  if not RegQueryStringValue(HKCU, UserEnvironmentKey, 'Path', OrigPath) then
+  begin
+    Log('NeedsAddPath: 读取用户 Path 失败，将直接追加 ' + Target);
+    Exit;
+  end;
+  if PathContains(OrigPath, Target) then
+  begin
+    Log('NeedsAddPath: 已存在，跳过 ' + Target);
+    Result := False;
+  end
+  else
+    Log('NeedsAddPath: 未找到，将追加 ' + Target);
+end;
+
+// 外科式移除，而不是 uninsdeletevalue —— 后者会清空整个 Path，把用户 PATH 毁掉
+procedure RemoveFromUserPath(Param: string);
+var
+  OrigPath, NewPath, Rest, Seg: string;
+  P: Integer;
+begin
+  if not RegQueryStringValue(HKCU, UserEnvironmentKey, 'Path', OrigPath) then
+    Exit;
+  NewPath := '';
+  Rest := OrigPath;
+  while Rest <> '' do
+  begin
+    P := Pos(';', Rest);
+    if P > 0 then
+    begin
+      Seg := Copy(Rest, 1, P - 1);
+      Delete(Rest, 1, P);
+    end
+    else
+    begin
+      Seg := Rest;
+      Rest := '';
+    end;
+    if (Seg <> '') and (NormalizeEntry(Seg) <> NormalizeEntry(Param)) then
+    begin
+      if NewPath <> '' then
+        NewPath := NewPath + ';';
+      NewPath := NewPath + Seg;
+    end;
+  end;
+  RegWriteExpandStringValue(HKCU, UserEnvironmentKey, 'Path', NewPath);
+  Log('RemoveFromUserPath: 已移除 ' + Param);
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  // Inno 的 Pascal Script 没有 SendMessageTimeout，无法手动广播 WM_SETTINGCHANGE；
+  // 环境变量变更的通知交给 [Setup] 的 ChangesEnvironment=yes（覆盖装/卸两阶段）。
+  //
+  // 用 usUninstall 而不是 usPostUninstall：实测（Windows 10 19045 / Inno 6.7.3）
+  // usPostUninstall 不触发，usUninstall 稳定触发，且此时改注册表不会被卸载器回滚
+  // （本脚本没用任何 uninsdelete* 标志，Inno 不会自动还原 Path）。
+  if CurUninstallStep = usUninstall then
+  begin
+    RemoveFromUserPath(ExpandConstant('{app}\bin'));
+  end;
+end;

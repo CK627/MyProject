@@ -32,6 +32,7 @@ bash -n installer/deploy.sh
 bash -n installer/shell-setup.sh
 bash -n installer/uninstall.sh
 bash -n installer/publish-mirror.sh
+bash -n installer/windows/build-from-mac.sh
 bash -n completions/ctfsweep.bash
 if command -v zsh >/dev/null 2>&1; then
     zsh -n completions/ctfsweep.zsh
