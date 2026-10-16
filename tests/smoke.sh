@@ -266,4 +266,14 @@ echo "uninstall -y OK（功能与 shell 接线清理、扫描缓存保留）"
 
 rm -rf "$_stage" "$_stage_home" "$_boot_root" "$_empty"
 
+# ------------------------------- README 骨架章节（devtool 系列一致）
+# 系列以 ptool 的 README 为基准，13 个顶级章节是这套文档的招牌。只要求"至少包含"
+# ——各项目可以有额外章节（自己特有的功能说明）。缺任何一个都算漂了。
+echo "== README 骨架章节 =="
+if _rd="$(python3 -I tests/check_readme.py README.md 2>&1)"; then
+    echo "$_rd"
+else
+    _fail "README 骨架章节（${_rd}）"
+fi
+
 echo "smoke: 全部通过"

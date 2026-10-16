@@ -430,6 +430,35 @@ ctfsweep secret.zip --pwd-file rockyou.txt # 或用自定义字典（zip 会先�
 ctfsweep Security.evtx --judge              # 输出 p= 分 + 【判断核·重点候选】
 ```
 
+## 命令速查表
+
+| 命令 | 说明 | 示例 |
+|------|------|------|
+| `ctfsweep <文件或目录>` | 扫描（pcap · evtx · reg · 文本 · 内存镜像 …） | `ctfsweep capture.pcap` |
+| `ctfsweep -f <文件>` | 指定要扫描的文件（等同位置参数） | `ctfsweep -f dump.raw` |
+| `ctfsweep -F <目录>` | 递归扫描整个目录 | `ctfsweep -F ./logs/` |
+| `ctfsweep -k <关键词>` | 追加关键词（逗号分隔） | `ctfsweep a.pcap -k flag1,flag2` |
+| `ctfsweep --min-score N` | 只显示置信度 ≥ N 的结果（默认 0.40） | `ctfsweep a.pcap --min-score 0.85` |
+| `ctfsweep --no-decode` | 关闭 hex / base64 自动解码 | `ctfsweep a.pcap --no-decode` |
+| `ctfsweep --depth N` | 解码链最大深度（默认 3） | `ctfsweep a.pcap --depth 5` |
+| `ctfsweep --limit N` | 每个文件最多输出条数（默认 50） | `ctfsweep a.pcap --limit 200` |
+| `ctfsweep -q` | 精简输出（明细在扫描缓存里） | `ctfsweep -F ./logs/ -q` |
+| `ctfsweep --extract` | 提取流量中的文件并扫其内容 | `ctfsweep a.pcap --extract` |
+| `ctfsweep --extract-dir D` | 提取输出目录 | `ctfsweep a.pcap --extract --extract-dir out/` |
+| `ctfsweep --pwd-file F` | 附加口令字典（用于加密压缩包） | `ctfsweep a.pcap --pwd-file pw.txt` |
+| `ctfsweep --judge` | 用判断核模型对候选打分 | `ctfsweep a.pcap --judge` |
+| `ctfsweep --config F` | 指定配置文件 | `ctfsweep a.pcap --config my.conf` |
+| `ctfsweep update [--check]` | 拉取最新快照并重装（`--check` 只比对版本） | `ctfsweep update --check` |
+| `ctfsweep install` | 显示安装方式（装到 devtools 目录） | `ctfsweep install` |
+| `ctfsweep uninstall [-y]` | 卸载（扫描缓存保留） | `ctfsweep uninstall -y` |
+| `ctfsweep clear [名称] [-y]` | 清空扫描缓存（给名称只清那个项目） | `ctfsweep clear capture4 -y` |
+| `ctfsweep config` | 显示运行信息与生效配置（含缓存占用） | `ctfsweep config` |
+| `ctfsweep help` | 显示帮助 | `ctfsweep help` |
+
+> 三个平台统一使用 `ctfsweep`（无后缀）。macOS / Linux 上真实脚本装在
+> `<安装根>/lib/ctfsweep.sh`，`<安装根>/bin/ctfsweep` 是指向它的软链接——
+> `bin/` 在 PATH 上，若把 `.sh` 也放在那里，命令名补全就会同时列出两个名字。
+
 ## 支持的输入格式
 
 | 格式 | 识别方式 | 说明 |
@@ -466,6 +495,55 @@ DEPTH=3                        # 解码链深度
 LIMIT=50                       # 每文件输出条数
 NO_DECODE=false                # true 关闭自动解码
 ```
+
+## 跨平台支持
+
+| 系统 | 主脚本 | 安装路径 | 配置文件 | 入口 |
+|------|--------|----------|----------|------|
+| macOS | `ctfsweep`（→ `lib/ctfsweep.sh`） | `/Library/devtools/ctfsweep/` | `…/config/ctfsweep.conf` | `installer/` |
+| Linux | `ctfsweep`（→ `lib/ctfsweep.sh`） | `/usr/local/devtools/ctfsweep/` | `…/config/ctfsweep.conf` | `installer/` |
+| Windows | `ctfsweep.bat` | `%USERPROFILE%\.devtools\ctfsweep\` | `…\config\ctfsweep.conf` | `installer/windows/` |
+
+用户级安装（`CTFSWEEP_USER=1`）三平台都是 `~/.devtools/ctfsweep`。
+
+> Windows 上是**纯用户级**安装：不需要管理员，PATH 走 `HKCU\Environment`。
+> 这和 ptool 不同——ptool 的 shim 必须在机器级 PATH 最前才能生效，所以要提权；
+> 本工具没有 shim，一个用户级 `bin` 目录就够了。
+>
+> 用户级安装下**安装根就是数据根**（扫描缓存 `cache/` 住在同一层），所以安装 / 更新 /
+> 卸载一律**只碰功能项**，那三样数据永不自动删除。
+
+> **2.2 之外的平台差异**：Windows 上没有 `.sh` 启动器、没有 bash/zsh 补全、也没有
+> `shell-setup.sh` 那套 rc 接线——它们各自都有 Python 侧实现（`deploy_nt` /
+> `_win_uninstall` / 注册表 PATH）。图形安装包（.exe）与 `install.ps1` 两条路径
+> 装出**同一个形状**，测试里有一条断言逐项比对载荷表与 `.iss` 的 `[Files]`。
+
+## 在脚本中使用
+
+退出码是给脚本用的接口：`0` 成功 · `1` 失败（含未给参数时打印帮助）· `2` 用法错。
+
+```bash
+#!/bin/bash
+
+# 打到一个目录，只在有高置信命中时才继续
+if ctfsweep -F ./evidence/ --min-score 0.85 -q >/dev/null; then
+    echo "发现高置信线索"
+fi
+
+# 扫完取回这次的完整报告（扫描缓存：一次运行一个目录）
+ctfsweep capture.pcap >/dev/null
+ls ~/.devtools/ctfsweep/cache/
+
+# 批量：逐个文件扫，明细留在缓存里
+for f in pcaps/*.pcap; do
+    ctfsweep "$f" -q
+done
+```
+
+> CI / 无人值守时注意两个子命令会等确认：`uninstall` 与 `clear` 不带 `-y` 时会要求
+> 交互确认；非交互环境下它们会明确拒绝并提示加 `-y`，不会静默执行也不会挂住。
+>
+> 扫描缓存**只增不减**：安装 / 更新 / 卸载都不碰它，只有显式 `ctfsweep clear` 才清。
 
 ## Tab 补全
 
