@@ -996,14 +996,21 @@ def check_writeback_verified():
     rc, out = run_cli(['guard', 'list'], env)
     check('VerifyMe' in out, '另一个进程读得到同一条（跨进程持久化成立）')
 
-    # 写不进去时必须报错并返回非零
-    ro = tempfile.mkdtemp(prefix='sc-ro-')
-    os.chmod(ro, 0o500)
-    rc, out = run_cli(['guard', 'add', '--value', 'Nope', '--config', '/dev/null'],
-                      {'STARTUPCTL_DATA_DIR': os.path.join(ro, 'sub')})
+    # 写不进去时必须报错并返回非零。
+    #
+    # ⚠️ 用 "把数据目录指到一个**普通文件**底下" 来制造失败，而不是 chmod 0500：
+    #    root 有 CAP_DAC_OVERRIDE，会**绕过**权限检查，0500 的目录照样能写。
+    #    在 root 下跑（CI 容器、root 登录的测试机）时，chmod 那招会让这条用例
+    #    失败得莫名其妙——看着像产品 bug，其实是测试环境的前提不成立。
+    #    ENOTDIR（在文件下面建目录）谁都绕不过，root 也不行。
+    not_a_dir = os.path.join(ROOT, 'VERSION')          # 仓库里一个确定的普通文件
+    check(os.path.isfile(not_a_dir), '（前提）用于制造写失败的路径确实是个普通文件')
+    rc, out = run_cli(['guard', 'add', '--value', 'Nope'],
+                      {'STARTUPCTL_DATA_DIR': os.path.join(not_a_dir, 'sub')})
     check(rc != 0, '写盘失败时返回非零（不谎报成功）')
     check(('失败' in out) or ('错误' in out), '写盘失败时给出明确错误信息')
-    os.chmod(ro, 0o700)
+    check('核对' not in out or '不一致' in out,
+          '写盘失败时**不会**打出「已写入并核对无误」')
 
 
 def check_guard_mode_vs_choice():
