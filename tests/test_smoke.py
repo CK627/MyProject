@@ -43,16 +43,24 @@ def section(title):
 def run_cli(args, env_extra=None, stdin_null=True):
     """在子进程里跑 CLI。环境完全隔离，且默认夹具模式。"""
     env = dict(os.environ)
+    # ⚠️ 先清掉**继承来的**值，再设我们自己的。
+    #    check_domain / scan_with 会在本进程里改 os.environ 来切平台，而 dict(os.environ)
+    #    会把它带进子进程——于是 `disable com.docker.vmnetd` 会跑在 Windows 后端上、
+    #    找不到该项、退 2，看起来像"解析失败"，实际是环境串味。这类 bug 极难从输出看出来。
+    for k in ('STARTUPCTL_DRY_RUN', 'STARTUPCTL_PLATFORM', 'STARTUPCTL_ROOTS',
+              'STARTUPCTL_DATA_DIR', 'STARTUPCTL_NO_GUI'):
+        env.pop(k, None)
+
     # 每个用例一个全新的数据目录与夹具树源——用例之间不共享任何状态
     env['STARTUPCTL_ROOTS'] = FIXTURES
     env['STARTUPCTL_DATA_DIR'] = tempfile.mkdtemp(prefix='startupctl-data-')
     env['PYTHONPATH'] = ROOT
-    # ⚠️ 这三个必须**先清掉继承值**再应用 env_extra。
-    #    check_domain / scan_with 会在本进程里改 os.environ 来切平台，而 dict(os.environ)
-    #    会把它带进子进程——于是 `disable com.docker.vmnetd` 会跑在 Windows 后端上、
-    #    找不到该项、退 2，看起像"解析失败"，实际是环境串味。这类 bug 极难从输出看出来。
-    for k in ('STARTUPCTL_DRY_RUN', 'STARTUPCTL_PLATFORM'):
-        env.pop(k, None)
+    # ★ **把平台钉死成 darwin**。做变更的夹具测试针对的是
+    #   darwin_user_agents/com.apple.useragent.plist 这类条目；若不钉平台，
+    #   在 Linux/Windows 上跑时后端会去扫 linux/win 根，那些 anchor 根本不存在，
+    #   resolve 失败 → 退出 2，用例看到的是"解析失败"而不是它要验的东西。
+    #   本机是 macOS，所以这个坑只在别的平台上暴露——正是 CI 矩阵存在的意义。
+    env['STARTUPCTL_PLATFORM'] = 'darwin'
     if env_extra:
         env.update(env_extra)
     p = subprocess.run([sys.executable, '-B', '-c',

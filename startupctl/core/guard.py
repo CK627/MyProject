@@ -204,8 +204,14 @@ def is_protected(proc, platform='', own_pids=()):
                     continue
                 return True, '可执行文件位于系统路径（%s）' % pre
 
-    # 6) 内核线程（Linux）：cmdline 为空 —— 判不准就当受保护
-    if plat not in ('darwin', 'win32'):
+    # 6) 内核线程（Linux）：无可执行文件、也无命令行 —— 判不准就当受保护。
+    #
+    #    ⚠️ 必须要求 `pid is not None`：这条判据只在**真的从进程表里枚举出来的**
+    #    记录上成立。`guard add --value X` 给一个当前没在跑的进程预先立规矩时，
+    #    造的是 pid=None 的占位记录（同样没有 program/args），不加这道判断就会
+    #    被当成内核线程而**拒绝添加**——在 Linux 上表现为 `guard add` 恒返回 3，
+    #    本机（macOS）却复现不了，因为这条规则根本不走 darwin 分支。
+    if plat not in ('darwin', 'win32') and pid is not None:
         if not prog and not (getattr(proc, 'args_str', '') or '').strip('[] '):
             return True, '内核线程（无可执行文件与命令行）'
 
