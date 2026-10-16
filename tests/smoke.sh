@@ -245,7 +245,7 @@ fi
 #    `grep -E '[^\x00-\x7f]'` 会以 rc=2 报 invalid character range 退出，
 #    而 `if grep ...; then` 把命令出错当成"没匹配"，检查会**永远报 ok**。
 echo "== shell 文本体检（\$VAR 后不得紧跟非 ASCII）=="
-if _cv="$(python3 -I tests/check_shell_vars.py installer bin completions tests module 2>&1)"; then
+if _cv="$(python3 -I tests/check_shell_vars.py 2>&1)"; then
     pass "\$VAR 后没有紧跟非 ASCII"
 else
     fail "shell 变量名体检（${_cv}）"
