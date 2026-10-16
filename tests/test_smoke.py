@@ -323,20 +323,27 @@ def check_windows_path_helpers():
 
 
 def check_shell_scripts():
-    """体检 shell 脚本：$VAR 后不得紧跟非 ASCII 字符（bash 会把全角字符并入变量名导致解析错误）"""
-    pat = re.compile(r'\$[A-Za-z_][A-Za-z0-9_]*[^\x00-\x7f]')
-    bad = []
-    for root, dirs, files in os.walk(ROOT):
-        dirs[:] = [d for d in dirs if d not in ('.git', '__pycache__')]
-        for f in sorted(files):
-            if not (f.endswith('.sh') or f.endswith('.zsh') or f.endswith('.bash')
-                    or f == 'ctfsweep'):
-                continue
-            p = os.path.join(root, f)
-            for i, line in enumerate(open(p, encoding='utf-8', errors='replace'), 1):
-                if pat.search(line):
-                    bad.append('%s:%d' % (os.path.relpath(p, ROOT), i))
-    check(not bad, 'shell 变量名体检（%s）' % (', '.join(bad) if bad else '全部通过'))
+    """体检 shell 脚本：$VAR 后不得紧跟非 ASCII 字符。
+
+    实现放在 tests/check_shell_vars.py，**四个 devtool 共用同一份**——系列里本该一致，
+    而这条检查在真实违规上生效过多次（包括我自己写的代码）。
+
+    不传参 = 扫整个仓库（跳过 .git/dist 等），与原来内联版的覆盖面一致；
+    各项目调用方式完全相同，行为也就完全相同。
+
+    ⚠️ 刻意不在这里再写一份内联实现：那正是这次要消掉的不一致——四份检查器各写各的，
+    改一处忘三处。现在文件本身就是唯一真相。
+    """
+    import subprocess
+    import sys as _sys
+    script = os.path.join(ROOT, 'tests', 'check_shell_vars.py')
+    proc = subprocess.run([_sys.executable, '-I', script],
+                          cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    out = proc.stdout.decode('utf-8', 'replace').strip()
+    if proc.returncode == 0:
+        check(True, 'shell 变量名体检（%s）' % (out or '全部通过'))
+    else:
+        check(False, 'shell 变量名体检（%s）' % out.replace('\n', ' / '))
 
 
 def check_completions():
