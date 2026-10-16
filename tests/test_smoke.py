@@ -1329,7 +1329,12 @@ def check_cli_contracts():
 
     rc, out = run_cli(['--version'])
     check_eq(rc, 0, '--version 退出 0')
-    check('startupctl' in out and '1.0.0' in out, '--version 打印版本号')
+    # 版本号从 __version__ 取，**不硬编码**：写死的话每次升版本都要回来改测试，
+    # 漏改的表现是「--version 打印版本号」失败，看着像功能坏了，其实只是断言过期。
+    # （同一个坑在 CtfSweep 的 smoke 里也踩过，那边已改成从 VERSION 推导。）
+    from startupctl import __version__ as _v
+    check('startupctl' in out and _v in out,
+          '--version 打印版本号（%s）' % _v)
     rc, out = run_cli(['help'])
     check_eq(rc, 0, 'help 退出 0')
     rc, out = run_cli(['nosuchcmd'])

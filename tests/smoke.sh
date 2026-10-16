@@ -85,12 +85,22 @@ fi
 
 # $VAR 后面直接跟中文：shell 会把变量名连着中文字节一起解析，导致变量取空。
 # 这是本项目踩过的坑，机制上只能靠机器守。
-if grep -rnE '\$[A-Za-z_][A-Za-z0-9_]*[^\x00-\x7f]' installer/ bin/ completions/ 2>/dev/null \
-        >/tmp/startupctl-cjk.log; then
-    bad "发现 \$VAR 后紧跟非 ASCII 字符（变量会解析失败）"
-    cat /tmp/startupctl-cjk.log
-else
+#
+# ⚠️ 这里**刻意不用 grep**：BSD grep（macOS 自带）不支持 `\xNN` 转义，早先那条
+#    `grep -E '[^\x00-\x7f]'` 会以 `grep: invalid character range` **rc=2 退出**，
+#    而 `if grep ...; then` 把命令出错当成了"没匹配"——于是这条检查在本项目里
+#    从来没生效过（一直是假阴性，直到把同一套用法搬到 CtfSweep 上才暴露）。
+#    改用 Python 检查器：精确、可移植，而且**它自己出错会以非零退出**，能被看见。
+if _cjk_out="$("$PY" tests/check_shell_vars.py installer bin completions 2>&1)"; then
     ok "\$VAR 后没有紧跟中文"
+else
+    _cjk_rc=$?
+    if [ "$_cjk_rc" -eq 2 ]; then
+        bad "shell 变量名体检**自身出错**（rc=2），结果不可信"
+    else
+        bad "发现 \$VAR 后紧跟非 ASCII 字符（变量会解析失败）"
+    fi
+    printf '%s\n' "$_cjk_out"
 fi
 
 # ================================================================ 4 启动器

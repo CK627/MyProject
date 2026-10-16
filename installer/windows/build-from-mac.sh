@@ -125,7 +125,7 @@ if [ "$NEED_INNO" -eq 1 ]; then
     IS_CACHE="$DIST/.cache/innosetup-${INNO_VERSION}.exe"
     if [ ! -f "$IS_CACHE" ]; then
         mkdir -p "$(dirname "$IS_CACHE")"
-        echo "==> 下载 Inno Setup $INNO_VERSION（可能要几分钟）"
+        echo "==> 下载 Inno Setup ${INNO_VERSION}（可能要几分钟）"
         curl -L --fail --silent --show-error --retry 3 --max-time 900 \
              -o "$IS_CACHE.part" "$INNO_URL"
         # 校验确实是 PE 可执行文件而不是 HTML 跳转页
