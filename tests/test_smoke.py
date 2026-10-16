@@ -142,6 +142,98 @@ def check_windows_payload():
         os.name = saved
 
 
+def check_iss_matches_payload():
+    """Windows 载荷表与 .iss 的 [Files] 必须逐项一致。
+
+    这是整套 Windows 安装里**最容易漂的一环**：三处都在描述"装什么"，
+    却各写各的、靠人工同步，没有任何机制守着：
+      1. selfmgr._PAYLOAD_WIN   Python 侧（install.ps1 / update 走它）
+      2. installer/windows/*.iss 的 [Files]   exe 安装包走它
+      3. build-from-mac.sh 的 staging         决定 src\\ 下摆什么给 ISCC
+    任一处漏改，两条安装路径就装出不一样的形状——而 update 会按一边的形状去校验
+    另一边的产物。所以这里把它们钉在一起。
+
+    比对用**安装空间相对路径**（两边共同的语言）：
+      · _PAYLOAD_WIN 的 dst 列
+      · .iss 的 DestDir 去掉 {app} 前缀；文件项再拼上 Source 的 basename
+    顺带核对 .iss 的 Source 必须是 src\\<安装路径>——那就是 staging 约定。
+    """
+    import re
+    from ctfsweep.core import selfmgr
+
+    TOOL = 'ctfsweep'
+    APP = '{app}'
+    iss_path = os.path.join(ROOT, 'installer', 'windows', '%s.iss.in' % TOOL)
+    check(os.path.isfile(iss_path), '.iss 模板存在（%s）' % os.path.basename(iss_path))
+
+    text = open(iss_path, encoding='utf-8').read().replace('@TOOL@', TOOL)
+
+    # 只认 [Files] 段里的 Source:/DestDir: 行（[Dirs] / [InstallDelete] 用的是 Name:）
+    pairs, in_files = [], False
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith('[') and line.endswith(']'):
+            in_files = (line == '[Files]')
+            continue
+        if not in_files or not line.startswith('Source:'):
+            continue
+        m_src = re.search(r'Source:\s*"([^"]+)"', line)
+        m_dst = re.search(r'DestDir:\s*"([^"]+)"', line)
+        if m_src and m_dst:
+            pairs.append((m_src.group(1).replace('\\', '/'),
+                          m_dst.group(1).replace('\\', '/')))
+    check(bool(pairs), '.iss 的 [Files] 段解析出条目（%d 条）' % len(pairs))
+
+    # 安装空间路径 → (源相对路径, 是否目录)
+    iss_install = {}
+    for src, dst in pairs:
+        rel = dst[len(APP):].strip('/') if dst.startswith(APP) else dst
+        is_dir = src.endswith('/*')
+        base = src[:-2] if is_dir else src
+        if is_dir:
+            iss_install[rel] = (base, True)
+        else:
+            iss_install[(rel + '/' + base.rsplit('/', 1)[-1]).lstrip('/')] = (base, False)
+
+    payload = dict((dst, src) for src, dst in selfmgr._PAYLOAD_WIN)
+
+    # ---- 1) 载荷里的每一项，.iss 都必须装 ----
+    for dst in sorted(payload):
+        if dst not in iss_install:
+            check(False, '载荷里有 %s，但 .iss 的 [Files] 没装它（exe 装出来会缺）' % dst)
+        else:
+            check(True, '载荷 %s 在 .iss 里有对应条目' % dst)
+
+    # ---- 2) .iss 多装的，只允许是"生成出来的启动器" ----
+    #     deploy_nt 用 _WIN_LAUNCHER 写出 bin\<tool>.bat，所以它不在 _PAYLOAD_WIN 里；
+    #     exe 那边没有 Python 可跑，只能把它当普通文件随包发。
+    launcher = 'bin/%s.bat' % TOOL
+    extra = sorted(set(iss_install) - set(payload))
+    check(extra == [launcher],
+          '.iss 比载荷多出的条目只有生成的启动器（多出: %s）' % (extra or '无'))
+    if launcher in iss_install:
+        check(True, '启动器 %s 由 .iss 随包发布（Python 侧则用 _WIN_LAUNCHER 生成）' % launcher)
+
+    # ---- 3) Source 必须落在 staging 约定上：src\<安装路径> ----
+    bad_src = []
+    for dst, (src, _is_dir) in sorted(iss_install.items()):
+        if src != 'src/' + dst:
+            bad_src.append('%s: Source=%s（应为 src/%s）' % (dst, src, dst))
+    check(not bad_src,
+          '每个 Source 都等于 src/<安装路径>（越界: %s）' % (bad_src[:3] or '无'))
+
+    # ---- 4) 反向：载荷的源路径也要与 staging 对得上 ----
+    #     _PAYLOAD_WIN 的 src 列是**仓库**相对路径，staging 时被摆成 src/<dst>，
+    #     所以两者是各自独立的列；这里只确认 dst 都被覆盖，src 列由 build-from-mac.sh 负责。
+    check(all(dst in iss_install for dst in payload),
+          '载荷的安装路径全部被 .iss 覆盖')
+
+    # ---- 5) 功能项清单不能反过来吃掉用户数据 ----
+    for data in ('cache', 'whitelist.json', 'backups', 'scans'):
+        check(data not in selfmgr._WIN_FUNC_ITEMS,
+              '功能项清单不含用户数据 %s' % data)
+
+
 def check_eof_is_noninteractive():
     """确认环节读到 EOF 也要按「非交互」报出来。
 
@@ -193,7 +285,7 @@ def check_eof_is_noninteractive():
 
 
 def check_windows_path_helpers():
-    """Windows PATH 串的增删（纯函数，跨平台可测）。
+    r"""Windows PATH 串的增删（纯函数，跨平台可测）。
 
     Windows 上装/卸的唯一"接线"就是 HKCU\Environment 里的 Path——写坏它是**全机器**级
     的事故（PATH 没了，用户的 cmd 连 ls 都敲不出来）。所以这段逻辑单独拎出来测：
@@ -1790,6 +1882,7 @@ def main():
 
         print('== Windows 载荷 / 非交互确认 ==')
         check_windows_payload()
+        check_iss_matches_payload()
         check_eof_is_noninteractive()
     finally:
         for k, v in _prev_env.items():
