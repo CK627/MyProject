@@ -14,7 +14,7 @@ import sys
 from . import help as help_mod
 from .core import config as config_mod
 from .core import context, manage, output, proc as proc_mod, safety, whitelist as wl_mod
-from .core import classify
+from .core import classify, utils
 from .core.model import (ORIGIN_CN, KIND_CN, RefError, resolve, ensure_unique_keys)
 from .core.output import c, dw, pad, render_table
 from .core.safety import EXIT_FAIL, EXIT_OK, EXIT_REFUSED, EXIT_USAGE, Refused
@@ -1195,7 +1195,7 @@ def cmd_kill(ctx, opts, pos):
     rc = EXIT_OK
     for p in targets:
         try:
-            if os.geteuid() == 0 or _same_user(p):
+            if utils.getuid() == 0 or _same_user(p):
                 os.kill(p.pid, signal.SIGKILL if force else signal.SIGTERM)
                 print('已发送 %s → pid %s (%s)' % ('KILL' if force else 'TERM', p.pid, p.comm))
             else:
@@ -1209,7 +1209,7 @@ def cmd_kill(ctx, opts, pos):
 
 def _same_user(p):
     try:
-        return p.uid is None or p.uid == os.getuid()
+        return p.uid is None or p.uid == utils.getuid()
     except AttributeError:
         return True
 

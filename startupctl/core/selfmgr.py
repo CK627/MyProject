@@ -319,7 +319,11 @@ def _run_root(argv, probe):
 
     已是 root、或目标本身可写，就直接跑；否则才 sudo —— 用户级安装不该弹密码。
     """
-    if os.geteuid() == 0 or os.access(probe, os.W_OK):
+    # 用 utils.getuid() 而不是 os.geteuid()：Windows 上没有后者，会 AttributeError。
+    # 这条路径在 Windows 上走不到（那边用 deploy_nt），但一个会在别的平台上
+    # 直接崩的写法不该留在代码里——它迟早会被走到。
+    from .utils import getuid
+    if getuid() == 0 or os.access(probe, os.W_OK):
         return subprocess.call(argv)
     sudo = shutil.which('sudo')
     if not sudo:

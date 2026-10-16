@@ -1088,6 +1088,67 @@ def check_gui_only_via_choose():
     check('--tui' in csrc and '--plain' in csrc, 'choose 支持 --tui/--plain 强制别的界面')
 
 
+def check_no_posix_only_calls():
+    section('跨平台：后端不能调 Windows 上不存在的 POSIX 接口')
+
+    # 这套用例存在的理由：darwin 后端在**夹具模式下可以跨平台跑**（测试把
+    # STARTUPCTL_PLATFORM 钉成 darwin 来验 macOS 的变更路径），所以它里面的
+    # os.getuid() 在 Windows 上会真的被执行到 → AttributeError。
+    # 本机是 macOS，永远复现不了；只有把代码拿到 Windows 上实测才会暴露。
+
+    # 1) 静态检查：源码里不许直接出现 os.getuid/os.geteuid
+    offenders = []
+    for dirpath, _dirs, files in os.walk(os.path.join(ROOT, 'startupctl')):
+        for f in files:
+            if not f.endswith('.py'):
+                continue
+            p = os.path.join(dirpath, f)
+            with open(p, encoding='utf-8') as fh:
+                for n, line in enumerate(fh, 1):
+                    code = line.split('#')[0]
+                    if 'os.getuid(' in code or 'os.geteuid(' in code:
+                        # utils.getuid/is_admin 自己那两处是**唯一**允许的地方
+                        if p.endswith('utils.py'):
+                            continue
+                        offenders.append('%s:%d %s' % (os.path.relpath(p, ROOT), n,
+                                                        line.strip()[:50]))
+    check(not offenders,
+          '没有直接调用 os.getuid/os.geteuid（越界的: %s）' % (offenders[:3] or '无'))
+
+    # 2) 动态检查：把 os.getuid 拿掉（模拟 Windows），darwin 后端仍要能跑
+    saved = getattr(os, 'getuid', None)
+    had = hasattr(os, 'getuid')
+    try:
+        if had:
+            del os.getuid
+        from startupctl.core.utils import getuid
+        check_eq(getuid(), 0, 'os.getuid 不存在时 utils.getuid() 返回 0')
+
+        saved_env = {k: os.environ.get(k) for k in ('STARTUPCTL_ROOTS', 'STARTUPCTL_PLATFORM')}
+        os.environ['STARTUPCTL_ROOTS'] = FIXTURES
+        os.environ.pop('STARTUPCTL_PLATFORM', None)
+        for mod in [m for m in list(sys.modules) if m.startswith('startupctl')]:
+            del sys.modules[mod]
+        sys.path.insert(0, ROOT)
+        from startupctl.core import context, roots as roots_mod
+        ctx = context.Ctx(platform='darwin', root_table=roots_mod.load(FIXTURES))
+        res = ctx.scan()
+        check(len(res.items) > 0,
+              '无 os.getuid 的主机上 darwin 后端仍能扫描（%d 项）' % len(res.items))
+        for k, v in saved_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+    except Exception as e:                                       # noqa: BLE001
+        check(False, '无 os.getuid 时 darwin 后端出错: %s: %s' % (type(e).__name__, e))
+    finally:
+        if had and saved is not None:
+            os.getuid = saved
+        for mod in [m for m in list(sys.modules) if m.startswith('startupctl')]:
+            del sys.modules[mod]
+
+
 def check_cli_contracts():
     section('CLI 契约：HELP 行数 / 对齐 / 退出码')
     sys.path.insert(0, ROOT)
@@ -1141,6 +1202,7 @@ def main():
     check_guard_lock_cli()
     check_guard_mode_vs_choice()
     check_gui_only_via_choose()
+    check_no_posix_only_calls()
     check_gui_picker()
     check_writeback_verified()
     check_cli_contracts()

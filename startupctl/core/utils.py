@@ -161,6 +161,21 @@ def is_admin():
         return False
 
 
+def getuid():
+    """当前 uid；Windows 上返回 0（那里没有 posix uid 这个概念）。
+
+    ⚠️ **不要直接写 `os.getuid()`**：Windows 上根本没这个属性，会 AttributeError。
+       而且这不是"只有 Windows 后端才会踩"——后端在**夹具模式下可以跨平台跑**
+       （测试把 STARTUPCTL_PLATFORM 钉成 darwin 来验 macOS 的变更路径），
+       所以 darwin 后端里的 os.getuid() 在 Windows 上真的会被执行到。
+       本机是 macOS，永远复现不出来；这类问题只有跨平台实测才会暴露。
+    """
+    try:
+        return os.getuid()
+    except AttributeError:
+        return 0
+
+
 def home_dir():
     return os.path.expanduser('~')
 

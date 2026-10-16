@@ -35,7 +35,7 @@ from ..core.model import (KIND_BTM, KIND_CRON, KIND_LAUNCHD_AGENT,
                           KIND_LAUNCHD_DAEMON, KIND_LOGIN_ITEM, ORIGIN_OS,
                           SCOPE_SYSTEM, SCOPE_USER, StartupItem, make_fingerprint)
 from ..core.safety import Refused
-from ..core.utils import run, realpath_soft
+from ..core.utils import getuid, run, realpath_soft
 from .base import Backend, iter_scan_files
 
 PLUTIL = '/usr/bin/plutil'
@@ -119,7 +119,10 @@ class DarwinBackend(Backend):
     def scan(self, ctx):
         res = self.new_result(ctx)
         roots = self.roots
-        disabled = self._disabled_map(ctx, res)
+        # ⚠️ 夹具模式下不查 launchctl：它读的是**真机**的禁用覆盖库，与
+        #    osascript / BTM / crontab 同一类"绕过 STARTUPCTL_ROOTS"的系统查询。
+        #    之前只在下面那三处加了 remapped() 闸，漏了这一处。
+        disabled = {} if roots_mod.remapped() else self._disabled_map(ctx, res)
 
         launchd_roots = [
             ('darwin.sys.daemons', KIND_LAUNCHD_DAEMON, SCOPE_SYSTEM),
@@ -224,7 +227,7 @@ class DarwinBackend(Backend):
     def _disabled_map(self, ctx, res):
         """读两个域的 print-disabled。非 root 可读（实测）。"""
         out = {}
-        for domain in ('system', 'gui/%d' % os.getuid()):
+        for domain in ('system', 'gui/%d' % getuid()):
             r = run([LAUNCHCTL, 'print-disabled', domain], timeout=10)
             if not r.ok:
                 if r.reason == 'denied':
@@ -498,9 +501,15 @@ class DarwinBackend(Backend):
     def service_state(self, label):
         """`launchctl print <domain>/<label>` 取单个服务的状态。
 
+        ⚠️ 夹具模式下**直接返回 None**：这是又一次"别去读真机"。凡是绕过
+        STARTUPCTL_ROOTS 的系统查询（launchctl / osascript / BTM / crontab），
+        在夹具模式下都必须闭嘴——否则测试会读到真机状态，"测试不碰真机"就破了。
+
         实测无需 root，能拿到 state / pid / program（**已解析**的可执行路径）。
         """
-        for domain in ('system', 'gui/%d' % os.getuid()):
+        if roots_mod.remapped():
+            return None
+        for domain in ('system', 'gui/%d' % getuid()):
             r = run([LAUNCHCTL, 'print', '%s/%s' % (domain, label)], timeout=10)
             if not r.ok:
                 continue
@@ -610,7 +619,7 @@ class DarwinBackend(Backend):
         os.makedirs(dest_dir, exist_ok=True)
         with open(dest, 'wb') as fh:
             plistlib.dump(payload, fh)
-        r = run([LAUNCHCTL, 'bootstrap', 'gui/%d' % os.getuid(), dest], timeout=15)
+        r = run([LAUNCHCTL, 'bootstrap', 'gui/%d' % getuid(), dest], timeout=15)
         return '已写入 %s%s' % (dest, '' if r.ok else '（bootstrap 未成功，下次登录仍会加载）')
 
     def _write_plist_preserving(self, path, data):
@@ -629,11 +638,11 @@ class DarwinBackend(Backend):
         os.replace(tmp, path)
 
     def _bootout(self, item):
-        for domain in ('gui/%d' % os.getuid(), 'system'):
+        for domain in ('gui/%d' % getuid(), 'system'):
             run([LAUNCHCTL, 'bootout', '%s/%s' % (domain, item.anchor)], timeout=10)
 
     def _bootstrap(self, item):
-        domain = 'system' if item.scope == SCOPE_SYSTEM else 'gui/%d' % os.getuid()
+        domain = 'system' if item.scope == SCOPE_SYSTEM else 'gui/%d' % getuid()
         run([LAUNCHCTL, 'bootstrap', domain, item.source], timeout=15)
 
 
