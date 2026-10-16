@@ -72,7 +72,7 @@ fi
 
 # ================================================================ 3 shell 语法
 stage "3/9 shell 语法"
-for f in installer/*.sh bin/startupctl.sh completions/startupctl.bash; do
+for f in installer/*.sh installer/windows/build-from-mac.sh bin/startupctl.sh completions/startupctl.bash; do
     if bash -n "$f" 2>/dev/null; then ok "bash -n $f"; else bad "bash -n $f"; fi
 done
 if command -v zsh >/dev/null 2>&1; then
