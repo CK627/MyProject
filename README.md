@@ -198,6 +198,52 @@ jtool run 21 <TAB>   # .java 文件
 所以按 `<TAB>` 没有延迟。目录名推不出版本号的（如 Homebrew 的 `openjdk.jdk`）不会出现在补全里，
 但 `jtool use <真实版本>` 照旧可用——解析那边会退回去读 `java -version`。
 
+## 配置文件
+
+配置文件位于安装目录内的 `config/jtool.conf`（完整路径见上方「跨平台支持」表格）。
+
+```bash
+# Java 安装路径（父目录）
+JAVA_BASE_DIR="/Library/Java/JavaVirtualMachines"
+
+# 默认 Java 版本（设置后可省略版本号）
+# JTOOL_DEFAULT_VERSION="21"
+
+# jtool 版本（由 install / update 维护，请勿手动修改）
+JTOOL_VERSION="2.3.5"
+```
+
+> 安装 / 升级时若 `JTOOL_DEFAULT_VERSION` 还没设置，安装程序会自动把**扫到的最高版本**填进去
+> （并打印选中的版本与来源目录），这样前置到机器级 PATH 的 shim 立刻就能解析出版本。
+> 已有默认版本时不会被覆盖。
+>
+> 「最高」指**同一个 `JAVA_BASE_DIR` 内**的最高版本。若 21 装在 `C:\Program Files\Java`
+> 而 24 装在别处，自动选中的是 21；需要别的版本就 `jtool use <版本>`。
+>
+> 该行为有运行时兜底：默认版本为空时，`jtool.bat` 自己按目录名推出版本、取最高的一个用
+> （不启动任何 java 进程），只有连一个 JDK 都找不到才报错并提示 `jtool use <version>`。
+> 所以手动把这行注释掉也不会让整台机器的 `java` 挂掉。
+
+> jtool 以 `JAVA_BASE_DIR` 作为唯一基准目录，并**按目录的真实布局**解析 JDK 路径，分三段，
+> 先廉价后昂贵：
+>
+> 1. **快路径**（不 glob、不启动 java）：按序试 `<base>/jdk-<版本>.jdk`（macOS）、
+>    `<base>/jdk-<版本>`（Linux / Windows）、`<base>/<版本>.jdk`、`<base>/<版本>`，
+>    取其中有 `bin/java` 的那个作为 JDK home。macOS 的 bundle 布局会自动落到其 `Contents/Home`。
+> 2. **命名匹配**（仍不启动 java）：遍历 `<base>` 下的子目录，用**目录名推出来的版本**匹配——
+>    `jdk-21.0.1` → `21.0.1`、`java-17-openjdk-amd64` → `17`、`temurin-21.jdk` → `21`。
+>    到这一步，各厂商与各发行版的命名就都能命中了。
+> 3. **真实版本**（兜底）：名字和目录里的实际版本对不上时，才逐个跑 `java -version`
+>    读出真实版本再匹配。
+>
+> 前两段都不产生子进程，所以 `java` shim 这类热路径没有探测开销；只有名字骗人时
+> 才付出一次探测成本。
+>
+> 若 JDK 装在别处（如 SDKMAN、Homebrew、手动解压），执行 `jtool scan` 后手动修改
+> `JAVA_BASE_DIR` 即可。例如 Homebrew 的 openjdk：
+> `JAVA_BASE_DIR="/opt/homebrew/opt/openjdk/libexec"`（Intel Mac 换成 `/usr/local/opt/...`）
+> ——目录名 `openjdk.jdk` 里没有版本号，会由第 3 段读真实版本兜住。
+
 ## 跨平台支持
 
 | 系统 | 主脚本 | 安装路径 | 配置文件 | shim 目录 | 入口 |
@@ -252,52 +298,6 @@ macOS / Linux 会在安装目录的 `shims/` 下生成 `java` / `javac` / `jar` 
 > `jdk-21.jdk`、`jdk-21`、`temurin-21.jdk`、`zulu-17.0.9.jdk`、`amazon-corretto-21.jdk`、
 > `java-17-openjdk-amd64`（Ubuntu）、`java-1.8.0-openjdk`（RHEL）。
 > 指向同一 JDK 的软链接（Ubuntu 的 `java-1.17.0-openjdk-amd64`）会按真实目录去重，只列一条。
-
-## 配置文件说明
-
-配置文件位于安装目录内的 `config/jtool.conf`（完整路径见上方「跨平台支持」表格）。
-
-```bash
-# Java 安装路径（父目录）
-JAVA_BASE_DIR="/Library/Java/JavaVirtualMachines"
-
-# 默认 Java 版本（设置后可省略版本号）
-# JTOOL_DEFAULT_VERSION="21"
-
-# jtool 版本（由 install / update 维护，请勿手动修改）
-JTOOL_VERSION="2.3.5"
-```
-
-> 安装 / 升级时若 `JTOOL_DEFAULT_VERSION` 还没设置，安装程序会自动把**扫到的最高版本**填进去
-> （并打印选中的版本与来源目录），这样前置到机器级 PATH 的 shim 立刻就能解析出版本。
-> 已有默认版本时不会被覆盖。
->
-> 「最高」指**同一个 `JAVA_BASE_DIR` 内**的最高版本。若 21 装在 `C:\Program Files\Java`
-> 而 24 装在别处，自动选中的是 21；需要别的版本就 `jtool use <版本>`。
->
-> 该行为有运行时兜底：默认版本为空时，`jtool.bat` 自己按目录名推出版本、取最高的一个用
-> （不启动任何 java 进程），只有连一个 JDK 都找不到才报错并提示 `jtool use <version>`。
-> 所以手动把这行注释掉也不会让整台机器的 `java` 挂掉。
-
-> jtool 以 `JAVA_BASE_DIR` 作为唯一基准目录，并**按目录的真实布局**解析 JDK 路径，分三段，
-> 先廉价后昂贵：
->
-> 1. **快路径**（不 glob、不启动 java）：按序试 `<base>/jdk-<版本>.jdk`（macOS）、
->    `<base>/jdk-<版本>`（Linux / Windows）、`<base>/<版本>.jdk`、`<base>/<版本>`，
->    取其中有 `bin/java` 的那个作为 JDK home。macOS 的 bundle 布局会自动落到其 `Contents/Home`。
-> 2. **命名匹配**（仍不启动 java）：遍历 `<base>` 下的子目录，用**目录名推出来的版本**匹配——
->    `jdk-21.0.1` → `21.0.1`、`java-17-openjdk-amd64` → `17`、`temurin-21.jdk` → `21`。
->    到这一步，各厂商与各发行版的命名就都能命中了。
-> 3. **真实版本**（兜底）：名字和目录里的实际版本对不上时，才逐个跑 `java -version`
->    读出真实版本再匹配。
->
-> 前两段都不产生子进程，所以 `java` shim 这类热路径没有探测开销；只有名字骗人时
-> 才付出一次探测成本。
->
-> 若 JDK 装在别处（如 SDKMAN、Homebrew、手动解压），执行 `jtool scan` 后手动修改
-> `JAVA_BASE_DIR` 即可。例如 Homebrew 的 openjdk：
-> `JAVA_BASE_DIR="/opt/homebrew/opt/openjdk/libexec"`（Intel Mac 换成 `/usr/local/opt/...`）
-> ——目录名 `openjdk.jdk` 里没有版本号，会由第 3 段读真实版本兜住。
 
 ## 版本号说明
 
