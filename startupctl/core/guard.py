@@ -140,6 +140,26 @@ def _system_prefixes(platform):
             '/usr/sbin/', '/usr/bin/', '/lib/')
 
 
+def norm_name(name):
+    """进程名归一：小写 · 去登录 shell 的前导 '-' · 去 ':...' 后缀 · 去 '.exe'。
+
+    ⚠️ **Windows 的进程名带 .exe**（`cmd.exe` / `powershell.exe` / `conhost.exe`），
+       而名表里写的是裸名。不归一的话，在 Windows 上 **shell 与终端一个都匹配不上**：
+       `deny_all` 会把 `cmd.exe` 连同用户的终端一起杀掉——用户连"关掉它"都敲不了，
+       正是"把自己锁在门外"。本机是 macOS，这条路径永远走不到，只有实测才暴露。
+
+       登录 shell 的 comm 是 `-zsh`，所以要去前导 '-'；`kworker/0:1` 这类在下面另有处理。
+    """
+    s = (name or '').strip().lower().lstrip('-')
+    s = s.split(':')[0].strip()
+    if s.endswith('.exe'):
+        s = s[:-4]
+    return s
+
+
+_SESSION_SAFETY_NORM = frozenset(norm_name(x) for x in _SESSION_SAFETY)
+
+
 def _critical_names(platform):
     if platform == 'darwin':
         return _DARWIN_CRITICAL
@@ -175,9 +195,9 @@ def is_protected(proc, platform='', own_pids=()):
     prog = (getattr(proc, 'program', '') or '')
 
     # 3.5) ★ 还能操作保障：shell / 终端 / 会话。**任何模式下都保护。**
-    #      注意登录 shell 的 comm 形如 `-zsh`，要去掉前导 '-' 再比。
-    bare = low_comm.lstrip('-').split(':')[0].strip()
-    if bare in _SESSION_SAFETY or low_comm.lstrip('-') in _SESSION_SAFETY:
+    #      比较用归一后的名字（去前导 '-'、去 ':...'、去 '.exe'）——见 norm_name。
+    bare = norm_name(comm)
+    if bare in _SESSION_SAFETY_NORM:
         return True, 'shell / 终端 / 会话（保证你还能操作，否则无法改回来）'
 
     # 3) 系统账户：macOS 的 _windowserver 之类，杀掉会掉图形界面
@@ -185,12 +205,13 @@ def is_protected(proc, platform='', own_pids=()):
     if plat == 'darwin' and user.startswith('_'):
         return True, '系统账户 %s' % user
 
-    # 4) 权威名表（短而保守）
-    if low_comm in _critical_names(plat):
+    # 4) 权威名表（短而保守）。两边都归一，Windows 的 .exe 才匹配得上。
+    crit = frozenset(norm_name(x) for x in _critical_names(plat))
+    if bare in crit:
         return True, '系统基础进程（%s）' % comm
     # kworker/0:1、ksoftirqd/0 这类带实例后缀的
-    base = low_comm.split('/')[0].split(':')[0]
-    if plat not in ('darwin', 'win32') and base in _critical_names(plat):
+    base = low_comm.split('/')[0]
+    if plat not in ('darwin', 'win32') and norm_name(base) in crit:
         return True, '内核线程（%s）' % comm
 
     # 5) 可执行文件在系统目录

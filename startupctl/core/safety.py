@@ -66,17 +66,28 @@ def confirm(what, plan_lines, ctx, assume_yes=False):
         _record_authorization(what, plan_lines, ctx)
         return True
 
-    if not sys.stdin.isatty():
-        # 非交互且没给 -y：拒绝。这条让 `startupctl clean < /dev/null` 与 CI 天然安全。
+    def _refuse_noninteractive(why):
         print('检测到非交互环境，未执行任何改动。')
         print('  确认无误后请加 -y 跳过确认: startupctl %s -y' % what)
+        if why:
+            print('  （%s）' % why)
         return False
+
+    if not sys.stdin.isatty():
+        # 非交互且没给 -y：拒绝。这条让 `startupctl clean < /dev/null` 与 CI 天然安全。
+        return _refuse_noninteractive('')
 
     try:
         ans = input('%s：确定要执行吗？(y/n): ' % what)
     except (EOFError, KeyboardInterrupt):
+        # ★ 读到 EOF 就是**非交互**，不是"用户没回答"。要按同一条路报出去。
+        #
+        #   Windows 上这点尤其要紧：stdin 接 NUL 设备时 `isatty()` 返回 **True**
+        #   （NUL 是字符设备），于是上面那道闸拦不住，会走到这里来。若这里只是
+        #   静默 return False，用户看到的是"命令退出了但没说为什么"，
+        #   而自动化脚本也无从判断该加 -y。
         print('')
-        return False
+        return _refuse_noninteractive('没有读到确认输入（stdin 已结束）')
     return ans.strip().lower() in ('y', 'yes', '是')
 
 

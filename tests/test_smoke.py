@@ -1149,6 +1149,108 @@ def check_no_posix_only_calls():
             del sys.modules[mod]
 
 
+def check_windows_name_forms():
+    section('跨平台：Windows 的进程名带 .exe，保护名单必须匹配得上')
+
+    # 这条要是错了，后果是"把自己锁在门外"：deny_all 会把 cmd.exe 连同用户的终端
+    # 一起杀掉，他连"关掉它"都敲不了。而 macOS 上永远复现不了——进程名不带 .exe。
+    sys.path.insert(0, ROOT)
+    from startupctl.core import guard as G
+    from startupctl.core import proc as proc_mod
+
+    def P(comm, prog=''):
+        r = proc_mod.ProcRecord(pid=500, ppid=1, uid=None, user='',
+                                program=prog, comm=comm, args_str=prog)
+        r.origin = 'third_party'
+        return r
+
+    for comm in ('cmd.exe', 'powershell.exe', 'pwsh.exe', 'conhost.exe',
+                 'WindowsTerminal.exe', 'OpenConsole.exe', 'mintty.exe'):
+        ok, why = G.is_protected(P(comm), 'win32', set())
+        check(ok, 'Windows 上 %s 受保护（%s）' % (comm, why[:22]))
+
+    # POSIX 形态不能被归一化弄坏
+    for comm in ('-zsh', 'bash', 'tmux', 'sshd', 'screen'):
+        ok, _ = G.is_protected(P(comm), 'darwin', set())
+        check(ok, 'POSIX 上 %s 仍受保护' % comm)
+
+    # 系统基础进程的名表也要跨形态匹配
+    for comm in ('csrss.exe', 'winlogon.exe', 'lsass.exe', 'services.exe'):
+        ok, why = G.is_protected(P(comm), 'win32', set())
+        check(ok, 'Windows 核心进程 %s 受保护' % comm)
+
+    # norm_name 本身
+    check_eq(G.norm_name('CMD.EXE'), 'cmd', 'norm_name 去 .exe 并小写')
+    check_eq(G.norm_name('-zsh'), 'zsh', 'norm_name 去登录 shell 前导 -')
+    check_eq(G.norm_name('kworker/0:1'), 'kworker/0', 'norm_name 去 :实例后缀')
+
+    # 不该被误保护：一个普通第三方程序
+    ok, _ = G.is_protected(P('VendorHelper.exe', '/Library/PrivilegedHelperTools/VendorHelper.exe'),
+                           'win32', set())
+    check(not ok, '普通第三方程序不受保护（归一化没有误伤）')
+
+
+def check_eof_is_noninteractive():
+    section('确认环节：读到 EOF 也要按"非交互"报出来（Windows 上 NUL 的 isatty 为真）')
+
+    # Windows 上 stdin 接 NUL 设备时 isatty() 返回 True，于是非交互那道闸拦不住，
+    # 会走到 input() 并立刻 EOF。若那时只是静默 return False，用户看到的是
+    # "命令退出了但没说为什么"。所以 EOF 必须走同一条"非交互"提示。
+    sys.path.insert(0, ROOT)
+    import io as _io
+    from startupctl.core import safety
+
+    class _FakeTTY(object):
+        """isatty 说"是终端"，但一读就 EOF —— 正是 Windows NUL 的行为。"""
+        def isatty(self):
+            return True
+
+        def readline(self, *a):
+            raise EOFError()
+
+        def read(self, *a):
+            return ''
+
+    class _Ctx(object):
+        dry_run = False
+        assume_yes = False
+
+    real_in = sys.stdin
+    buf = _io.StringIO()
+    real_out = sys.stdout
+    try:
+        sys.stdin = _FakeTTY()
+        sys.stdout = buf
+        ok = safety.confirm('测试操作', ['  · 计划行'], _Ctx(), False)
+    finally:
+        sys.stdin = real_in
+        sys.stdout = real_out
+
+    text = buf.getvalue()
+    check_eq(ok, False, 'EOF 时 confirm 返回 False（不执行）')
+    check('非交互环境' in text, 'EOF 时也打出「非交互环境」提示')
+    check('-y' in text, '提示里给出加 -y 的用法')
+    check('计划行' in text, '计划仍然先打出来了')
+
+    # 正常交互（能读到 y）要照常工作
+    class _YesTTY(object):
+        def isatty(self):
+            return True
+
+        def readline(self, *a):
+            return 'y\n'
+
+    buf2 = _io.StringIO()
+    try:
+        sys.stdin = _YesTTY()
+        sys.stdout = buf2
+        ok2 = safety.confirm('测试操作', [], _Ctx(), False)
+    finally:
+        sys.stdin = real_in
+        sys.stdout = real_out
+    check_eq(ok2, True, '交互输入 y 时 confirm 返回 True')
+
+
 def check_cli_contracts():
     section('CLI 契约：HELP 行数 / 对齐 / 退出码')
     sys.path.insert(0, ROOT)
@@ -1182,7 +1284,30 @@ def check_version_sync():
     check_eq(vf, __version__, 'VERSION 文件与 startupctl.__version__ 一致')
 
 
+def _console_utf8():
+    """让测试自己的输出是 UTF-8。
+
+    Windows 上 Python 3.11 对**重定向**的 stdout 用 locale 编码（简体中文下是 GBK），
+    于是全是中文的断言消息一路乱码——测试跑挂了都看不出挂在哪。
+    产品侧早有同样一段（cli._console_utf8），测试侧一直缺；CI 在 windows-latest 上
+    跑同一套，所以这不是"本机环境问题"。
+
+    交互终端下只放宽 errors：把 tty 强改成 UTF-8 反而会在 GBK 控制台上花屏。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            if not hasattr(stream, 'reconfigure'):
+                continue
+            if getattr(stream, 'isatty', lambda: False)():
+                stream.reconfigure(errors='replace')
+            else:
+                stream.reconfigure(encoding='utf-8', errors='replace')
+        except Exception:
+            pass
+
+
 def main():
+    _console_utf8()
     print('startupctl 单元冒烟')
     print('仓库: %s' % ROOT)
     check_version_sync()
@@ -1203,6 +1328,8 @@ def main():
     check_guard_mode_vs_choice()
     check_gui_only_via_choose()
     check_no_posix_only_calls()
+    check_windows_name_forms()
+    check_eof_is_noninteractive()
     check_gui_picker()
     check_writeback_verified()
     check_cli_contracts()
