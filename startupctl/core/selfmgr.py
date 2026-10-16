@@ -97,8 +97,19 @@ _PAYLOAD_WIN = (
     ('config/startupctl.conf', 'config/startupctl.conf'),
 )
 
-# Windows 卸载时删除的功能项（bin\startupctl.bat 由 deploy_nt 生成，所以 bin 在列）
-_WIN_FUNC_ITEMS = ('bin', 'lib', 'config', 'VERSION')
+# Windows 的功能项（deploy_nt 部署前先删这批，_win_uninstall 也按它删）。
+#
+# 除了本版真正要装的四项，还列上**历史版本的 POSIX 遗留**
+# （completions / deploy.sh / shell-setup.sh / uninstall）：早期 deploy_nt 遍历的是
+# POSIX 载荷表，把它们也拷进过 Windows 安装目录。本项目虽然从未按旧格式发布过，
+# 但同一份代码在 CtfSweep 上确实这么干过——老用户升级上来时那几样会原封不动留着
+# （实测确认）。列在这里成本为零，且能让"装完干净"这条对所有来路都成立。
+#
+# ⚠️ 这里**绝不能**出现 cache / whitelist.json / backups / scans —— 那是用户数据，
+#    用户的硬契约是"永不自动删除"。
+_WIN_FUNC_ITEMS = ('bin', 'lib', 'config', 'VERSION',
+                   # 历史遗留（新版不再装，装上时要顺手清掉）
+                   'completions', 'deploy.sh', 'shell-setup.sh', 'uninstall')
 
 # Windows 安装态应有的组件
 _INSTALLED_ITEMS_WIN = ('lib/startupctl', 'VERSION', 'config/startupctl.conf')

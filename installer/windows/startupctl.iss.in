@@ -57,7 +57,23 @@ Root: HKCU; Subkey: "Environment"; \
   ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}\bin"; \
   Flags: preservestringtype; Check: NeedsAddPath('{app}\bin')
 
+[InstallDelete]
+; 清掉历史版本可能留下的 POSIX 侧文件（早期 deploy_nt 遍历 POSIX 载荷表时会拷这些）。
+; 本项目没按那种格式发布过，但同一份代码在 CtfSweep 上确实这么干过 —— 留着这段
+; 成本为零，且让"装完干净"对所有来路都成立。
+Type: filesandordirs; Name: "{app}\completions"
+Type: files; Name: "{app}\deploy.sh"
+Type: files; Name: "{app}\shell-setup.sh"
+Type: files; Name: "{app}\uninstall"
+Type: files; Name: "{app}\lib\startupctl.sh"
+
 [UninstallDelete]
+; bin 与 lib 是安装器专属目录，卸载后 Inno 只删它认识的文件、目录会留下空壳。
+; ptool 的 .iss 里记着同一个教训（shims 目录），这里显式收掉。
+; ⚠️ 不要顺手把 {app} 通配进来：用户级安装下安装根就是数据根，里面住着
+;    whitelist.json / backups / scans（"永不自动删除"）。
+Type: filesandordirs; Name: "{app}\bin"
+Type: filesandordirs; Name: "{app}\lib"
 ; 只清功能项之外的散落物。注意**不要**把 {app} 通配进来：
 ; 用户级安装下安装根就是数据根，里面住着 whitelist.json / backups / scans ——
 ; 那三样是「永不自动删除」，只能由用户显式命令清。
