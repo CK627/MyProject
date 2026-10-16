@@ -1,0 +1,112 @@
+{
+  "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run": {
+    "OneDrive": {
+      "value": "\"C:\\Users\\x\\AppData\\Local\\Microsoft\\OneDrive\\OneDrive.exe\" /background",
+      "type": "REG_SZ"
+    },
+    "Steam": {
+      "value": "\"C:\\Program Files (x86)\\Steam\\steam.exe\" -silent",
+      "type": "REG_SZ"
+    }
+  },
+  "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce": {
+    "Setup": {
+      "value": "C:\\Windows\\Temp\\setup.exe",
+      "type": "REG_SZ"
+    }
+  },
+  "HKLM\\Software\\Microsoft\\Windows\\CurrentVersion\\Run": {
+    "SecurityHealth": {
+      "value": "%SystemRoot%\\system32\\SecurityHealthSystray.exe",
+      "type": "REG_EXPAND_SZ"
+    },
+    "VendorUpdater": {
+      "value": "\"C:\\Program Files\\Vendor\\upd.exe\" /q",
+      "type": "REG_SZ"
+    }
+  },
+  "HKLM\\Software\\Wow6432Node\\Microsoft\\Windows\\CurrentVersion\\Run": {
+    "Old32Bit": {
+      "value": "C:\\Program Files (x86)\\Old\\old.exe",
+      "type": "REG_SZ"
+    }
+  },
+  "HKLM\\SYSTEM\\CurrentControlSet\\Services": {},
+  "HKLM\\SYSTEM\\CurrentControlSet\\Services\\VendorSvc": {
+    "Start": {
+      "value": 2,
+      "type": "REG_DWORD"
+    },
+    "Type": {
+      "value": 16,
+      "type": "REG_DWORD"
+    },
+    "ImagePath": {
+      "value": "\"C:\\Program Files\\Vendor\\svc.exe\" -service",
+      "type": "REG_SZ"
+    },
+    "DisplayName": {
+      "value": "Vendor Service",
+      "type": "REG_SZ"
+    },
+    "ObjectName": {
+      "value": "LocalSystem",
+      "type": "REG_SZ"
+    }
+  },
+  "HKLM\\SYSTEM\\CurrentControlSet\\Services\\WinSvc": {
+    "Start": {
+      "value": 2,
+      "type": "REG_DWORD"
+    },
+    "Type": {
+      "value": 32,
+      "type": "REG_DWORD"
+    },
+    "ImagePath": {
+      "value": "C:\\Windows\\System32\\svchost.exe -k netsvcs",
+      "type": "REG_SZ"
+    },
+    "DisplayName": {
+      "value": "Windows Service",
+      "type": "REG_SZ"
+    },
+    "ObjectName": {
+      "value": "LocalSystem",
+      "type": "REG_SZ"
+    }
+  },
+  "HKLM\\SYSTEM\\CurrentControlSet\\Services\\SomeDriver": {
+    "Start": {
+      "value": 0,
+      "type": "REG_DWORD"
+    },
+    "Type": {
+      "value": 1,
+      "type": "REG_DWORD"
+    },
+    "ImagePath": {
+      "value": "System32\\drivers\\some.sys",
+      "type": "REG_SZ"
+    }
+  },
+  "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run": {
+    "Steam": {
+      "value": [
+        3,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "type": "REG_BINARY"
+    }
+  }
+}

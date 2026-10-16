@@ -1,0 +1,5 @@
+[Desktop Entry]
+Type=Application
+Name=User Foo
+Exec=/usr/bin/foo
+Hidden=true

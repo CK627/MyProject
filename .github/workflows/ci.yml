@@ -1,0 +1,90 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  smoke:
+    name: smoke (${{ matrix.os }} · py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # 三平台都要跑：macOS 后端、Linux 后端、Windows 后端各有一段**只有本平台
+        # 才会执行**的代码路径（launchctl / /proc / winreg）。只跑 ubuntu 的话，
+        # 三个后端里有两个从没被执行过。
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ['3.8', '3.11', '3.13']
+    env:
+      # ★ 全局安全带（本设计里价值最高的一条护栏）：
+      #   即使测试写漏了、即使有 bug 摸到了 mutator，也**不可能**改动真实启动状态。
+      #   个别需要走执行路径的用例会在自己的 subprocess env 里显式覆盖它，
+      #   而那些用例操作的是夹具树的临时副本。
+      STARTUPCTL_DRY_RUN: '1'
+      # 数据目录挪到 runner 的临时区，绝不写用户家目录
+      STARTUPCTL_DATA_DIR: ${{ runner.temp }}/startupctl-data
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # Windows 上跑 PowerShell 版编排脚本（bash 在 windows runner 上虽有，
+      # 但 PATH/权限语义不同，用 pwsh 更贴近真实使用）
+      - name: 冒烟（macOS / Linux）
+        if: runner.os != 'Windows'
+        shell: bash
+        run: bash tests/smoke.sh
+
+      - name: 冒烟（Windows）
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m compileall -q startupctl tests
+          python -I tests/test_smoke.py
+          python -I -c "import sys; sys.path.insert(0,'.'); from startupctl.cli import main; sys.exit(main(['--version']))"
+          python -I -c "import sys; sys.path.insert(0,'.'); from startupctl.cli import main; sys.exit(main(['help']))"
+
+  contract:
+    name: 文件契约（行尾 + 编码）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: .bat / .ps1 必须是 CRLF 且纯 ASCII
+        run: |
+          set -u
+          fail=0
+          # 行尾：cmd 用**调用方**的代码页解码被 call 的批处理，UTF-8 中文注释在
+          # GBK 控制台上会跨行错位，cmd 会去执行文本碎片——这是真实存在过的故障。
+          # 所以 .bat 只允许 ASCII，且必须 CRLF。
+          for f in $(git ls-files '*.bat' '*.ps1'); do
+              if perl -0777 -ne 'exit(1) if /(?<!\r)\n/' "$f"; then
+                  echo "[ok  ] CRLF $f"
+              else
+                  echo "[FAIL] 有裸 LF: $f"; fail=1
+              fi
+          done
+          for f in $(git ls-files '*.bat'); do
+              if LC_ALL=C grep -qP '[\x80-\xFF]' "$f" 2>/dev/null; then
+                  echo "[FAIL] .bat 含非 ASCII: $f"; fail=1
+              else
+                  echo "[ok  ] ASCII $f"
+              fi
+          done
+          # git archive 不套用 .gitattributes 的 eol 规则，所以要**单独验一遍导出物**——
+          # update 正是从 GitHub 生成的 tarball 里取文件的。
+          if git rev-parse HEAD >/dev/null 2>&1; then
+              tmp=$(mktemp -d)
+              git archive HEAD | tar -x -C "$tmp" 2>/dev/null || true
+              for f in $(cd "$tmp" && find . -name '*.bat' 2>/dev/null); do
+                  if perl -0777 -ne 'exit(1) if /(?<!\r)\n/' "$tmp/$f"; then
+                      echo "[ok  ] archive CRLF $f"
+                  else
+                      echo "[FAIL] archive 里有裸 LF: $f（update 下来就是这份）"; fail=1
+                  fi
+              done
+              rm -rf "$tmp"
+          fi
+          exit $fail

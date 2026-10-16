@@ -1,0 +1,4 @@
+[Desktop Entry]
+Type=Application
+Name=System Foo
+Exec=/usr/bin/foo

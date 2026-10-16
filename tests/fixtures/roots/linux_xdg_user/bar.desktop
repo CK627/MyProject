@@ -1,0 +1,4 @@
+[Desktop Entry]
+Type=Application
+Name=Bar
+Exec=/opt/bar/bin/bar %U

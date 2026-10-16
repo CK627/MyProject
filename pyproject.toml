@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "startupctl"
+description = "启动项扫描与管理：看清 · 管住 · 清理开机自启项（零依赖，三平台）"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "CK627" }]
+keywords = ["startup", "launchd", "systemd", "autostart", "registry", "boot", "sysadmin"]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Topic :: System :: Systems Administration",
+]
+dynamic = ["version"]
+# ★ 零第三方依赖。这不是口号：本项目要读 plist、解析 systemd 单元、写注册表，
+#   全部用 plistlib / configparser / winreg 等标准库完成——装到一台救急的机器上时，
+#   "还得先 pip install 一堆东西"是最不需要的意外。
+dependencies = []
+
+[project.scripts]
+startupctl = "startupctl.cli:main"
+
+[tool.setuptools]
+packages = ["startupctl", "startupctl.core", "startupctl.backends"]
+
+[tool.setuptools.dynamic]
+version = { attr = "startupctl.__version__" }

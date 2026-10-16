@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Author>Vendor</Author></RegistrationInfo>
+  <Triggers><LogonTrigger><Enabled>true</Enabled></LogonTrigger></Triggers>
+  <Principals><Principal id="Author"><UserId>S-1-5-18</UserId></Principal></Principals>
+  <Settings><Hidden>false</Hidden><Enabled>true</Enabled></Settings>
+  <Actions Context="Author"><Exec>
+    <Command>C:\Program Files\Vendor\upd.exe</Command><Arguments>/task</Arguments>
+  </Exec></Actions>
+</Task>
