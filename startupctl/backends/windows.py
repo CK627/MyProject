@@ -41,6 +41,28 @@ from .base import Backend, iter_scan_files
 
 # registry views
 KEY_WOW64_64KEY = 0x0100
+
+
+# ★ 注册表 hive 的短名 → winreg 常量名。
+# 调用方到处传 'HKCU' / 'HKLM'，而 winreg 里叫 HKEY_CURRENT_USER / HKEY_LOCAL_MACHINE。
+# 曾经写成 `getattr(winreg, 'HKEY_' + hive)`，拼出 HKEY_HKCU 这个不存在的名字——
+# 夹具模式在 `_fixture()` 处就返回了，所以三个平台的 CI 都没碰到；一到真机
+# （Windows 10 实测）`startupctl list` 直接 AttributeError。
+HIVE_NAMES = {
+    'HKCU': 'HKEY_CURRENT_USER',
+    'HKLM': 'HKEY_LOCAL_MACHINE',
+    'HKCR': 'HKEY_CLASSES_ROOT',
+    'HKU': 'HKEY_USERS',
+}
+
+
+def _hive_const(winreg, hive):
+    """把 'HKCU' / 'HKLM' / 'HKEY_CURRENT_USER' 统一解析成 winreg 常量。"""
+    name = str(hive or '')
+    name = HIVE_NAMES.get(name.upper().replace('HKEY_', ''), name)
+    if not name.startswith('HKEY_'):
+        name = HIVE_NAMES.get(name.upper(), name)
+    return getattr(winreg, name)
 KEY_WOW64_32KEY = 0x0200
 
 RUN_KEY = r'Software\Microsoft\Windows\CurrentVersion\Run'
@@ -321,7 +343,7 @@ class WindowsBackend(Backend):
             return {}, 'no-winreg'
         try:
             flags = winreg.KEY_READ | (view or KEY_WOW64_64KEY)
-            k = winreg.OpenKey(getattr(winreg, 'HKEY_' + hive), key, 0, flags)
+            k = winreg.OpenKey(_hive_const(winreg, hive), key, 0, flags)
         except OSError as e:
             return {}, str(e)
         out = {}
@@ -357,7 +379,7 @@ class WindowsBackend(Backend):
         except ImportError:
             return [], 'no-winreg'
         try:
-            k = winreg.OpenKey(getattr(winreg, 'HKEY_' + hive), key, 0,
+            k = winreg.OpenKey(_hive_const(winreg, hive), key, 0,
                               winreg.KEY_READ | KEY_WOW64_64KEY)
         except OSError as e:
             return [], str(e)
@@ -410,7 +432,7 @@ class WindowsBackend(Backend):
             raise Refused('当前平台不支持注册表写入')
         import winreg
         flags = winreg.KEY_SET_VALUE | (view or KEY_WOW64_64KEY)
-        k = winreg.CreateKeyEx(getattr(winreg, 'HKEY_' + hive), key_path, 0, flags)
+        k = winreg.CreateKeyEx(_hive_const(winreg, hive), key_path, 0, flags)
         try:
             winreg.SetValueEx(k, name, 0, winreg.REG_SZ, value)
         finally:
@@ -631,7 +653,7 @@ class WindowsBackend(Backend):
             raise Refused('当前平台不支持注册表删除')
         import winreg
         try:
-            k = winreg.OpenKey(getattr(winreg, 'HKEY_' + hive), key, 0,
+            k = winreg.OpenKey(_hive_const(winreg, hive), key, 0,
                                winreg.KEY_SET_VALUE | KEY_WOW64_64KEY)
         except OSError as e:
             raise RuntimeError(str(e))

@@ -775,6 +775,25 @@ def check_windows_name_forms():
     check(not ok, '普通第三方程序不受保护（归一化没有误伤）')
 
 
+def check_windows_hive_names():
+    section('Windows 注册表 hive 解析（真机才会踩的那个坑）')
+    sys.path.insert(0, ROOT)
+    from startupctl.backends import windows as W
+
+    class FakeWinreg(object):
+        HKEY_CURRENT_USER = 'HKCU'
+        HKEY_LOCAL_MACHINE = 'HKLM'
+        HKEY_CLASSES_ROOT = 'HKCR'
+
+    # `getattr(winreg, 'HKEY_' + hive)` 会拼出 HKEY_HKCU —— 这个常量不存在。
+    # 夹具模式在 _fixture() 处就返回，所以 CI 从未走到这里；真机上一跑就 AttributeError。
+    check_eq(W._hive_const(FakeWinreg, 'HKCU'), 'HKCU', 'HKCU → HKEY_CURRENT_USER')
+    check_eq(W._hive_const(FakeWinreg, 'HKLM'), 'HKLM', 'HKLM → HKEY_LOCAL_MACHINE')
+    check_eq(W._hive_const(FakeWinreg, 'hkcu'), 'HKCU', '小写短名也认')
+    check_eq(W._hive_const(FakeWinreg, 'HKEY_CURRENT_USER'), 'HKCU',
+             '已经是完整常量名时不再加前缀')
+
+
 def check_iss_matches_payload():
     """Windows 载荷表与 .iss 的 [Files] 必须逐项一致。
 
@@ -1073,6 +1092,7 @@ def main():
     check_guard_locked_entries()
     check_no_posix_only_calls()
     check_windows_name_forms()
+    check_windows_hive_names()
     check_iss_matches_payload()
     check_eof_is_noninteractive()
     check_windows_payload_is_clean()
