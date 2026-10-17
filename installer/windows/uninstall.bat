@@ -38,14 +38,14 @@ if not defined INSTALL_DIR for %%i in ("%SCRIPT_DIR%\..\..") do if exist "%%~fi\
 if not defined INSTALL_DIR set "INSTALL_DIR=%ProgramFiles%\devtools\ptool"
 
 echo ========================================
-echo   ptool uninstaller (Windows)
+echo   ptool 卸载程序（Windows）
 echo ========================================
 echo.
-echo Install dir: %INSTALL_DIR%
+echo 安装目录: %INSTALL_DIR%
 echo.
 
 if exist "%INSTALL_DIR%\unins000.exe" (
-    echo Delegating to the Inno Setup uninstaller...
+    echo 正在调用 Inno Setup 卸载程序...
     start /wait "" "%INSTALL_DIR%\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
     echo.
     REM Inno can't always delete unins000.exe itself (it's the running image), and
@@ -55,8 +55,8 @@ if exist "%INSTALL_DIR%\unins000.exe" (
     REM Drop the now-empty devtools parent too -- only when no sibling project
     REM is left (rmdir fails silently on a non-empty directory).
     for %%i in ("%INSTALL_DIR%\..") do rmdir "%%~fi" 2>nul
-    echo Uninstall complete.
-    echo Please reopen a CMD window for the PATH change to take effect.
+    echo 卸载完成。
+    echo 请重新打开 CMD 窗口，PATH 变更才会生效。
     echo.
     pause
     exit /b 0
@@ -65,13 +65,13 @@ if exist "%INSTALL_DIR%\unins000.exe" (
 REM No Inno uninstaller: a repo-layout install. Confirm before removing anything.
 set /p "confirm=Remove %INSTALL_DIR% and its PATH entries? (y/n): "
 if /i not "!confirm!"=="y" (
-    echo Cancelled
+    echo 已取消
     pause
     exit /b 0
 )
 echo.
 
-echo [Env] Removing machine PATH entries...
+echo [环境] 正在移除机器级 PATH 项...
 REM Explicit ExpandString kind rather than Environment::SetEnvironmentVariable:
 REM a machine Path that silently loses REG_EXPAND_SZ stops expanding
 REM %SystemRoot%, which breaks half the entries on it.
@@ -79,20 +79,20 @@ REM try/catch so a non-elevated run reports NEED_ADMIN deterministically:
 REM OpenSubKey(...,$true) throws on access denied instead of returning $null.
 powershell -NoProfile -Command "$ErrorActionPreference='Stop'; $bin='%INSTALL_DIR%\bin'; $shim='%INSTALL_DIR%\shims'; $legacy='%USERPROFILE%\.devtools\ptool\shims'; function N($s){ $s.Trim().TrimEnd('\').ToUpperInvariant() }; try { $k=[Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('SYSTEM\CurrentControlSet\Control\Session Manager\Environment',$true); if($null -eq $k){ Write-Output 'NEED_ADMIN'; exit 3 }; $p=[string]$k.GetValue('Path',''); $keep=@($p -split ';' | Where-Object { $_ -and (N $_) -ne (N $bin) -and (N $_) -ne (N $shim) }); $k.SetValue('Path', ($keep -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString); $k.Close(); $u=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment',$true); if($u -and $null -ne $u.GetValue('Path')){ $up=[string]$u.GetValue('Path'); $ukeep=@($up -split ';' | Where-Object { $_ -and (N $_) -ne (N $legacy) }); $u.SetValue('Path', ($ukeep -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString); $u.Close() }; Write-Output 'OK' } catch { if($_.Exception -is [System.UnauthorizedAccessException] -or $_.Exception -is [System.Security.SecurityException]) { Write-Output 'NEED_ADMIN'; exit 3 } else { Write-Output ('ERROR: ' + $_.Exception.Message); exit 2 } }"
 if !errorlevel! equ 3 (
-    echo Error: administrator privileges are required to update the machine PATH.
-    echo Right-click uninstall.bat and choose "Run as administrator".
+    echo 错误: 更新机器级 PATH 需要管理员权限。
+    echo 请右键 uninstall.bat，选择「以管理员身份运行」。
     pause
     exit /b 1
 )
 if !errorlevel! neq 0 (
-    echo Error: failed to update the machine PATH, see the message above.
+    echo 错误: 更新机器级 PATH 失败，详见上面的信息。
     pause
     exit /b 1
 )
-echo [Done] Machine PATH cleaned
+echo [完成] 机器级 PATH 已清理
 
 if not exist "%INSTALL_DIR%" (
-    echo [Skip] Install dir not found
+    echo [跳过] 安装目录不存在
     goto :uninstall_done
 )
 
@@ -100,28 +100,28 @@ REM In the repo layout INSTALL_DIR resolves to the checkout root, so a plain
 REM rmdir here would delete a developer's clone along with any uncommitted work.
 REM PATH is already cleaned above, so stopping here is the whole job.
 if exist "%INSTALL_DIR%\.git" (
-    echo [Skip] %INSTALL_DIR% is a git checkout, not deleting it
-    echo        Delete it by hand if you really want it gone
+    echo [跳过] %INSTALL_DIR% 是 git 检出目录，不删除
+    echo        确实要删请手动处理
     goto :uninstall_done
 )
 REM Same rule, no .git needed: a directory derived from THIS script's location is
 REM a source tree by construction, .git or not. A repo-layout "install" only ever
 REM wrote PATH entries, so removing those is the complete uninstall.
 if "%FROM_REPO%"=="1" (
-    echo [Skip] %INSTALL_DIR% holds this installer's own source, not deleting it
-    echo        PATH entries are already removed above; delete the tree by hand
-    echo        if you really want it gone
+    echo [跳过] %INSTALL_DIR% 是安装脚本自身的源码目录，不删除
+    echo        PATH 项已在上方移除；要删目录请手动处理
+    echo        确实要删的话
     goto :uninstall_done
 )
 REM Last guard before the destructive step: an install dir never has installer\ or
 REM tests\ (only module\install.bat). Their presence means this is a source tree
 REM that slipped past the two checks above.
 if exist "%INSTALL_DIR%\installer" (
-    echo [Skip] %INSTALL_DIR% has an installer\ directory, not deleting it
+    echo [跳过] %INSTALL_DIR% 下有 installer\ 目录，不删除
     goto :uninstall_done
 )
 if exist "%INSTALL_DIR%\tests" (
-    echo [Skip] %INSTALL_DIR% has a tests\ directory, not deleting it
+    echo [跳过] %INSTALL_DIR% 下有 tests\ 目录，不删除
     goto :uninstall_done
 )
 
@@ -129,7 +129,7 @@ rmdir /s /q "%INSTALL_DIR%"
 REM Drop the now-empty devtools parent too -- only when no sibling project is
 REM left (rmdir fails silently on a non-empty directory).
 for %%i in ("%INSTALL_DIR%\..") do rmdir "%%~fi" 2>nul
-echo [Done] Removed %INSTALL_DIR%
+echo [完成] 已删除 %INSTALL_DIR%
 
 :uninstall_done
 echo.
@@ -143,9 +143,9 @@ powershell -NoProfile -Command "$root=Join-Path $env:USERPROFILE '.devtools\ptoo
 
 echo.
 echo ========================================
-echo   Uninstall complete!
+echo   卸载完成！
 echo ========================================
 echo.
-echo Please reopen a CMD window for the PATH change to take effect.
+echo 请重新打开 CMD 窗口，PATH 变更才会生效。
 echo.
 pause

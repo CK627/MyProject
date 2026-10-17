@@ -101,17 +101,17 @@ if not "!version!"=="" (
     goto :run_tool
 )
 
-echo Error: need tool name and version
-echo No default version is set and no Python was found under !PYTHON_BASE_DIR!
-echo Run: ptool use ^<version^>
+echo 错误: 需要指定工具名与版本号
+echo 未设置默认版本，且在 !PYTHON_BASE_DIR! 下没有找到 Python
+echo 请执行: ptool use ^<版本号^>
 exit /b 1
 
 :run_tool
 call :resolve_py "!version!" python_exe
 if not defined python_exe (
-    echo Error: Python !version! not found
-    echo Base dir: !PYTHON_BASE_DIR!
-    echo Run "ptool scan" or edit PYTHON_BASE_DIR
+    echo 错误: 找不到 Python !version!
+    echo 基准目录: !PYTHON_BASE_DIR!
+    echo 请执行 "ptool scan" 或修改 PYTHON_BASE_DIR
     exit /b 1
 )
 
@@ -129,14 +129,14 @@ if "!tool!"=="python3" ( "!python_exe!" !TOOL_ARGS! & exit /b !errorlevel! )
 if "!tool!"=="pip"     ( "!python_exe!" -m pip !TOOL_ARGS! & exit /b !errorlevel! )
 if "!tool!"=="pip3"    ( "!python_exe!" -m pip !TOOL_ARGS! & exit /b !errorlevel! )
 
-echo Error: tool '!tool!' not found
+echo 错误: 找不到工具 '!tool!'
 exit /b 1
 
 REM ============================================
 REM List Pythons
 REM ============================================
 :list_pythons
-echo Installed Pythons:
+echo 已安装的 Python:
 set "found=0"
 
 REM Prefer the official py launcher; covers python.org, Store, PEP 514 runtimes
@@ -169,24 +169,24 @@ REM ============================================
 REM Help
 REM ============================================
 :show_help
-echo ptool - Python version manager for Windows
+echo ptool - Windows 下的 Python 版本管理工具
 echo.
-echo Usage:
-echo   ptool ^<tool^> ^<version^> [args...]   Run a tool
-echo   ptool list                          List Pythons
-echo   ptool use ^<version^>                Set default version
-echo   ptool current                       Show current version
-echo   ptool home ^<version^>               Show install path
-echo   ptool info ^<version^>               Show details
-echo   ptool tools ^<version^>              List tools
-echo   ptool run ^<version^> ^<file.py^>    Run a Python file
-echo   ptool scan                          Scan Python paths
-echo   ptool config                        Show config
-echo   ptool install                       Full install
-echo   ptool update                        Check and update
-echo   ptool uninstall [-y]                Uninstall (-y silent)
-echo   ptool shim                          Rebuild shims
-echo   ptool help                          Show help
+echo 用法:
+echo   ptool ^<工具^> ^<版本^> [参数...]   运行指定版本的工具
+echo   ptool list                          列出已安装的 Python
+echo   ptool use ^<版本^>                设置默认版本
+echo   ptool current                       查看当前默认版本
+echo   ptool home ^<版本^>               输出安装路径
+echo   ptool info ^<版本^>               显示详细信息
+echo   ptool tools ^<版本^>              列出可用工具
+echo   ptool run ^<版本^> ^<文件.py^>    运行 Python 文件
+echo   ptool scan                          重新扫描 Python 路径
+echo   ptool config                        查看配置信息
+echo   ptool install                       完整安装
+echo   ptool update                        检查并更新
+echo   ptool uninstall [-y]                卸载（-y 跳过确认）
+echo   ptool shim                          重建 shim 脚本
+echo   ptool help                          显示帮助
 REM Without this the flow falls straight into :cmd_use below, which prints
 REM "Error: specify a version" and exits 1 for `ptool help` (and bare `ptool`).
 exit /b 0
@@ -203,8 +203,8 @@ REM the other order adds a trailing space to the probe file, which does not
 REM matter here but keeps the pattern consistent across the file.
 >"%CONFIG_DIR%\.write-probe" echo ok 2>nul
 if not exist "%CONFIG_DIR%\.write-probe" (
-    echo Error: cannot write %CONFIG_FILE%
-    echo Administrator privileges are required. Open an elevated CMD and run:
+    echo 错误: 无法写入 %CONFIG_FILE%
+    echo 需要管理员权限。请以管理员身份打开 CMD 后执行:
     echo   ptool use %~2
     exit /b 1
 )
@@ -215,7 +215,7 @@ REM Redirect before echo: the other order appends a trailing space.
 >>"%CONFIG_FILE%.tmp" echo PTOOL_DEFAULT_VERSION="%~2"
 move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
 set "PTOOL_DEFAULT_VERSION=%~2"
-echo Default version set: %~2
+echo 已设置默认版本: %~2
 exit /b 0
 
 REM ============================================
@@ -223,10 +223,10 @@ REM current
 REM ============================================
 :cmd_current
 if "!PTOOL_DEFAULT_VERSION!"=="" ( echo No default version & exit /b 1 )
-echo Default: !PTOOL_DEFAULT_VERSION!
+echo 默认版本: !PTOOL_DEFAULT_VERSION!
 call :resolve_py "!PTOOL_DEFAULT_VERSION!" cur_exe
 if not defined cur_exe set "cur_exe=(not found, run: ptool scan)"
-echo Path: !cur_exe!
+echo 路径: !cur_exe!
 exit /b 0
 
 REM ============================================
@@ -251,11 +251,11 @@ if not defined info_exe ( echo Error: Python %~2 not found & exit /b 1 )
 for %%f in ("!info_exe!") do set "info_dir=%%~dpf"
 set "info_dir=!info_dir:~0,-1!"
 echo === Python %~2 ===
-echo Path: !info_exe!
+echo 路径: !info_exe!
 echo.
 "!info_exe!" --version 2>&1
 echo.
-echo Tools:
+echo 工具:
 for %%f in ("!info_dir!\python*.exe" "!info_dir!\pip*.exe") do echo   %%~nxf
 exit /b 0
 
@@ -268,7 +268,7 @@ call :resolve_py "%~2" tools_exe
 if not defined tools_exe ( echo Error: Python %~2 not found & exit /b 1 )
 for %%f in ("!tools_exe!") do set "tools_dir=%%~dpf"
 set "tools_dir=!tools_dir:~0,-1!"
-echo Python %~2 tools:
+echo Python %~2 的可用工具:
 for %%f in ("!tools_dir!\python*.exe" "!tools_dir!\pip*.exe") do echo   %%~nxf
 exit /b 0
 
@@ -296,7 +296,7 @@ set "RUN_ARGS=!RUN_ARGS! %1"
 shift /1
 goto :run_collect
 :run_ready
-echo === Run (Python !run_ver!) ===
+echo === 运行 (Python !run_ver!) ===
 "!run_exe!" "!run_file!" !RUN_ARGS!
 exit /b !errorlevel!
 
@@ -311,7 +311,7 @@ REM ============================================
 REM config
 REM ============================================
 :cmd_config
-echo Config file: %CONFIG_FILE%
+echo 配置文件: %CONFIG_FILE%
 echo.
 if exist "%CONFIG_FILE%" ( type "%CONFIG_FILE%" ) else ( echo Not found, run: ptool scan )
 exit /b 0
@@ -334,7 +334,7 @@ REM administrator reads as non-admin and the elevated copy re-elevates in a
 REM loop. fltmc only needs the token to be elevated and ships with Windows.
 fltmc >nul 2>&1
 if !errorlevel! neq 0 (
-    echo update needs admin, requesting elevation...
+    echo 更新需要管理员权限，正在请求提权...
     powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -ArgumentList 'update' -Verb RunAs"
     exit /b 0
 )
@@ -349,7 +349,7 @@ REM ============================================
 REM update via curl + tar (no git needed)
 REM ============================================
 :update_via_curl
-echo Checking for updates...
+echo 正在检查更新...
 set "REMOTE_VERSION="
 REM Mirror first. raw.githubusercontent.com / api.github.com are not reachable from
 REM every network, and this one is: same VERSION file, one GET, no VPN needed.
@@ -366,7 +366,7 @@ REM probing the version check fails even though the archive download below (whic
 REM goes through codeload) would have succeeded.
 if "!REMOTE_VERSION!"=="" for /f "usebackq delims=" %%v in (`curl -fsSL -H "Accept: application/vnd.github.raw" "https://api.github.com/repos/CK627/MyProject/contents/VERSION?ref=ptool" 2^>nul`) do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
 if "!REMOTE_VERSION!"=="" (
-    echo Version read failed, falling back to git...
+    echo 读取版本号失败，改用 git 方式...
     goto :update_via_git
 )
 
@@ -380,17 +380,17 @@ if defined LOCAL_VERSION set "LOCAL_VERSION=!LOCAL_VERSION:"=!"
 if defined LOCAL_VERSION set "LOCAL_VERSION=!LOCAL_VERSION: =!"
 
 if "!LOCAL_VERSION!"=="!REMOTE_VERSION!" (
-    echo Already up to date ^(v!LOCAL_VERSION!^)
+    echo 已是最新版本 ^(v!LOCAL_VERSION!^)
     exit /b 0
 )
 
-echo New version: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
+echo 发现新版本: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
 
 set "UPD_TMP=%TEMP%\ptool-update"
 rmdir /s /q "%UPD_TMP%" 2>nul
 mkdir "%UPD_TMP%"
 
-echo Downloading update...
+echo 正在下载更新...
 REM Mirror first here too. The mirror's source tarball is packed with the same
 REM top-level directory as GitHub's archive (MyProject-ptool\), so %UPD_SRC%
 REM below resolves either way.
@@ -414,8 +414,8 @@ set "SRC=%UPD_TMP%\MyProject-ptool"
 
 copy /y "!SRC!\bin\ptool.bat" "%BIN_DIR%\" >nul
 if !errorlevel! neq 0 (
-    echo Error: cannot write %BIN_DIR%
-    echo Please run as administrator
+    echo 错误: 无法写入 %BIN_DIR%
+    echo 请以管理员身份运行
     exit /b 1
 )
 if exist "!SRC!\installer\windows\install.bat" (
@@ -436,8 +436,8 @@ move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
 
 rmdir /s /q "%UPD_TMP%" 2>nul
 
-echo Update complete!
-echo   Version: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
+echo 更新完成！
+echo   版本: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
 exit /b 0
 
 REM ============================================
@@ -446,7 +446,7 @@ REM ============================================
 :update_via_git
 where git >nul 2>&1
 if !errorlevel! neq 0 (
-    echo Error: no git and no curl/tar, cannot update
+    echo 错误: 没有 git，也没有 curl/tar，无法更新
     exit /b 1
 )
 
@@ -458,7 +458,7 @@ REM the user has to know about (and uninstall has to remember to clean).
 set "REPO_DIR=%TEMP%\ptool-repo"
 rmdir /s /q "!REPO_DIR!" 2>nul
 
-echo First update, cloning repo...
+echo 首次更新，正在克隆仓库...
 git clone --branch ptool --single-branch --depth 1 https://github.com/CK627/MyProject.git "!REPO_DIR!"
 if !errorlevel! neq 0 ( echo Clone failed & goto :git_fail )
 
@@ -476,16 +476,16 @@ if defined LOCAL_VERSION set "LOCAL_VERSION=!LOCAL_VERSION:"=!"
 if defined LOCAL_VERSION set "LOCAL_VERSION=!LOCAL_VERSION: =!"
 
 if "!LOCAL_VERSION!"=="!REMOTE_VERSION!" (
-    echo Already up to date ^(v!LOCAL_VERSION!^)
+    echo 已是最新版本 ^(v!LOCAL_VERSION!^)
     goto :git_done
 )
 
-echo New version: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
+echo 发现新版本: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
 
 copy /y "!REPO_DIR!\bin\ptool.bat" "%BIN_DIR%\" >nul
 if !errorlevel! neq 0 (
-    echo Error: cannot write %BIN_DIR%
-    echo Please run as administrator
+    echo 错误: 无法写入 %BIN_DIR%
+    echo 请以管理员身份运行
     goto :git_fail
 )
 if exist "!REPO_DIR!\installer\windows\install.bat" (
@@ -502,8 +502,8 @@ REM Redirect before echo: the other order appends a trailing space.
 >>"%CONFIG_FILE%.tmp" echo PTOOL_VERSION="!REMOTE_VERSION!"
 move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
 
-echo Update complete!
-echo   Version: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
+echo 更新完成！
+echo   版本: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
 goto :git_done
 
 :git_fail
@@ -521,19 +521,19 @@ REM ============================================
 if "%~2"=="-y" goto :uninstall_silent
 if exist "%INSTALL_DIR%\unins000.exe" (
     start "" "%INSTALL_DIR%\unins000.exe"
-    echo Uninstaller started, confirm in dialog
+    echo 卸载程序已启动，请在弹窗中确认
 ) else (
-    echo Uninstaller not found %INSTALL_DIR%\unins000.exe
-    echo Uninstall via Control Panel - Add or Remove Programs
+    echo 找不到卸载程序: %INSTALL_DIR%\unins000.exe
+    echo 请到「控制面板 → 程序和功能」中卸载
 )
 exit /b 0
 
 :uninstall_silent
 if exist "%INSTALL_DIR%\unins000.exe" (
     start /wait "" "%INSTALL_DIR%\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
-    echo Uninstall complete
+    echo 卸载完成
 ) else (
-    echo Uninstaller not found %INSTALL_DIR%\unins000.exe
+    echo 找不到卸载程序: %INSTALL_DIR%\unins000.exe
 )
 exit /b 0
 
@@ -565,8 +565,8 @@ REM dir, no admin), so the probe is what actually decides. Redirect first: the
 REM other order appends a trailing space to the file.
 >"!SHIMS_DIR!\.shim-probe" echo ok 2>nul
 if not exist "!SHIMS_DIR!\.shim-probe" (
-    echo Error: cannot write !SHIMS_DIR!
-    echo Administrator privileges are required. Open an elevated CMD and run:
+    echo 错误: 无法写入 !SHIMS_DIR!
+    echo 需要管理员权限。请以管理员身份打开 CMD 后执行:
     echo   ptool shim
     exit /b 1
 )
@@ -587,14 +587,14 @@ for %%t in (python python3 pip pip3) do (
         echo set "CONFIG_FILE=!CONFIG_FILE!"
         echo for %%%%i in ^("%%CONFIG_FILE%%\..\.."^) do set "PTOOL_ROOT=%%%%~fi"
         echo if not exist "%%PTOOL_ROOT%%\bin\ptool.bat" ^(
-        echo     echo ptool: %%PTOOL_ROOT%%\bin\ptool.bat not found ^>^&2
+        echo     echo ptool: 找不到 %%PTOOL_ROOT%%\bin\ptool.bat ^>^&2
         echo     exit /b 1
         echo ^)
         echo "%%PTOOL_ROOT%%\bin\ptool.bat" %%t %%*
     ) > "!SHIMS_DIR!\%%t.bat"
 )
 
-echo Shims created: !SHIMS_DIR!
+echo Shim 已创建: !SHIMS_DIR!
 
 if "!SHIMS_SCOPE!"=="machine" (
     REM Put on the machine PATH by the installer -- the Registry section in the
@@ -603,7 +603,7 @@ if "!SHIMS_SCOPE!"=="machine" (
     REM No brackets or parens in these comment lines on purpose: this is a
     REM parenthesised block, and cmd counts a closing paren in a REM as ending
     REM it.
-    echo Scope: machine ^(prepended to the machine PATH by the installer^)
+    echo 作用域: 机器级 ^(安装程序已将其前置到机器级 PATH^)
     exit /b 0
 )
 
