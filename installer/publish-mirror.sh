@@ -1,4 +1,5 @@
 #!/bin/bash
+# encoding: utf-8
 # 把发布产物推到国内镜像服务器（httpd 已在跑，无需 VPN 可直连）
 #
 # 用法:

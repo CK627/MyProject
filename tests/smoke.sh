@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# encoding: utf-8
 # ptool 冒烟测试（macOS / Linux）
 #
 # 用法: bash tests/smoke.sh

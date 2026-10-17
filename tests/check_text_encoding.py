@@ -5,7 +5,8 @@ r"""体检「文本编码契约」（devtool 系列一致）。
 
 一切文本 **UTF-8 无 BOM**（Inno Setup 例外，见下），文件头部加一行**编码声明**：
 
-    .sh / .py    # encoding: utf-8          （.py 也接受 PEP 263 的 `# -*- coding: utf-8 -*-`）
+    .sh          # encoding: utf-8
+    .py          # -*- coding: utf-8 -*-   （PEP 263）
     .bat         @rem encoding: utf-8
     .ps1         # encoding: ascii-b64      （经 irm|iex 分发）
                  # encoding: utf-8-bom      （从磁盘执行）
@@ -50,7 +51,9 @@ r"""体检「文本编码契约」（devtool 系列一致）。
   UTF-8；BOM 可有可无（ISCC 6.7.3 实测两种都对）。
 
 `.sh` / `.py`
-  声明**可选**：shell 字节透明、Python 3 默认 UTF-8，声明只作文档。但**写了就必须对**。
+  `# encoding: utf-8` / `# -*- coding: utf-8 -*-`。对 shell 是文档（字节透明），
+  对 Python 3 是冗余（默认 UTF-8），但**统一要求**：一条规则比"看情况"更容易守，
+  也让"这个文件是什么编码"在任何编辑器里都是自解释的。
 
 ⚠️ 用 Python 判字节而不是 `grep -P '[\x80-\xFF]'`：BSD grep（macOS 自带）
    不支持 `-P` 与 `\xNN`，本地跑不出来；Python 到处都一样。
@@ -72,8 +75,8 @@ FORMATS = {
     '.bat': (True, ('utf-8',)),
     '.ps1': (True, ('ascii-b64', 'utf-8-bom', 'utf-8')),
     '.iss': (True, ('utf-8', 'utf-8-bom')),
-    '.sh':  (False, ('utf-8',)),
-    '.py':  (False, ('utf-8',)),
+    '.sh':  (True, ('utf-8',)),
+    '.py':  (True, ('utf-8',)),
 }
 
 

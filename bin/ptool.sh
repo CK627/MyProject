@@ -1,4 +1,5 @@
 #!/bin/bash
+# encoding: utf-8
 # ptool - 统一 Python 版本管理工具
 # 支持 macOS / Linux
 

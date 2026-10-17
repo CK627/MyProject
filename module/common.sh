@@ -1,4 +1,5 @@
 #!/bin/bash
+# encoding: utf-8
 # ptool 安装模块（被 ptool.sh source 调用）
 
 # 登录 shell 对应的 rc 文件（macOS 默认 zsh）
