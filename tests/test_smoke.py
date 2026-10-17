@@ -1011,9 +1011,11 @@ def check_cli_contracts():
     check(H.help_lines() <= 50, 'HELP 行数 %d <= 50' % H.help_lines())
     # 与 ptool 同形：「用法:」本身就是命令清单，不另设「子命令:」分区；
     # 而且本工具**没有 `--` 旗标**，所以帮助里也不该出现「选项:」分区。
-    for anchor in ('用法:', '示例:', '说明:'):
+    for anchor in ('用法:', '示例:'):
         check(any(l.strip() == anchor for l in H.HELP.splitlines()),
               'HELP 含分节 %s' % anchor)
+    check(not any(l.strip() == '说明:' for l in H.HELP.splitlines()),
+          'HELP 没有「说明:」段（用户要求去掉）')
     check(not any(l.strip() == '选项:' for l in H.HELP.splitlines()),
           'HELP 没有「选项:」分区（本工具不用旗标）')
     # 命令清单必须**全部可见**：不允许出现 `whitelist ...` 这类省略号条目。
@@ -1022,6 +1024,27 @@ def check_cli_contracts():
     check(not any(l.strip().startswith('startupctl ') and '--' in l
                   for l in H.HELP.splitlines()),
           '用法里没有 `--` 旗标')
+    # 用法只列**最外层命令**：子命令（all / deny_all / selector …）交给 Tab 补全，
+    # 不铺在帮助里。这里按"第一列只有两个词"来判定。
+    # 只看「用法:」段；示例段当然有更多词。
+    usage_lines = []
+    in_usage = False
+    for l in H.HELP.splitlines():
+        if l.strip() == '用法:':
+            in_usage = True
+            continue
+        if in_usage and not l.strip():
+            break
+        if in_usage and l.startswith('  startupctl '):
+            usage_lines.append(l)
+    # 命令列 = 第一个两空格之前的片段；它必须正好是 `startupctl <命令>`。
+    heads = [l.strip().split('  ')[0].strip() for l in usage_lines]
+    outer = [h.split()[1] for h in heads if len(h.split()) > 1]
+    check(all(len(h.split()) == 2 for h in heads),
+          '用法每行只有 `startupctl <命令>` 两个词（子命令交给 Tab）')
+    check(set(outer) == {'list', 'mode', 'whitelist', 'blacklist', 'config',
+                         'version', 'help', 'update', 'install', 'uninstall'},
+          '用法恰好列出 10 个最外层命令')
     probs = H.align_report()
     check(not probs, 'HELP 各节描述列对齐一致（问题: %s）' % (probs[:2] or '无'))
     check(max(__import__('startupctl.core.output', fromlist=['dw']).dw(l)

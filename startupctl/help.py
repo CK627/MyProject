@@ -16,46 +16,22 @@ from .core.output import dw, pad
 TITLE = 'startupctl - 启动项扫描与管理（零依赖，Python 3.8+）'
 
 COMMANDS = [
-    ('startupctl list', '列出第三方启动项'),
-    ('startupctl list all', '连系统项一起列'),
-    ('startupctl list system', '只看系统项'),
-    ('startupctl mode', '看当前模式与将会发生什么'),
-    ('startupctl mode deny_all', '全部拒绝：除系统基础进程外一律结束'),
-    ('startupctl mode blacklist', '黑名单：只结束挑中的'),
-    ('startupctl mode whitelist', '白名单：只放行挑中的'),
-    ('startupctl mode whitelist confirm', '同上，跳过确认（脚本用）'),
-    ('startupctl mode off', '关闭干预（默认）'),
-    ('startupctl whitelist', '管理白名单：启动项 / 进程两个页'),
-    ('startupctl whitelist startup', '只看白名单里的启动项'),
-    ('startupctl whitelist process', '只看白名单里的进程'),
-    ('startupctl whitelist startup selector', '选择启动项加入白名单'),
-    ('startupctl whitelist process selector', '选择进程加入白名单'),
-    ('startupctl blacklist', '管理黑名单：启动项 / 进程两个页'),
-    ('startupctl blacklist startup', '只看黑名单里的启动项'),
-    ('startupctl blacklist process', '只看黑名单里的进程'),
-    ('startupctl blacklist startup selector', '选择启动项加入黑名单'),
-    ('startupctl blacklist process selector', '选择进程加入黑名单'),
+    ('startupctl list', '列出启动项（默认第三方）'),
+    ('startupctl mode', '三种模式：off · deny_all · blacklist · whitelist'),
+    ('startupctl whitelist', '白名单（启动项 / 进程）'),
+    ('startupctl blacklist', '黑名单（启动项 / 进程）'),
     ('startupctl config', '显示配置、数据目录与模式'),
     ('startupctl version', '显示版本'),
-    ('startupctl help [子命令]', '帮助（给子命令名则看它的完整说明）'),
-    ('startupctl update [check]', '检查并更新到最新版本'),
+    ('startupctl help', '帮助（给子命令名看详情）'),
+    ('startupctl update', '检查并更新到最新版本'),
     ('startupctl install', '完整安装（从源码目录）'),
-    ('startupctl uninstall [confirm]', '卸载（confirm 跳过确认）'),
+    ('startupctl uninstall', '卸载'),
 ]
 
 EXAMPLES = [
     ('startupctl list', '看这台机器有哪些第三方启动项'),
-    ('startupctl whitelist process selector', '开窗口选要放行的进程'),
-    ('startupctl whitelist startup selector', '开窗口选要放行的启动项'),
-    ('startupctl mode whitelist', '按白名单执行：只留挑中的'),
-    ('startupctl mode', '看这么设置会结束哪些进程（不改动）'),
-]
-
-NOTES = [
-    '两个维度: 名单同时管启动项与进程，判定时命中任一即算命中',
-    '系统永不结束: 三种模式都保留系统基础进程，以及你还在用的 shell / 终端',
-    '选中才生效: 名单为空时拒绝切到白/黑名单模式——空名单等于「除系统外全杀」',
-    '策略文件: ~/.devtools/startupctl/guard.json（JSON，可直接编辑）',
+    ('startupctl whitelist', '开窗口挑要放行 / 要拦的东西'),
+    ('startupctl mode', '先看当前模式会结束哪些进程（不改动）'),
 ]
 
 SUB_HELP = {
@@ -169,9 +145,6 @@ def _build():
     lines.append('')
     lines.append('示例:')
     lines.extend(_rows(EXAMPLES))
-    lines.append('')
-    lines.append('说明:')
-    lines.extend('  ' + n for n in NOTES)
     return '\n'.join(lines) + '\n'
 
 
