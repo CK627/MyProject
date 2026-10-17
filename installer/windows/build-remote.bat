@@ -18,12 +18,12 @@ if "%TOOL%"=="" set "TOOL=ctfsweep"
 set "WORKDIR=%~dp0"
 set "WORKDIR=%WORKDIR:~0,-1%"
 
-echo ==> Work dir: %WORKDIR%
+echo ==> 工作目录: %WORKDIR%
 
 call :find_iscc
 
 if not defined ISCC (
-    echo ==> Inno Setup not found, installing
+    echo ==> 未找到 Inno Setup，正在安装
 
     REM The installer is fetched by build-from-mac.sh and shipped alongside the
     REM sources: this machine cannot reach GitHub's release CDN directly
@@ -31,13 +31,13 @@ if not defined ISCC (
     REM Do NOT use jrsoftware.org/download.php/is.exe either -- that returns an
     REM HTML interstitial (~10 KB), not the installer.
     if exist "%WORKDIR%\innosetup.exe" (
-        echo     running bundled installer...
+        echo     正在运行随包安装程序...
         "%WORKDIR%\innosetup.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-
         call :find_iscc
     )
 
     if not defined ISCC (
-        echo     bundled install failed, falling back to winget...
+        echo     随包安装失败，改试 winget...
         where winget >nul 2>&1
         if !errorlevel! equ 0 (
             winget install --id JRSoftware.InnoSetup -e --silent --accept-package-agreements --accept-source-agreements
@@ -46,7 +46,7 @@ if not defined ISCC (
     )
 
     if not defined ISCC (
-        echo ERROR: ISCC.exe still not found after installing Inno Setup
+        echo 错误: 安装 Inno Setup 后仍找不到 ISCC.exe
         exit /b 1
     )
 )
@@ -56,18 +56,18 @@ echo ==> ISCC: %ISCC%
 cd /d "%WORKDIR%"
 "%ISCC%" "%WORKDIR%\%TOOL%.iss"
 if !errorlevel! neq 0 (
-    echo ERROR: ISCC compilation failed, exit code !errorlevel!
+    echo 错误: ISCC 编译失败，退出码 !errorlevel!
     exit /b 1
 )
 
 set "EXE="
 for %%f in ("%WORKDIR%\%TOOL%-setup-*.exe") do set "EXE=%%~ff"
 if not defined EXE (
-    echo ERROR: compiled but %TOOL%-setup-*.exe not found
+    echo 错误: 编译完成但找不到 %TOOL%-setup-*.exe
     exit /b 1
 )
 
-echo ==> Output: !EXE!
+echo ==> 产物: !EXE!
 exit /b 0
 
 REM ---------------------------------------------------------------

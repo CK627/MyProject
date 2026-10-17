@@ -269,6 +269,16 @@ rm -rf "$_stage" "$_stage_home" "$_boot_root" "$_empty"
 # ------------------------------- README 骨架章节（devtool 系列一致）
 # 系列以 ptool 的 README 为基准，13 个顶级章节是这套文档的招牌。只要求"至少包含"
 # ——各项目可以有额外章节（自己特有的功能说明）。缺任何一个都算漂了。
+# ------------------------------- .bat 编码契约（无 BOM · 有中文则须 chcp 65001）
+# 依据：Windows 10 / 代码页 936 实测 —— 带 BOM 第一行就崩，LF-only 会碎片化解析，
+# UTF-8 无 BOM + CRLF + chcp 65001 在直接调用与 call 下都正常。
+echo "== .bat 编码契约 =="
+if _bat="$(python3 -I tests/check_bat_encoding.py bin/*.bat installer/windows/*.bat 2>&1)"; then
+    echo "$_bat" | tail -4
+else
+    _fail ".bat 编码契约（${_bat}）"
+fi
+
 echo "== README 骨架章节 =="
 if _rd="$(python3 -I tests/check_readme.py README.md 2>&1)"; then
     echo "$_rd"
