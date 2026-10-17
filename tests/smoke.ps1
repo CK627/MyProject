@@ -1,3 +1,4 @@
+﻿# encoding: utf-8-bom
 # ptool 冒烟测试（Windows）
 #
 # 用法: pwsh tests/smoke.ps1

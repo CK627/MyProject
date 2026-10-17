@@ -83,7 +83,7 @@ jobs:
       - name: .bat 编码契约（无 BOM · 有中文则须 chcp 65001）
         run: |
           set -uo pipefail
-          python3 tests/check_bat_encoding.py $(git ls-files '*.bat')
+          python3 tests/check_text_encoding.py
   # Windows 侧冒烟：cmd 的行为只能在 Windows 上验
   windows:
     name: windows smoke

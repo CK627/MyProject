@@ -1,53 +1,76 @@
-# ptool 一键安装脚本（Windows）
+# encoding: ascii-b64
+# ptool one-click installer (Windows, PowerShell 5.1+)
 #
-# 用法（PowerShell，安装后自动刷新当前会话的 PATH）:
+# Usage (refreshes PATH in the current session when done):
 #   irm https://raw.githubusercontent.com/CK627/MyProject/ptool/installer/install.ps1 | iex
 #
-# 国内镜像（无需 VPN，同一份脚本，只是换个下载地址）:
+# China mirror (no VPN needed, same script, different download host):
 #   irm http://101.132.165.98/dist/ptool/install.ps1 | iex
 #
-# 会下载最新 Release 的 .exe 并静默安装。需要管理员权限（会弹 UAC）。
+# Downloads the latest release .exe and installs it silently. Requires
+# administrator rights (UAC prompt). Switch source with
+# $env:PTOOL_MIRROR='<url>' ('none' = GitHub only).
+#
+# ASCII only, and deliberately NO BOM:
+#   * "irm ... | iex" passes the body to Invoke-Expression as a string. A leading BOM
+#     becomes part of the first line, so PowerShell tries to run a command literally
+#     named "<BOM>#" and dies with CommandNotFoundException.
+#   * Non-ASCII text piped that way is decoded with the ANSI code page and arrives
+#     mangled. Keep the source pure ASCII; the .bat files next to this one follow
+#     the same rule.
+# Chinese messages the user sees are embedded as UTF-8 Base64 and decoded at
+# runtime by T() below.
 
 $ErrorActionPreference = 'Stop'
+
+# Chinese messages are embedded as UTF-8 Base64: this file is distributed
+# via `irm ... | iex`, which decodes the pipe with the ANSI code page, so
+# literal Chinese would arrive mangled (and a BOM breaks line 1). Keep the
+# source pure ASCII.
+function T([string]$b64) { [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b64)) }
 
 $tool = "ptool"
 $base = "https://github.com/CK627/MyProject"
 
-# 安装源：默认先走国内镜像，拿不到再回退 GitHub Release。
-#   · 这台镜像机在国内直连可达，api.github.com 则不保证；把镜像放在前面，
-#     「不开 VPN 也能装」才是真的，而不是「卡半分钟后失败」。
-#   · 覆盖方式：$env:PTOOL_MIRROR='<url>' 换镜像地址，设成 'none' 强制只走 GitHub。
+# Install source: try the China mirror first, then fall back to the GitHub release.
+#   * The mirror box is reachable directly from China; api.github.com is not.
+#     Putting the mirror first is what makes "works without a VPN" true rather
+#     than "hangs for 30 seconds and then fails".
+#   * Override with $env:PTOOL_MIRROR='<url>', or 'none' to force GitHub only.
 $mirror = if ($env:PTOOL_MIRROR) { $env:PTOOL_MIRROR } else { "http://101.132.165.98/dist/ptool" }
 
 function Info([string]$msg) { Write-Host "==> $msg" }
 
-# 下载发布资产：先镜像，再 GitHub Release。
-# 镜像按 <base>/<version>/<asset> 布局，与 release 里的资产同名。
+# Fetch a release asset: mirror first, then GitHub Release.
+# The mirror uses the <base>/<version>/<asset> layout, with the same asset names
+# as the release.
 function Get-Asset([string]$asset, [string]$ver, [string]$out) {
     if ($mirror -ne "none") {
         $murl = "$mirror/$ver/$asset"
-        Info "下载 $murl"
+        Info ((T '5LiL6L29') + " $murl")
         try {
             Invoke-WebRequest -Uri $murl -OutFile $out -UseBasicParsing
             if ((Get-Item $out).Length -gt 0) { return }
         } catch {
-            Info "镜像上没有该版本，回退 GitHub Release"
+            Info (T '6ZWc5YOP5LiK5rKh5pyJ6K+l54mI5pys77yM5Zue6YCAIEdpdEh1YiBSZWxlYXNl')
         }
         Remove-Item $out -ErrorAction SilentlyContinue
     }
     $gurl = "$base/releases/download/$tool-v$ver/$asset"
-    Info "下载 $gurl"
+    Info ((T '5LiL6L29') + " $gurl")
     Invoke-WebRequest -Uri $gurl -OutFile $out -UseBasicParsing
 }
 
-Info "解析最新版本..."
+Info (T '6Kej5p6Q5pyA5paw54mI5pysLi4u')
 $ver = ""
 
-# 镜像优先：VERSION 是纯文本，一次 GET 就够，比翻 releases API 快得多。
-# 读 VERSION.txt 而不是 VERSION：无扩展名的文件 httpd 会按 application/octet-stream
-# 发，PowerShell 收到的是 byte[]，下面再 Trim 也拿不到字符串 —— 结果就是静默
-# 回退到 GitHub，看起来像镜像根本没生效。
-# 仍然做一次 byte[] 兜底：换台服务器、换个 MIME 配置就不一定还是 text。
+# Mirror first: VERSION is plain text, one GET is enough and much faster than
+# paging the releases API.
+# Read VERSION.txt, not VERSION: httpd serves an extensionless file as
+# application/octet-stream, PowerShell then hands back byte[], and Trim on that
+# yields nothing -- the script silently falls back to GitHub and it looks as if
+# the mirror never worked. Keep the byte[] branch as a fallback too: another
+# server or MIME config may still serve it as a stream.
 if ($mirror -ne "none") {
     try {
         $raw = (Invoke-WebRequest -Uri "$mirror/VERSION.txt" -TimeoutSec 15 -UseBasicParsing).Content
@@ -55,14 +78,15 @@ if ($mirror -ne "none") {
         $v = ([string]$raw).Trim()
         if ($v) { $ver = $v }
     } catch {
-        # 镜像不可达，下面走 GitHub
+        # Mirror unreachable; fall through to GitHub below.
     }
 }
 
 if (-not $ver) {
-    # 解析最新版本 tag（ptool-v2.2.15 -> 2.2.15）
-    # 用 releases 而不是 tags：只有 release 里才有 setup exe，且这里按 100/页 翻页 ——
-    # 本仓库是多项目 monorepo，tag（或 release）总数增长后单页会被截断、漏掉 ptool。
+    # Resolve the newest release tag (ptool-v2.2.15 -> 2.2.15).
+    # Use releases rather than tags: only releases carry the setup exe, and page
+    # through at 100 per page -- this repo is a monorepo, so once the total tag
+    # (or release) count grows a single page gets truncated and ptool falls off.
     $headers = @{ "User-Agent" = "ptool-installer" }
     $releases = @()
     $page = 1
@@ -70,13 +94,13 @@ if (-not $ver) {
         try {
             $batch = Invoke-RestMethod -Uri "https://api.github.com/repos/CK627/MyProject/releases?per_page=100&page=$page" -Headers $headers
         } catch {
-            throw "无法访问 GitHub API：$($_.Exception.Message)"
+            throw ((T '5peg5rOV6K6/6ZeuIEdpdEh1YiBBUEnvvJo=') + $($_.Exception.Message))
         }
         $releases += @(@($batch) | Where-Object { $_.tag_name -like "$tool-v*" })
         $page++
     } while (@($batch).Count -eq 100 -and $page -le 5)
 
-    if (-not $releases) { throw "未找到 $tool 的 release" }
+    if (-not $releases) { throw ((T '5pyq5om+5YiwIA==') + "$tool" + (T 'IOeahCByZWxlYXNl')) }
 
     $version = ($releases |
         Sort-Object { [System.Version]($_.tag_name -replace "^$tool-v", "") } -Descending |
@@ -84,23 +108,24 @@ if (-not $ver) {
     $ver = $version -replace "^$tool-v", ""
 }
 
-if (-not $ver) { throw "未解析到 $tool 的版本号" }
-Info "安装 $tool $ver"
+if (-not $ver) { throw ((T '5pyq6Kej5p6Q5YiwIA==') + "$tool" + (T 'IOeahOeJiOacrOWPtw==')) }
+Info ((T '5a6J6KOFIA==') + "$tool $ver")
 
-# 下载 exe
+# Download the exe
 $out = "$env:TEMP\$tool-setup-$ver.exe"
 Get-Asset "$tool-setup-$ver.exe" $ver $out
 
-# 静默安装（Inno Setup，需要管理员权限）
-Info "安装（如果弹出 UAC 请点「是」）..."
+# Silent install (Inno Setup, needs administrator rights)
+Info (T '5a6J6KOF77yI5aaC5p6c5by55Ye6IFVBQyDor7fngrnjgIzmmK/jgI3vvIkuLi4=')
 $proc = Start-Process -FilePath $out -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru
 Remove-Item $out -ErrorAction SilentlyContinue
 
-if ($proc.ExitCode -ne 0) { throw "安装失败，退出码 $($proc.ExitCode)" }
+if ($proc.ExitCode -ne 0) { throw ((T '5a6J6KOF5aSx6LSl77yM6YCA5Ye656CBIA==') + $($proc.ExitCode)) }
 
-# 刷新当前会话的 PATH（安装器写了机器级 PATH，但当前会话不会自动刷新）
+# Refresh PATH in this session (the installer writes the machine-level PATH but
+# the current session does not pick it up automatically)
 $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
             [System.Environment]::GetEnvironmentVariable("Path", "User")
 
-Info "$tool 安装完成，当前会话已刷新 PATH"
-Info "新开的终端会自动继承安装器写入的 PATH"
+Info ("$tool" + (T 'IOWuieijheWujOaIkO+8jOW9k+WJjeS8muivneW3suWIt+aWsCBQQVRI'))
+Info (T '5paw5byA55qE57uI56uv5Lya6Ieq5Yqo57un5om/5a6J6KOF5Zmo5YaZ5YWl55qEIFBBVEg=')
