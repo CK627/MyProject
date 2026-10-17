@@ -38,6 +38,21 @@ FORCE=0
 [ "${1:-}" = "--force" ] && FORCE=1
 
 cd "$REPO_DIR"
+
+# ★ 必须在本项目自己的仓库根上发布。
+#   `git archive HEAD` 只认「当前仓库」，而本项目目前可能寄居在 MyProject 的
+#   monorepo 工作树里（StartupItemManagement/ 在 main 上是 gitignored 的）。
+#   那种情况下 HEAD 指向的是 **main**，打出来的快照会是整个作品集、而不是本项目，
+#   而且自检（只验 HTTP 200 与 VERSION 一致）照样全绿——静默发错内容，最难发现。
+TOPLEVEL="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ "$TOPLEVEL" != "$REPO_DIR" ]; then
+    echo "错误: 当前仓库顶层是 '${TOPLEVEL:-<不在 git 仓库里>}'，不是 $REPO_DIR" >&2
+    echo "      在这里发布会把另一个仓库的树打成快照。" >&2
+    echo "      请在本项目分支的独立克隆/工作树里执行，例如：" >&2
+    echo "        git worktree add /tmp/$TOOL-wt $(basename "$REPO_DIR")" >&2
+    exit 1
+fi
+
 if [ "$FORCE" -eq 0 ] && [ -n "$(git status --porcelain)" ]; then
     echo "错误: 工作区不干净，请先提交（或用 --force 跳过）" >&2
     echo "      未提交的代码发到镜像上，会与分支对不上" >&2

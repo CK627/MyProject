@@ -51,6 +51,17 @@ SCP=(scp "${SSH_OPTS[@]}")
 # ------------------------------------------------------------------
 cd "$REPO_DIR"
 if [ "$FORCE" -eq 0 ]; then
+    # 「工作区干净」只有在本项目自己的仓库根上才有意义。本项目可能寄居在
+    # MyProject 的 monorepo 工作树里（StartupItemManagement/ 在 main 上被忽略），
+    # 那时 `git status` 看到的是**别的项目的**未跟踪目录——检查会永远失败，
+    # 而且报出来的东西与本次构建毫无关系。宁可明确拒绝，也不要让 --force 变成常态。
+    TOPLEVEL="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+    if [ "$TOPLEVEL" != "$REPO_DIR" ]; then
+        echo "错误: 当前仓库顶层是 '${TOPLEVEL:-<不在 git 仓库里>}'，不是 $REPO_DIR" >&2
+        echo "      这里的工作区检查看的是别的项目，结果无意义。" >&2
+        echo "      请在本项目分支的独立克隆/工作树里构建，或加 --force。" >&2
+        exit 1
+    fi
     if [ -n "$(git status --porcelain)" ]; then
         echo "错误: 工作区不干净，请先提交（或用 --force 跳过）" >&2
         git status --short >&2
