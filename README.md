@@ -46,12 +46,30 @@ STARTUPCTL_DEVROOT=/tmp/dev bash installer/install.sh
 
 默认安装路径：macOS `/Library/devtools/startupctl`，Linux `/usr/local/devtools/startupctl`。
 
+### 离线安装包（macOS / Linux / Windows）
+
+三个平台各有独立安装包（与 jtool / ptool 同规），适合无网络或想双击安装的场景。
+版本目录名与 `VERSION` 一致：
+
+```
+http://101.132.165.98/dist/startupctl/<版本>/startupctl-<版本>.dmg            # macOS
+http://101.132.165.98/dist/startupctl/<版本>/startupctl-<版本>-linux.tar.gz  # Linux
+http://101.132.165.98/dist/startupctl/<版本>/startupctl-setup-<版本>.exe     # Windows
+```
+
+- **`.dmg`**：双击 `.pkg`，装到 `/Library/devtools/startupctl`
+- **`.tar.gz`**：解压后 `./installer/install-from-source.sh install`
+- **`.exe`**：用户级装到 `%USERPROFILE%\.devtools\startupctl`，不需要管理员
+
+> `.pkg` / `.exe` 都未签名。macOS 首次打开需右键「打开」，Windows 可能提示
+> SmartScreen「更多信息 → 仍要运行」。
+
 ### Windows
 
 图形安装包（推荐，与 jtool / ptool 同规）：
 
 ```
-http://101.132.165.98/dist/startupctl/1.0.2/startupctl-setup-1.0.2.exe
+http://101.132.165.98/dist/startupctl/<版本>/startupctl-setup-<版本>.exe
 ```
 
 或一行命令（无需管理员）：

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# encoding: utf-8
 # startupctl 启动器（macOS / Linux）
 # 解析软链接定位自身目录，再交给 python3 执行（-c 引导，避免 cwd 遮蔽安装版）。
 # 本文件是**素材**，不进 PATH：安装时被复制成 <安装根>/lib/startupctl.sh，

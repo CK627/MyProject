@@ -1,4 +1,5 @@
 #!/bin/bash
+# encoding: utf-8
 # 把源码快照与一键安装脚本发布到国内镜像服务器（httpd 已在跑，无需 VPN 可直连）
 #
 # 用法:
@@ -88,22 +89,32 @@ echo "    + VERSION ($(tr -d '\n' < "$REPO_DIR/VERSION")) + VERSION.txt"
 VER="$(tr -d '[:space:]' < "$REPO_DIR/VERSION")"
 ssh "$MIRROR_HOST" "mkdir -p '$MIRROR_ROOT/$TOOL/$VER'"
 scp -q "$TMP/startupctl-src.tar.gz" "$MIRROR_HOST:$MIRROR_ROOT/$TOOL/$VER/${TOOL}-${VER}-src.tar.gz"
-EXE="$REPO_DIR/dist/${TOOL}-setup-${VER}.exe"
-if [ -f "$EXE" ]; then
-    scp -q "$EXE" "$MIRROR_HOST:$MIRROR_ROOT/$TOOL/$VER/"
-    echo "    + $VER/${TOOL}-${VER}-src.tar.gz ${TOOL}-setup-${VER}.exe"
-else
-    # 不静默跳过：缺 exe 是发布内容不完整，必须让人看见（与 ptool 的 publish-mirror 同规矩）
-    echo "    + $VER/${TOOL}-${VER}-src.tar.gz"
-    echo "    - 跳过 ${TOOL}-setup-${VER}.exe（dist/ 里没有；先跑 installer/windows/build-from-mac.sh）"
-fi
+# ---- 平台产物：dmg 在 mac 上打、exe 在 Windows 上打、linux 包本机打 ----
+# 缺哪个就跳过哪个，但一定要说出来 —— 静默跳过会让镜像悄悄缺一个平台。
+missing=""
+for asset in \
+    "$TOOL-$VER.dmg" \
+    "$TOOL-$VER-linux.tar.gz" \
+    "$TOOL-setup-$VER.exe"
+do
+    if [ -f "$REPO_DIR/dist/$asset" ]; then
+        scp -q "$REPO_DIR/dist/$asset" "$MIRROR_HOST:$MIRROR_ROOT/$TOOL/$VER/"
+        echo "    + $VER/$asset"
+    else
+        missing="$missing $asset"
+    fi
+done
+echo "    + $VER/${TOOL}-${VER}-src.tar.gz"
+for a in $missing; do
+    echo "    - 跳过 ${a}（dist/ 里没有；先构建对应平台的包）"
+done
 
 # httpd 以 apache 用户读文件，root 建的目录默认权限可能挡住它
 ssh "$MIRROR_HOST" "chmod -R a+rX '$MIRROR_ROOT/$TOOL'"
 
 # 真下载一次：403/404 不会体现在 scp 的退出码里，只有 HTTP 能暴露
 echo "==> 校验"
-for f in install.sh install.ps1 startupctl-src.tar.gz VERSION VERSION.txt; do
+for f in install.sh install.ps1 "${TOOL}-src.tar.gz" VERSION VERSION.txt; do
     code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$MIRROR_URL/$TOOL/$f" || echo 000)"
     echo "    $f -> HTTP $code"
     if [ "$code" != "200" ]; then
@@ -111,22 +122,21 @@ for f in install.sh install.ps1 startupctl-src.tar.gz VERSION VERSION.txt; do
         exit 1
     fi
 done
-# 版本化目录里的产物单独校验一遍（exe 有才验）
-for f in "$VER/${TOOL}-${VER}-src.tar.gz" "$VER/${TOOL}-setup-${VER}.exe"; do
-    [ -f "$REPO_DIR/dist/$(basename "$f")" ] || [ "${f##*/}" = "${TOOL}-setup-${VER}.exe" ] || continue
-    if [ "${f##*/}" = "${TOOL}-setup-${VER}.exe" ] && [ ! -f "$EXE" ]; then continue; fi
-    code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$MIRROR_URL/$TOOL/$f" || echo 000)"
-    echo "    $f -> HTTP $code"
-    if [ "$code" != "200" ]; then
-        echo "错误: 镜像自检失败（HTTP ${code}）" >&2
-        exit 1
-    fi
+# 版本化目录里的产物逐个校验（本机没有的包不校验——上面已经报过「跳过」）
+for f in "${TOOL}-${VER}-src.tar.gz" "${TOOL}-${VER}.dmg" "${TOOL}-${VER}-linux.tar.gz" "${TOOL}-setup-${VER}.exe"; do
+    [ -f "$REPO_DIR/dist/$f" ] || [ "$f" = "${TOOL}-${VER}-src.tar.gz" ] || continue
+    code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "$MIRROR_URL/$TOOL/$VER/$f" || echo 000)"
+    echo "    $VER/$f -> HTTP $code"
+    [ "$code" = "200" ] || { echo "错误: $f 镜像自检失败（HTTP ${code}）" >&2; exit 1; }
 done
+
 echo "==> 一键安装（国内）:"
 echo "    source <(curl -fsSL $MIRROR_URL/$TOOL/install.sh)"
-echo "==> Windows 安装包:"
-if [ -f "$EXE" ]; then
-    echo "    $MIRROR_URL/$TOOL/$VER/${TOOL}-setup-${VER}.exe"
-else
-    echo "    （本次未发布 exe）"
-fi
+echo "==> 平台安装包:"
+for asset in "$TOOL-$VER.dmg" "$TOOL-$VER-linux.tar.gz" "$TOOL-setup-$VER.exe"; do
+    if [ -f "$REPO_DIR/dist/$asset" ]; then
+        echo "    $MIRROR_URL/$TOOL/$VER/$asset"
+    else
+        echo "    （本次未发布 ${asset}）"
+    fi
+done

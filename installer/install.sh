@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# encoding: utf-8
 # startupctl 一键安装脚本（macOS / Linux）
 #
 # 一键安装（安装后自动刷新当前终端，无需手动 source）:

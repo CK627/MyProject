@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# encoding: utf-8
 # startupctl 部署（devtools 布局的唯一实现，与 jtool / ptool 同规）
 #
 # 用法: deploy.sh <源码目录> <安装根>
