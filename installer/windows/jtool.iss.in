@@ -1,3 +1,4 @@
+; encoding: utf-8
 ; jtool Windows 安装脚本（Inno Setup 6）
 ;
 ; 由 build-from-mac.sh 渲染：@TOOL@ / @VERSION@ / @APPID@ 会被替换成实际值。

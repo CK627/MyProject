@@ -251,13 +251,17 @@ else
     fail "shell 变量名体检（${_cv}）"
 fi
 
-# ------------------------------- .bat 编码契约（无 BOM · 有中文则须 chcp 65001）
+# ------------------------------- 文本编码契约（声明 = 实际字节）
+# 覆盖 .bat/.ps1/.iss/.sh/.py：每个文件首部声明自己的编码，检查器逐条核对实际
+# 字节。各运行环境**没有共通的编码 pragma**（cmd 认代码页、PowerShell 只认 BOM、
+# irm|iex 连 BOM 都不能有），所以声明是契约、机制按类型分开——详见
+# tests/check_text_encoding.py 的文档字符串。
 # 放在这里而不是只在 CI：本地跑一遍就能发现（CI 要等推上去才知道）。
-echo "== .bat 编码契约 =="
-if _bat="$(python3 -I tests/check_bat_encoding.py $(git ls-files '*.bat') 2>&1)"; then
-    pass ".bat 编码契约（无 BOM / CRLF / 有中文须 chcp 65001）"
+echo "== 文本编码契约 =="
+if _enc="$(python3 -I tests/check_text_encoding.py 2>&1)"; then
+    pass "$_enc"
 else
-    fail ".bat 编码契约（${_bat}）"
+    fail "文本编码契约（${_enc}）"
 fi
 
 echo "== README 骨架章节 =="
