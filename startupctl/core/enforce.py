@@ -42,13 +42,25 @@ class Decision(object):
         return '<Decision %s pid=%s %s>' % (self.action, self.proc.pid, self.reason)
 
 
-def decide(procs, guard, platform='', own_pids=None):
-    """对一批进程给出决策。返回 (to_deny, to_protect, to_allow)。"""
+def decide(procs, guard, platform='', own_pids=None, items_by_uid=None):
+    """对一批进程给出决策。返回 (to_deny, to_protect, to_allow)。
+
+    `items_by_uid` 是 {uid: 启动项}。进程由 `proc.correlate()` 填好 `item_uid` 后，
+    这里把它翻译成"这个进程属于哪个启动项"，再交给 guard.verdict——于是名单里的
+    **启动项维度**也能参与决策：钉住一个启动项，它拉起的进程同样受放行/结束约束。
+    关联不上就传 None，退回纯进程维度的判断。
+    """
     if own_pids is None:
         own_pids = guard_mod.own_pid_chain()
     deny, protect, allow = [], [], []
     for p in procs:
-        action, why = guard.verdict(p, platform, own_pids)
+        startup = None
+        uid = getattr(p, 'item_uid', None)
+        if uid and items_by_uid:
+            it = items_by_uid.get(uid)
+            if it is not None:
+                startup = {'uid': it.uid, 'anchor': it.anchor}
+        action, why = guard.verdict(p, platform, own_pids, startup)
         d = Decision(p, action, why)
         if action == DENY:
             deny.append(d)
@@ -59,9 +71,9 @@ def decide(procs, guard, platform='', own_pids=None):
     return deny, protect, allow
 
 
-def plan(procs, guard, platform=''):
+def plan(procs, guard, platform='', items_by_uid=None):
     """预览：返回 (要结束的决策列表, 受保护列表, 放行列表)。**不改动任何东西。**"""
-    return decide(procs, guard, platform)
+    return decide(procs, guard, platform, items_by_uid=items_by_uid)
 
 
 def format_plan(deny, protect, allow, guard, platform='', limit=25):
@@ -69,7 +81,7 @@ def format_plan(deny, protect, allow, guard, platform='', limit=25):
     lines.append('模式: %s' % guard_mod.MODE_CN.get(guard.mode, guard.mode))
     if guard.mode == guard_mod.MODE_OFF:
         lines.append('  当前模式为「不干预」：本工具不会结束任何进程。')
-        lines.append('  改模式: startupctl guard mode deny_all|blacklist|whitelist')
+        lines.append('  改模式: startupctl mode deny_all|blacklist|whitelist')
     locked_n = len(guard.locked_entries())
     wl_n, bl_n = guard.count()
     act = guard.active_list_name()

@@ -53,7 +53,8 @@ class BackupFailed(Exception):
 def confirm(what, plan_lines, ctx, assume_yes=False):
     """打印计划并按需确认。返回 True 才允许执行。
 
-    计划**永远先打印**（`-y` 也打）：`-y` 的意思是"我审过计划了"，不是"别给我看"。
+    计划**永远先打印**（跳过确认时也打）：`confirm` 的意思是"我审过计划了"，
+    不是"别给我看"。
     """
     for ln in (plan_lines or []):
         print(ln)
@@ -63,12 +64,11 @@ def confirm(what, plan_lines, ctx, assume_yes=False):
         return False
 
     if assume_yes or ctx.assume_yes:
-        _record_authorization(what, plan_lines, ctx)
         return True
 
     def _refuse_noninteractive(why):
         print('检测到非交互环境，未执行任何改动。')
-        print('  确认无误后请加 -y 跳过确认: startupctl %s -y' % what)
+        print('  确认无误后可在命令末尾加 confirm 跳过确认。')
         if why:
             print('  （%s）' % why)
         return False

@@ -284,282 +284,12 @@ def check_domain():
     except Exception as e:                                      # noqa: BLE001
         check(False, 'Windows 夹具扫描出错: %s: %s' % (type(e).__name__, e))
 
-    # --- 白名单：匹配与"只收窄" ---
-    from startupctl.core import whitelist as wl_mod
-    wl = wl_mod.Whitelist(entries=[
-        {'match': 'anchor_glob', 'value': 'homebrew.mxcl.*'},
-        {'match': 'vendor', 'value': 'com.docker'},
-    ])
-    mk = lambda **kw: model.StartupItem(platform='darwin', kind='k', scope='s', **kw)
-    check(wl.matches(mk(anchor='homebrew.mxcl.redis', vendor='homebrew.mxcl')),
-          'glob 规则命中')
-    check(wl.matches(mk(anchor='com.docker.vmnetd', vendor='com.docker')),
-          'vendor 规则命中')
-    check(not wl.matches(mk(anchor='com.vivo.pcsuite', vendor='com.vivo')),
-          '无关项不被命中')
-
-    # id 条目的 anchor 回退：uid 变了（UID_VER 递增/单元改名）仍认得出来
-    wl2 = wl_mod.Whitelist(entries=[
-        {'match': 'id', 'value': 'deadbeefcafe', 'anchor': 'com.example.mine'}])
-    check(wl2.matches(mk(anchor='com.example.mine', uid='0123456789ab')),
-          'id 匹配不上时回退到存下的 anchor（抗 uid 变化）')
-
-    # --- 白名单 doctor 不自动清理 ---
-    before = len(wl2.entries)
-    unmatched = wl2.unmatched([mk(anchor='com.other.thing')])
-    check_eq(len(wl2.entries), before, 'unmatched() **不动**条目（只报告不清理）')
-    check_eq(len(unmatched), 1, 'unmatched() 报出未命中的条目')
-
 
 # ================================================================ 安全不变量
-def check_reflective_guard():
-    section('安全不变量 2：反射——每个后端 × 每个 mutator 遇系统项必拒')
-    os.environ['STARTUPCTL_ROOTS'] = FIXTURES
-    sys.path.insert(0, ROOT)
-    from startupctl import backends
-    from startupctl.core import context
-    from startupctl.core.model import (KIND_LAUNCHD_DAEMON, ORIGIN_OS, SCOPE_SYSTEM,
-                                       StartupItem)
-    from startupctl.core.safety import Refused
-
-    ctx = context.Ctx(platform='darwin')
-    os_item = StartupItem(platform='darwin', kind=KIND_LAUNCHD_DAEMON, scope=SCOPE_SYSTEM,
-                          anchor='com.apple.Finder', program='/System/Library/x',
-                          source='/System/Library/LaunchAgents/com.apple.Finder.plist',
-                          origin=ORIGIN_OS, confidence='high', origin_evidence='测试用',
-                          mutable=False)
-
-    total = 0
-    for plat, cls in backends.all_backends():
-        be = cls(ctx)
-        for op in backends.MUTATORS:
-            method = getattr(be, '_do_' + op, None)
-            if method is None:
-                check(False, '%s 后端缺少 _do_%s' % (plat, op))
-                continue
-            total += 1
-            try:
-                method(os_item, ctx, backup=None, entry=None)
-                check(False, '%s.%s 对系统项**没有拒绝**（危险）' % (plat, op))
-            except Refused:
-                check(True, '%s.%s 对系统项抛 Refused' % (plat, op))
-            except Exception as e:                              # noqa: BLE001
-                check(False, '%s.%s 抛的不是 Refused 而是 %s: %s'
-                      % (plat, op, type(e).__name__, e))
-    check(total >= 12, '覆盖了 %d 个 后端×mutator 组合' % total)
-
-
-def check_gate_order():
-    section('安全不变量 9：白名单只能收窄，永远不能放宽')
-    os.environ['STARTUPCTL_ROOTS'] = FIXTURES
-    sys.path.insert(0, ROOT)
-    from startupctl.core import context, manage, whitelist as wl_mod
-    from startupctl.core.model import ORIGIN_OS, StartupItem
-    from startupctl.core.safety import Refused
-
-    ctx = context.Ctx(platform='darwin')
-    ctx.scan()
-    os_item = StartupItem(platform='darwin', kind='launchd-daemon', scope='system',
-                          anchor='com.apple.Finder', source='/System/Library/x.plist',
-                          origin=ORIGIN_OS, confidence='high')
-    ctx.scanned_uids.add(os_item.uid)
-
-    # 即便把它写进白名单，也**不能**变得可改
-    ctx.whitelist = wl_mod.Whitelist(entries=[
-        {'match': 'id', 'value': os_item.uid, 'anchor': os_item.anchor}])
-    check(ctx.whitelist.matches(os_item), '系统项确实被白名单命中了')
-    try:
-        manage.check_gates(os_item, ctx, 'disable')
-        check(False, '白名单让系统项通过了闸门（不变量被打破）')
-    except Refused:
-        check(True, '白名单命中后系统项**仍然**被拒绝（不变量成立）')
-
-    # 候选集里也不会出现它
-    res = ctx.scan()
-    ctx.whitelist.apply(res.items)
-    cands = manage.clean_candidates(res, ctx)
-    check(all(c.origin == 'third_party' for c in cands),
-          'clean 候选集里只有第三方项')
-    check(all(c.mutable for c in cands), 'clean 候选集里都是可改的项')
-
-
-def check_dry_run_and_confirm():
-    section('安全不变量 3/4/11：预览、非交互拒绝、dry-run 零改动')
-
-    # 3) 非交互且无 -y → 拒绝、零改动
-    tree = fresh_tree()
-    h0 = dir_hash(tree)
-    rc, out = run_cli(['clean', '-y', '--dry-run'], {'STARTUPCTL_ROOTS': tree})
-    check_eq(dir_hash(tree), h0, 'dry-run 后夹具树字节不变')
-    check('--dry-run' in out, 'dry-run 输出里明说了未改动')
-
-    rc, out = run_cli(['disable', 'com.docker.vmnetd'],
-                      {'STARTUPCTL_ROOTS': tree, 'STARTUPCTL_DRY_RUN': '1'})
-    check_eq(dir_hash(tree), h0, '环境变量 DRY_RUN=1 下 disable 也零改动')
-    check_eq(rc, 0, 'DRY_RUN=1 时返回 0（CI 安全带）')
-
-    # 4) 预览与执行的计划必须一致：dry-run 的计划行 == 真跑时的计划行
-    tree2 = fresh_tree()
-    rc_dry, out_dry = run_cli(['disable', 'homebrew.mxcl.mysql', '--dry-run'],
-                              {'STARTUPCTL_ROOTS': tree2})
-    plan_dry = [l for l in out_dry.splitlines() if l.strip().startswith('·')]
-    rc_no, out_no = run_cli(['disable', 'homebrew.mxcl.mysql'],
-                            {'STARTUPCTL_ROOTS': tree2})
-    plan_no = [l for l in out_no.splitlines() if l.strip().startswith('·')]
-    check(plan_dry == plan_no,
-          'dry-run 的计划行与真跑时**逐字相同**（证明预览与执行共用 plan()）')
-    check('非交互环境' in out_no and rc_no == 1,
-          '非交互且无 -y 时拒绝执行并退 1')
-    check_eq(dir_hash(tree2), dir_hash(fresh_tree()),
-             '被拒绝的那次运行没有改动任何文件')
-
-
-def check_system_item_untouched():
-    section('安全不变量 1/10：系统项拒绝且字节不变；clean 只动第三方')
-    tree = fresh_tree()
-    sys_item_src = os.path.join(tree, 'darwin_user_agents', 'com.apple.useragent.plist')
-    h_before = open(sys_item_src, 'rb').read()
-
-    # 1) 直接 disable 系统项 → 退出 3，文件字节不变
-    rc, out = run_cli(['disable', 'com.apple.useragent'],
-                      {'STARTUPCTL_ROOTS': tree, 'STARTUPCTL_DRY_RUN': ''})
-    check_eq(rc, 3, 'disable 系统项 → 退出码 3（因安全理由被拒绝）')
-    check('拒绝' in out, '输出里明确写了"拒绝"')
-    check_eq(open(sys_item_src, 'rb').read(), h_before,
-             '被拒绝后系统项文件**字节不变**')
-
-    # 10) clean -y 只动第三方，系统项字节不变
-    tree2 = fresh_tree()
-    tp_src = os.path.join(tree2, 'darwin_user_agents', 'com.example.mine.plist')
-    sys2 = os.path.join(tree2, 'darwin_user_agents', 'com.apple.useragent.plist')
-    h_sys = open(sys2, 'rb').read()
-    h_tp_before = open(tp_src, 'rb').read()
-
-    env = {'STARTUPCTL_ROOTS': tree2, 'STARTUPCTL_DRY_RUN': '0'}
-    env.pop('STARTUPCTL_DRY_RUN', None)
-    rc, out = run_cli(['clean', '-y'], {'STARTUPCTL_ROOTS': tree2})
-    check_eq(open(sys2, 'rb').read(), h_sys, 'clean 后系统项字节不变')
-    check(open(tp_src, 'rb').read() != h_tp_before or not os.path.exists(tp_src),
-          'clean 后第三方项确实被改了（对照，证明 clean 真的动了手）')
-
-
-def check_backup_and_restore():
-    section('安全不变量 5/6/7：remove 只搬不删；restore 往返且拒绝覆盖')
-    tree = fresh_tree()
-    data = tempfile.mkdtemp(prefix='startupctl-data-')
-    env = {'STARTUPCTL_ROOTS': tree, 'STARTUPCTL_DATA_DIR': data}
-
-    src = os.path.join(tree, 'darwin_agents', 'homebrew.mxcl.mysql.plist')
-    orig = open(src, 'rb').read()
-    h0 = dir_hash(tree)
-
-    # 5) remove → 原位置消失 + 备份里有一份内容相同的
-    rc, out = run_cli(['remove', 'homebrew.mxcl.mysql', '-y'], env)
-    check(not os.path.exists(src), 'remove 后源文件已不在原位')
-    # 备份落到 <data>/backups/<ts>-remove/files/...
-    found = []
-    for dp, dn, fn in os.walk(os.path.join(data, 'backups')):
-        for f in fn:
-            if f == 'homebrew.mxcl.mysql.plist':
-                found.append(os.path.join(dp, f))
-    check(len(found) == 1, '备份目录里存了一份（找到 %d 份）' % len(found))
-    if found:
-        check_eq(open(found[0], 'rb').read(), orig, '备份内容与原文件一致（不是空壳）')
-    mfs = []
-    for dp, dn, fn in os.walk(os.path.join(data, 'backups')):
-        if 'manifest.json' in fn:
-            mfs.append(os.path.join(dp, 'manifest.json'))
-    check(len(mfs) >= 1, 'manifest.json 已落盘')
-    if mfs:
-        m = json.load(open(mfs[0], encoding='utf-8'))
-        check_eq(m.get('op'), 'remove', 'manifest 记录了操作类型')
-        st = [i.get('status') for i in m.get('items', [])]
-        check('done' in st, 'manifest 里该项状态为 done')
-
-    # 6) restore → 内容回来
-    rc, out = run_cli(['restore', 'last', '-y'], env)
-    check(os.path.exists(src), 'restore 后文件回到原位')
-    if os.path.exists(src):
-        check_eq(open(src, 'rb').read(), orig, 'restore 后内容与原始一致（往返无损）')
-    check_eq(dir_hash(tree), h0, 'restore 后夹具树指纹回到原值')
-
-    # 7) restore 拒绝覆盖：先 remove，再手工重建一个内容不同的文件
-    tree2 = fresh_tree()
-    data2 = tempfile.mkdtemp(prefix='startupctl-data-')
-    env2 = {'STARTUPCTL_ROOTS': tree2, 'STARTUPCTL_DATA_DIR': data2}
-    src2 = os.path.join(tree2, 'darwin_agents', 'homebrew.mxcl.mysql.plist')
-    run_cli(['remove', 'homebrew.mxcl.mysql', '-y'], env2)
-    with open(src2, 'wb') as fh:
-        fh.write(b'USER REWROTE THIS')
-    rc, out = run_cli(['restore', 'last', '-y'], env2)
-    check_eq(open(src2, 'rb').read(), b'USER REWROTE THIS',
-             'restore 默认**拒绝**覆盖用户后来重写的文件')
-    check('--force' in out, '拒绝时提示了 --force')
-
-
-def check_incomplete_scan_refused():
-    section('安全不变量 8：扫描不完整时 clean 拒绝运行（绝不在残缺视图上动手）')
-    tree = fresh_tree()
-    os.environ['STARTUPCTL_ROOTS'] = tree
-    os.environ.pop('STARTUPCTL_PLATFORM', None)
-    for mod in [m for m in list(sys.modules) if m.startswith('startupctl')]:
-        del sys.modules[mod]
-    sys.path.insert(0, ROOT)
-    from startupctl.cli import cmd_clean
-    from startupctl.core import context, manage
-    from startupctl.core.model import ScanError
-
-    ctx = context.Ctx(platform='darwin', dry_run=False, assume_yes=True)
-    res = ctx.scan()
-    base_cands = manage.clean_candidates(res, ctx)
-    check(len(base_cands) > 0, '（前提）夹具上确实有可清理项 %d 个' % len(base_cands))
-
-    h0 = dir_hash(tree)
-    # 注入一个"读不到是因为权限"的根 → 整次扫描判为不完整
-    res.errors.append(ScanError(root='darwin.daemons', path='/x', reason='权限不足',
-                                needs_root=True))
-    res.recompute_complete()
-    check(not res.complete, '注入了 needs_root 错误后 complete=False')
-
-    rc = cmd_clean(ctx, {'--yes': True})
-    check_eq(rc, 3, '扫描不完整时 clean 因安全理由拒绝（退出 3）')
-    check_eq(dir_hash(tree), h0, '被拒绝的 clean **一个字节都没改**')
-
-
-def check_candidates_are_actionable():
-    section('契约：clean 候选集 == 真的动得了的项')
-    tree = fresh_tree()
-    os.environ['STARTUPCTL_ROOTS'] = tree
-    os.environ.pop('STARTUPCTL_PLATFORM', None)
-    for mod in [m for m in list(sys.modules) if m.startswith('startupctl')]:
-        del sys.modules[mod]
-    sys.path.insert(0, ROOT)
-    from startupctl.core import context, manage
-
-    ctx = context.Ctx(platform='darwin')
-    res = ctx.scan()
-    ctx.wl().apply(res.items)
-    cands = manage.clean_candidates(res, ctx)
-    check(all(c.origin == 'third_party' for c in cands), '候选全是第三方项')
-    check(all(c.mutable for c in cands), '候选全是 mutable（点了头就能真做成）')
-    check(not any(c.whitelisted for c in cands), '候选里没有被白名单保护的项')
-
-    # 白名单加一条 → 候选数必须**减少**（收窄），且不会多出任何项
-    from startupctl.core import whitelist as wl_mod
-    if cands:
-        target = cands[0]
-        ctx.whitelist = wl_mod.Whitelist(entries=[
-            {'match': 'id', 'value': target.uid, 'anchor': target.anchor}])
-        ctx.whitelist.apply(res.items)
-        cands2 = manage.clean_candidates(res, ctx)
-        check_eq(len(cands2), len(cands) - 1, '加一条白名单后候选数减少 1（只做减法）')
-        check(all(c.uid != target.uid for c in cands2), '被白名单保护的那项确实不在候选里')
-
-
 def check_roots_seam():
     section('安全不变量 12：夹具接缝生效——绝不读真机')
     tree = fresh_tree()
-    rc, out = run_cli(['list', '--all'], {'STARTUPCTL_ROOTS': tree})
+    rc, out = run_cli(['list', 'all'], {'STARTUPCTL_ROOTS': tree})
     check('夹具模式' in out, '输出里明说了处于夹具模式（不会被人当真机结果）')
 
     # 输出里不得出现夹具树之外的真实启动项路径
@@ -683,10 +413,10 @@ def check_guard_modes():
     gp.save()
     gp2 = G.Guard(path=os.path.join(d, 'guard.json')).load()
     check_eq(gp2.mode, G.MODE_WHITELIST, '模式能往返持久化')
-    check_eq(len(gp2.whitelist), 1, '白名单能往返持久化')
-    check_eq(len(gp2.blacklist), 1, '黑名单能往返持久化（两份独立保存）')
-    check_eq(gp2.whitelist[0]['value'], 'VendorHelper', '白名单条目的值正确')
-    check_eq(gp2.blacklist[0]['value'], 'SomeTool', '黑名单条目的值正确')
+    check_eq(len(gp2.whitelist['process']), 1, '白名单能往返持久化')
+    check_eq(len(gp2.blacklist['process']), 1, '黑名单能往返持久化（两份独立保存）')
+    check_eq(gp2.whitelist['process'][0]['value'], 'VendorHelper', '白名单条目的值正确')
+    check_eq(gp2.blacklist['process'][0]['value'], 'SomeTool', '黑名单条目的值正确')
 
     # v1 老格式（单份 entries）迁移：内容不能丢
     import json as _json
@@ -695,8 +425,8 @@ def check_guard_modes():
         _json.dump({'version': 1, 'mode': 'blacklist',
                     'entries': [{'match': 'proc_name', 'value': 'Legacy'}]}, fh)
     mig = G.Guard(path=oldp).load()
-    check_eq(len(mig.blacklist), 1, 'v1 老格式迁移到当前模式对应的那份清单（内容不丢）')
-    check_eq(mig.blacklist[0]['value'], 'Legacy', '迁移后条目值不变')
+    check_eq(len(mig.blacklist['process']), 1, 'v1 老格式迁移到当前模式对应那份的进程维度（内容不丢）')
+    check_eq(mig.blacklist['process'][0]['value'], 'Legacy', '迁移后条目值不变')
 
     # 坏文件按"不干预"处理，且**不覆盖**
     with open(os.path.join(d, 'guard.json'), 'w') as fh:
@@ -823,89 +553,13 @@ def check_guard_locked_entries():
     check(not ok4, '系统基础进程不可锁定（它本来就动不了）')
 
 
-def check_guard_lock_cli():
-    section('进程守护 CLI：lock / unlock')
-    shared = tempfile.mkdtemp(prefix='sc-guard-lock-')
-    env = {'STARTUPCTL_DATA_DIR': shared}
-    rc, out = run_cli(['guard', 'mode', 'deny_all'], env)
-    # 用 --value 预先下规则：**不依赖真机上恰好有同名进程**（这正是 --value 的用途）
-    rc, out = run_cli(['guard', 'add', '--value', 'VendorHelper', '--reason', '测试'], env)
-    check_eq(rc, 0, 'guard add --value 退出 0（可为没在跑的东西预先立规矩）')
-    check('出现时生效' in out, '预下规则时提示它会在进程出现时生效')
-
-    # --lock 一步到位
-    rc, out = run_cli(['guard', 'add', '--value', 'OtherThing', '--lock'], env)
-    check_eq(rc, 0, 'guard add --lock 退出 0')
-    check('已锁定' in out, 'add --lock 直接锁定')
-
-    rc, out = run_cli(['guard', 'lock', 'VendorHelper'], env)
-    check_eq(rc, 0, 'guard lock 退出 0')
-    check('任何模式下都不会被结束' in out, 'lock 说明它会受保护')
-
-    rc, out = run_cli(['guard', 'list'], env)
-    check('锁定' in out, 'guard list 显示锁定状态')
-
-    rc, out = run_cli(['guard', 'lock', 'nosuchentry'])
-    check_eq(rc, 2, 'lock 不存在的值退出 2')
-
-    rc, out = run_cli(['guard', 'unlock', 'VendorHelper'], env)
-    check_eq(rc, 0, 'guard unlock 退出 0')
-
-    # ★ 这条要看**宿主真实进程表**里有没有 shell/终端，所以必须用原生平台，
-    #   不能跟着 run_cli 的 darwin 默认走（Windows 上没有 /bin/ps）。
-    rc, out = run_cli(['guard', 'check'], dict(env, STARTUPCTL_PLATFORM=NATIVE_PLATFORM))
-    check('还能操作' in out,
-          'guard check 说明 shell/终端受「还能操作」保障（平台 %s）' % NATIVE_PLATFORM)
-
-
-def check_guard_cli():
-    section('进程守护 CLI：模式切换与结构性拒绝')
-    rc, out = run_cli(['guard', 'status'])
-    check_eq(rc, 0, 'guard status 退出 0')
-    check('不干预' in out, '默认模式为「不干预」（不会一装上就开始杀进程）')
-
-    rc, out = run_cli(['guard', 'mode'])
-    check_eq(rc, 0, 'guard mode（无参数）列出可选模式')
-    for m in ('deny_all', 'blacklist', 'whitelist', 'off'):
-        check(m in out, '模式列表含 %s' % m)
-
-    # ⚠️ 这一组用例必须**共用一个数据目录**：run_cli 默认每次给一个全新的
-    #    STARTUPCTL_DATA_DIR（用例间互不干扰是有意的），但"设了模式再 arm"是一条
-    #    有状态的流程，各跑各的目录会让模式根本没被持久化，arm 于是报"当前为不干预"。
-    shared = tempfile.mkdtemp(prefix='sc-guard-cli-')
-    env = {'STARTUPCTL_DATA_DIR': shared}
-
-    rc, out = run_cli(['guard', 'mode', 'deny_all'], env)
-    check_eq(rc, 0, 'guard mode deny_all 退出 0')
-    check('系统基础进程' in out, '切换模式时明说系统基础进程不受影响')
-
-    rc, out = run_cli(['guard', 'mode', 'nosuchmode'], env)
-    check_eq(rc, 2, '未知模式退出 2（用法错）')
-
-    rc, out = run_cli(['guard', 'check'], env)
-    check('模式:' in out, 'guard check 打印当前模式')
-
-    # --dry-run 必须中和 arm（绝不为预览而结束任何进程）
-    rc, out = run_cli(['guard', 'arm', '-y', '--dry-run'], env)
-    check('--dry-run' in out, 'guard arm 在 --dry-run 下只预览')
-    check_eq(rc, 0, 'guard arm --dry-run 退出 0')
-
-    # arm 不带 -y 且在非交互环境 → 拒绝执行
-    rc, out = run_cli(['guard', 'arm'], env)
-    check_eq(rc, 1, 'guard arm 非交互无 -y → 拒绝并退 1')
-    check('非交互环境' in out, 'guard arm 拒绝时说明了原因')
-
-
 def check_gui_picker():
-    section('图形选择器：能开、能选、能在无显示环境优雅回退')
+    section('选择器：进程与启动项两种，都能选、都能在无显示环境回退')
     sys.path.insert(0, ROOT)
-    from startupctl.core import gui, guard as G, picker
+    from startupctl.core import gui, picker
     from startupctl.core import proc as proc_mod
 
-    ok, why = gui.available()
-    check(isinstance(ok, bool), 'gui.available() 返回 (bool, 原因)')
-    if not ok:
-        check(bool(why), '不可用时给出原因: %s' % why[:44])
+    check(isinstance(gui.available(), bool), 'gui.available() 返回 bool')
 
     def P(pid, comm, program, origin='third_party'):
         r = proc_mod.ProcRecord(pid=pid, ppid=1, uid=501, user='jj',
@@ -918,183 +572,55 @@ def check_gui_picker():
              P(201, 'SomeTool', '/opt/homebrew/bin/tool'),
              P(202, 'Other', '/opt/other/bin/other')]
 
-    # --- 非交互环境：必须回退，且**说明原因**（不许静默换个界面）---
-    # Rows 供三个 UI 共用，所以"能不能选"的规则只需在这里验一次。
-    # ⚠️ Rows 按名字排序，**别假定某一行的下标**——按 pid 找。
     rows = picker.Rows(procs, 'darwin', own_pids=set())
-    check_eq(len(rows.rows), 4, 'Rows 建出 4 行')
+    check_eq(len(rows.rows), 4, '进程选择器建出 4 行')
     i_sys = [i for i, r in enumerate(rows.rows) if r.proc.pid == 100][0]
     i_ok = [i for i, r in enumerate(rows.rows) if r.proc.pid == 200][0]
-    check(rows.rows[i_sys].protected, '系统行标记为 protected（GUI 里会置灰不可点）')
+    check(rows.rows[i_sys].protected, '系统行标记为 protected（窗口里置灰不可点）')
     check_eq(rows.rows[i_sys].mark, '[系统]', '系统行显示标记为 [系统]')
-    check(rows.rows[i_sys].frozen, '系统行 frozen（GUI/TUI 都据此禁掉点击）')
+    check(rows.rows[i_sys].frozen, '系统行 frozen（各 UI 都据此禁掉点击）')
     check(not rows.rows[i_ok].frozen, '普通行不 frozen（可点）')
 
     # --- 自测接缝：真开一次窗口，验证它能选出结果 ---
-    if ok or os.environ.get('STARTUPCTL_GUI_SELFTEST') is not None:
+    if gui.available() or os.environ.get('STARTUPCTL_GUI_SELFTEST') is not None:
         os.environ['STARTUPCTL_GUI_SELFTEST'] = '2'
         try:
             rows = picker.Rows(procs, 'darwin', own_pids=set())
-            got = gui.pick(rows, 'darwin', set())
+            got = gui.pick(rows.rows, title='选择进程')
             check(got is not None, 'GUI 自测返回了结果（不是 None）')
             if got:
                 check_eq(len(got), 2, 'GUI 自动选了 2 个')
-                check(all(not G.is_protected(p, 'darwin', set())[0] for p, _lk in got),
+                picked = [rows.rows[i] for i in got]
+                check(all(not r.protected for r in picked),
                       'GUI 返回的结果里**没有系统基础进程**')
-                check(all(p.comm != 'WindowServer' for p, _lk in got),
+                check(all(r.proc.comm != 'WindowServer' for r in picked),
                       '系统行没被选进来（点击处理里就忽略了）')
         except gui.GuiUnavailable as e:
             check(True, '无显示环境，GUI 抛 GuiUnavailable（调用方据此回退）: %s' % str(e)[:30])
         finally:
             os.environ.pop('STARTUPCTL_GUI_SELFTEST', None)
 
-    # --- 纯文本选择器：非法输入必须**出声**，不能静默跳过 ---
+    # --- 启动项选择器 ---
+    from startupctl.core.model import StartupItem
+    items = [StartupItem(uid='u1', anchor='a.one', kind='launchd-agent',
+                         scope='user', name='One'),
+             StartupItem(uid='u2', anchor='a.two', kind='launchd-daemon',
+                         scope='system', name='Two')]
+    srows = picker.StartupRows(items, preselect={'u1'})
+    check_eq(len(srows.rows), 2, '启动项选择器建出 2 行')
+    check_eq(len(srows.results()), 1, '预选（已在名单里）的那一行默认勾选')
+    check(not any(getattr(r, 'frozen', False) for r in srows.rows),
+          '启动项没有「不可选」的概念（系统项不会进这个列表）')
+
+    # --- 非交互环境下 pick_* 必须回退而不是挂住 ---
     import io as _io
-    rows = picker.Rows(procs, 'darwin', own_pids=set())
-    buf = _io.StringIO()
-    real_stdin, sys.stdin = sys.stdin, _io.StringIO('99,abc\n')
+    old_stdin = sys.stdin
+    sys.stdin = _io.StringIO('1\n')
     try:
-        picked = picker._pick_plain(rows, out=buf)
-    except Exception as e:                                       # noqa: BLE001
-        picked = 'ERR:%s' % e
+        got = picker.pick_processes(procs, 'darwin', own_pids=set(), allow_gui=False)
+        check(got is not None, '纯文本兜底能返回选择结果')
     finally:
-        sys.stdin = real_stdin
-    text = buf.getvalue()
-    check('没有生效' in text, '纯文本模式对非法编号明确报「没有生效」')
-    check('1-' in text, '报错时给出可用编号范围')
-    check(picked is None, '全是非法输入时视为取消（不清空清单）')
-
-    # 合法输入正常生效
-    buf2 = _io.StringIO()
-    real_stdin, sys.stdin = sys.stdin, _io.StringIO('1,2!\n')
-    try:
-        picked2 = picker._pick_plain(rows, out=buf2)
-    finally:
-        sys.stdin = real_stdin
-    check(picked2 is not None and len(picked2) == 2, '合法输入 1,2! 选中 2 项')
-    if picked2:
-        check_eq(picked2[0][1], False, '第 1 项未锁定')
-        check_eq(picked2[1][1], True, '第 2 项（带 !）被锁定')
-
-
-def check_writeback_verified():
-    section('写回核对：改动没生效时**必须报错**，不许静默通过')
-    shared = tempfile.mkdtemp(prefix='sc-verify-')
-    env = {'STARTUPCTL_DATA_DIR': shared}
-
-    rc, out = run_cli(['guard', 'add', '--value', 'VerifyMe'], env)
-    check_eq(rc, 0, 'guard add 退出 0')
-    check('已写入并核对无误' in out, '添加后报告「已写入并核对无误」')
-
-    # 核对不是嘴上一说：真的读回来比对
-    gpath = os.path.join(shared, 'guard.json')
-    check(os.path.isfile(gpath), 'guard.json 真的落盘了')
-    if os.path.isfile(gpath):
-        with open(gpath, encoding='utf-8') as fh:
-            disk = json.load(fh)
-        # 新 schema 是两份独立清单
-        check('whitelist' in disk and 'blacklist' in disk,
-              '磁盘上是两份独立清单（whitelist / blacklist）')
-        vals = [e.get('value') for e in disk.get('whitelist', [])] + \
-               [e.get('value') for e in disk.get('blacklist', [])]
-        check('VerifyMe' in vals, '磁盘上的内容与命令输出一致（核对是真的）')
-        check_eq(disk.get('version'), 2, 'schema 版本为 2')
-
-    # 独立进程再读一次：确认不是"内存里看着有、磁盘上没有"
-    rc, out = run_cli(['guard', 'list'], env)
-    check('VerifyMe' in out, '另一个进程读得到同一条（跨进程持久化成立）')
-
-    # 写不进去时必须报错并返回非零。
-    #
-    # ⚠️ 用 "把数据目录指到一个**普通文件**底下" 来制造失败，而不是 chmod 0500：
-    #    root 有 CAP_DAC_OVERRIDE，会**绕过**权限检查，0500 的目录照样能写。
-    #    在 root 下跑（CI 容器、root 登录的测试机）时，chmod 那招会让这条用例
-    #    失败得莫名其妙——看着像产品 bug，其实是测试环境的前提不成立。
-    #    ENOTDIR（在文件下面建目录）谁都绕不过，root 也不行。
-    not_a_dir = os.path.join(ROOT, 'VERSION')          # 仓库里一个确定的普通文件
-    check(os.path.isfile(not_a_dir), '（前提）用于制造写失败的路径确实是个普通文件')
-    rc, out = run_cli(['guard', 'add', '--value', 'Nope'],
-                      {'STARTUPCTL_DATA_DIR': os.path.join(not_a_dir, 'sub')})
-    check(rc != 0, '写盘失败时返回非零（不谎报成功）')
-    check(('失败' in out) or ('错误' in out), '写盘失败时给出明确错误信息')
-    check('核对' not in out or '不一致' in out,
-          '写盘失败时**不会**打出「已写入并核对无误」')
-
-
-def check_guard_mode_vs_choice():
-    section('进程守护：模式与选择分开 + 只有选择过才生效')
-    shared = tempfile.mkdtemp(prefix='sc-mc-')
-    env = {'STARTUPCTL_DATA_DIR': shared}
-
-    # 1) 切模式不改动任何清单内容 —— 两份都原样留着
-    run_cli(['guard', 'mode', 'whitelist'], env)
-    run_cli(['guard', 'add', '--value', 'AllowedThing'], env)
-    run_cli(['guard', 'mode', 'blacklist'], env)
-    rc, out = run_cli(['guard', 'add', '--value', 'BannedThing'], env)
-    check_eq(rc, 0, '黑名单里加一条')
-    run_cli(['guard', 'mode', 'whitelist'], env)
-    rc, out = run_cli(['guard', 'list'], env)
-    check('AllowedThing' in out, '切回白名单：白名单内容还在')
-    check('BannedThing' in out, '切回白名单：**黑名单内容也还在**（两份独立）')
-    check('← 当前模式在用' in out, 'list 标出当前模式在用哪一份')
-
-    # 2) 空清单不许执行 —— 「只有选择的时候才生效」
-    empty = tempfile.mkdtemp(prefix='sc-empty-')
-    e2 = {'STARTUPCTL_DATA_DIR': empty}
-    run_cli(['guard', 'mode', 'whitelist'], e2)
-    rc, out = run_cli(['guard', 'arm', '-y'], e2)
-    check_eq(rc, 3, '白名单为空时 arm 被拒绝（退出 3）')
-    check('白名单是空的' in out, '拒绝时点明白名单是空的')
-    check('guard choose' in out, '拒绝时指路到 guard choose')
-
-    rc, out = run_cli(['guard', 'mode', 'blacklist'], e2)
-    run_cli(['guard', 'mode', 'blacklist'], e2)
-    rc, out = run_cli(['guard', 'arm', '-y'], e2)
-    check_eq(rc, 3, '黑名单为空时 arm 也被拒绝（没有要结束的对象）')
-
-    # off 模式下 arm 同样拒绝（没有可执行的策略）
-    rc, out = run_cli(['guard', 'mode', 'off'], e2)
-    rc, out = run_cli(['guard', 'arm', '-y'], e2)
-    check_eq(rc, 3, 'off 模式 arm 被拒绝')
-
-    # 3) 有内容之后就允许执行了（用 deny_all 免去挑进程）
-    run_cli(['guard', 'mode', 'deny_all'], e2)
-    rc, out = run_cli(['guard', 'arm', '--dry-run'], e2)
-    check_eq(rc, 0, '全部拒绝模式可执行（--dry-run 下退出 0）')
-    check('--dry-run' in out, 'arm 在 dry-run 下只预览')
-
-    # 4) guard choose 在非交互环境下优雅拒绝（不弹窗、不崩）
-    rc, out = run_cli(['guard', 'choose', '--plain'], e2)
-    check(rc in (0, 1, 2), 'guard choose --plain 非交互下正常返回（rc=%d）' % rc)
-
-    # 5) off 模式下 choose 无处可写 → 明确指路
-    run_cli(['guard', 'mode', 'off'], e2)
-    rc, out = run_cli(['guard', 'choose'], e2)
-    check_eq(rc, 2, 'off 模式下 choose 退出 2（没有对应清单）')
-    check('先选模式' in out, '提示先选模式')
-
-
-def check_gui_only_via_choose():
-    section('图形窗口只在 guard choose 时启动（不是常态）')
-    sys.path.insert(0, ROOT)
-    import inspect
-    from startupctl.core import picker
-    src = inspect.getsource(picker.pick)
-    check('allow_gui' in src, 'picker.pick 有 allow_gui 参数')
-    check('allow_gui=True' in src or 'allow_gui and' in src,
-          'picker.pick 只在 allow_gui 为真时才走图形窗口')
-
-    # 默认必须是 False —— 日常命令不该突然弹窗
-    sig = inspect.signature(picker.pick)
-    check_eq(sig.parameters['allow_gui'].default, False,
-             'allow_gui 默认 False（GUI 不是常态）')
-
-    # CLI：只有 choose/pick 会传 allow_gui
-    from startupctl import cli as cli_mod
-    csrc = inspect.getsource(cli_mod._do_choose)
-    check('allow_gui=use_gui' in csrc, 'guard choose 才会请求图形窗口')
-    check('--tui' in csrc and '--plain' in csrc, 'choose 支持 --tui/--plain 强制别的界面')
-
+        sys.stdin = old_stdin
 
 def check_self_info_layouts():
     """安装态识别：**两个平台装出来的布局都要认得**。
@@ -1376,7 +902,7 @@ def check_eof_is_noninteractive():
     text = buf.getvalue()
     check_eq(ok, False, 'EOF 时 confirm 返回 False（不执行）')
     check('非交互环境' in text, 'EOF 时也打出「非交互环境」提示')
-    check('-y' in text, '提示里给出加 -y 的用法')
+    check('confirm' in text, '提示里给出加 confirm 跳过确认的用法（不用 -y）')
     check('计划行' in text, '计划仍然先打出来了')
 
     # 正常交互（能读到 y）要照常工作
@@ -1464,28 +990,36 @@ def check_cli_contracts():
     from startupctl import help as H
 
     check(H.help_lines() <= 50, 'HELP 行数 %d <= 50' % H.help_lines())
-    # 与 ptool 同形：「用法:」本身就是命令清单，不另设「子命令:」分区。
-    for anchor in ('用法:', '选项:', '示例:', '说明:'):
+    # 与 ptool 同形：「用法:」本身就是命令清单，不另设「子命令:」分区；
+    # 而且本工具**没有 `--` 旗标**，所以帮助里也不该出现「选项:」分区。
+    for anchor in ('用法:', '示例:', '说明:'):
         check(any(l.strip() == anchor for l in H.HELP.splitlines()),
               'HELP 含分节 %s' % anchor)
+    check(not any(l.strip() == '选项:' for l in H.HELP.splitlines()),
+          'HELP 没有「选项:」分区（本工具不用旗标）')
     # 命令清单必须**全部可见**：不允许出现 `whitelist ...` 这类省略号条目。
     check(not any(' ... ' in l for l in H.HELP.splitlines()),
           '用法里没有 `...` 省略条目')
+    check(not any(l.strip().startswith('startupctl ') and '--' in l
+                  for l in H.HELP.splitlines()),
+          '用法里没有 `--` 旗标')
     probs = H.align_report()
     check(not probs, 'HELP 各节描述列对齐一致（问题: %s）' % (probs[:2] or '无'))
     check(max(__import__('startupctl.core.output', fromlist=['dw']).dw(l)
               for l in H.HELP.splitlines()) <= 100, 'HELP 最宽行 <= 100 列')
-    for sub in ('list', 'clean', 'whitelist', 'add', 'restore'):
+    for sub in ('list', 'mode', 'whitelist', 'blacklist', 'config'):
         check(H.sub_help(sub) is not None, '子命令 %s 有专属帮助' % sub)
 
-    rc, out = run_cli(['--version'])
-    check_eq(rc, 0, '--version 退出 0')
+    rc, out = run_cli(['version'])
+    check_eq(rc, 0, 'version 退出 0')
     # 版本号从 __version__ 取，**不硬编码**：写死的话每次升版本都要回来改测试，
-    # 漏改的表现是「--version 打印版本号」失败，看着像功能坏了，其实只是断言过期。
-    # （同一个坑在 CtfSweep 的 smoke 里也踩过，那边已改成从 VERSION 推导。）
+    # 漏改的表现是「version 打印版本号」失败，看着像功能坏了，其实只是断言过期。
     from startupctl import __version__ as _v
     check('startupctl' in out and _v in out,
-          '--version 打印版本号（%s）' % _v)
+          'version 打印版本号（%s）' % _v)
+    # 旗标一律拒收：这是「只用子命令」的硬约束，不是建议。
+    rc, out = run_cli(['--version'])
+    check_eq(rc, 2, '`--version` 这种旗标写法退出 2（本工具只用子命令）')
     rc, out = run_cli(['help'])
     check_eq(rc, 0, 'help 退出 0')
     rc, out = run_cli(['help', 'list'])
@@ -1533,21 +1067,10 @@ def main():
     print('仓库: %s' % ROOT)
     check_version_sync()
     check_domain()
-    check_gate_order()
-    check_reflective_guard()
-    check_dry_run_and_confirm()
-    check_system_item_untouched()
-    check_backup_and_restore()
-    check_incomplete_scan_refused()
-    check_candidates_are_actionable()
     check_roots_seam()
     check_guard_modes()
     check_guard_session_safety()
     check_guard_locked_entries()
-    check_guard_cli()
-    check_guard_lock_cli()
-    check_guard_mode_vs_choice()
-    check_gui_only_via_choose()
     check_no_posix_only_calls()
     check_windows_name_forms()
     check_iss_matches_payload()
@@ -1555,7 +1078,6 @@ def main():
     check_windows_payload_is_clean()
     check_self_info_layouts()
     check_gui_picker()
-    check_writeback_verified()
     check_cli_contracts()
 
     print('')

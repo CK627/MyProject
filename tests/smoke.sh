@@ -106,8 +106,8 @@ fi
 
 # ================================================================ 4 启动器
 stage "4/9 启动器"
-out="$(./bin/startupctl.sh --version 2>&1)"
-has "$out" "startupctl" "仓库启动器能跑（bin/startupctl.sh --version）"
+out="$(./bin/startupctl.sh version 2>&1)"
+has "$out" "startupctl" "仓库启动器能跑（bin/startupctl.sh version）"
 
 # ================================================================ 5 HELP 契约
 stage "5/9 HELP 契约"
@@ -184,7 +184,7 @@ HOME="$TESTHOME" STARTUPCTL_USER=1 bash installer/install-from-source.sh install
 has "$(cat /tmp/startupctl-reinstall.log)" "接线一致" "重复安装报「接线一致」（不谎称要重开终端）"
 
 # 装上以后，命令真的能跑
-v="$(PATH="$inst/bin:$PATH" HOME="$TESTHOME" STARTUPCTL_USER=1 "$inst/bin/startupctl" --version 2>&1)"
+v="$(PATH="$inst/bin:$PATH" HOME="$TESTHOME" STARTUPCTL_USER=1 "$inst/bin/startupctl" version 2>&1)"
 has "$v" "startupctl" "安装后的命令可执行"
 
 # 卸载：功能项删掉，**白名单与备份保留**
@@ -242,12 +242,12 @@ has "$same" "已是最新" "同版本 update 报「已是最新」"
 # 阶段 B：把镜像推到 9.9.9，再真更新一次
 _build_snapshot "9.9.9" "$STAGE"
 
-# --check：只比对不落盘
+# update check：只比对不落盘
 chk="$(HOME="$H7" STARTUPCTL_USER=1 STARTUPCTL_MIRROR="file://$STAGE" \
-       "$H7/.devtools/startupctl/bin/startupctl" update --check 2>&1)"
-has "$chk" "仅比对" "update --check 明确说明未落盘"
+       "$H7/.devtools/startupctl/bin/startupctl" update check 2>&1)"
+has "$chk" "仅比对" "update check 明确说明未落盘"
 eq "$(cat "$H7/.devtools/startupctl/VERSION" 2>/dev/null)" "$(cat "$ROOT/VERSION")" \
-   "update --check 没有改动安装目录的 VERSION"
+   "update check 没有改动安装目录的 VERSION"
 
 # 写一条白名单 + 一个备份，验证更新不动数据
 mkdir -p "$H7/.devtools/startupctl/backups/20260101T000000Z-remove"
@@ -267,7 +267,7 @@ eq "$(cat "$H7/.devtools/startupctl/VERSION" 2>/dev/null)" "9.9.9" "更新后 VE
 
 # 离线失败要优雅
 off="$(HOME="$H7" STARTUPCTL_USER=1 STARTUPCTL_MIRROR="file:///nonexistent" STARTUPCTL_GITHUB=none \
-       "$H7/.devtools/startupctl/bin/startupctl" update --check 2>&1)"
+       "$H7/.devtools/startupctl/bin/startupctl" update check 2>&1)"
 rc_off=$?
 if [ "$rc_off" -ne 0 ]; then ok "镜像不可达时 update 非零退出"; else bad "镜像不可达时 update 却成功"; fi
 has "$off" "无法获取" "离线失败给出明确原因"

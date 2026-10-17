@@ -1,310 +1,182 @@
 # -*- coding: utf-8 -*-
-"""图形选择器（tkinter，标准库，零第三方依赖）。
+"""窗口界面：选择器（加条目）与管理窗口（删/改条目）。
 
-为什么要有它：TUI 靠键盘、纯文本要打编号，两者都怕**输入出错**——而"选了半天其实
-没生效"正是最难受的失败形态（选错了你看得见，没生效你看不见）。图形窗口里
-每一条都是看得见的勾选框，点一下就变，**所见即所得**，没有"编号打错"这条路。
+用户要的是「一个简单的 GUI 来选择，主要是怕输入的问题导致没有起作用」。所以
+这里只做两件事，都尽量朴素：
 
-设计要点：
+    pick(...)     选择器——列出一屏东西，勾选后确定
+    manage(...)   管理窗口——把名单里的条目列出来，删除/刷新
 
-1. **用 `ttk.Treeview` 而不是一堆 Checkbutton**。900+ 个进程要是一行两个复选框，
-   就是 1800 个控件，建窗口要好几秒；Treeview 是原生列表控件，几千行照样顺。
-   勾选以**单元格文字**表达（`✓` / `锁`），点单元格即切换。
-2. **系统基础进程在这里也真的点不动**：不仅显示成灰的 `系统`，点击处理里也直接忽略。
-   与另两个选择器共用同一份 `picker.Rows`，所以"能不能选"的规则只有一处。
-3. **返回前再过滤一遍 `is_protected()`**，与 tui/plain 一致（三道 UI 一条底线）。
-4. 任何一步失败都**抛 GuiUnavailable**，由调用方回退到 TUI/纯文本——
-   绝不能"窗口没弹出来但命令报成功"。
+**没有 GUI 也绝不能挂**：`available()` 在非交互终端里返回 False，调用方回退到
+纯文本；`pick` 只在真能弹窗时被调用。CI 与管道里弹一个等人点的窗口会让任务
+直接挂住，而且没有输出、没有报错，极难归因。
+
+测试接缝 `STARTUPCTL_GUI_SELFTEST=<N>`：窗口弹出后自动"选前 N 个可选项并确定"。
+没有它，"GUI 真的能选出结果"就只能靠人手点，于是 CI 永远验不到这条路径。
 """
 import os
 import sys
 
-from . import guard as guard_mod
-from . import picker as picker_mod
-
-# 测试接缝：设 STARTUPCTL_GUI_SELFTEST=<N> 时，窗口弹出后自动"选前 N 个可选项并确定"。
-# 没有它，"图形窗口真的能选出结果"就只能靠人手点一遍——而那意味着 CI 永远验不到
-# 这条路径，出问题时用户才发现。与注册表 shim 同一性质：为可测性付一点复杂度是值的。
 _SELFTEST_ENV = 'STARTUPCTL_GUI_SELFTEST'
 
 
 class GuiUnavailable(Exception):
-    """tkinter 不可用 / 无显示环境 / 窗口创建失败。调用方据此回退。"""
+    """窗口起不来（没有 tkinter / 没有显示）。调用方据此回退。"""
 
 
 def available():
-    """能不能用图形选择器。**只做探测**，不建窗口。"""
-    try:
-        import tkinter                                          # noqa: F401
-    except ImportError:
-        return False, 'tkinter 未安装（Linux 上通常需要装 python3-tk）'
-    if sys.platform not in ('darwin', 'win32'):
-        if not os.environ.get('DISPLAY') and not os.environ.get('WAYLAND_DISPLAY'):
-            return False, '没有图形显示环境（DISPLAY 未设置）'
-    if os.environ.get('STARTUPCTL_NO_GUI'):
-        return False, 'STARTUPCTL_NO_GUI 已设置'
-    # ⚠️ 只在**交互式终端**下弹窗。CI / 管道里弹一个等人点的窗口会让任务直接挂住，
-    #    而那种失败极难归因（没有输出、没有报错，就是不动）。自测接缝不受此限。
-    if not os.environ.get(_SELFTEST_ENV):
-        try:
-            if not (sys.stdin.isatty() and sys.stdout.isatty()):
-                return False, '当前不是交互式终端（管道/CI），不弹窗'
-        except Exception:
-            return False, '无法判断是否交互式终端'
-    return True, ''
+    """现在能不能弹窗？
 
-
-# 勾选标记：都用能稳定渲染的字符。✓ 是 BMP 常见字符；锁用汉字最稳。
-_MARK_ON = '✓'
-_MARK_OFF = ''
-_SYS_LABEL = '系统'
-_LOCK_LABEL = '锁'
-
-
-def pick(rows, platform='', own_pids=()):
-    """弹出图形选择器。`rows` 由 picker.pick() 建好后传进来（三个 UI 共用一份状态）。
-
-    返回 `[(proc, locked)]`；**用户点了取消返回 None**。
-
-    ⚠️ 两种"没结果"必须分清，否则会静默退化：
-      · 窗口**打不开** → 抛 GuiUnavailable（调用方回退到 TUI/纯文本）
-      · 用户**点了取消** → 返回 None（调用方就此打住，不该偷偷换个界面再来一次）
+    两个条件都满足才弹：有 tkinter，且**在交互式终端里**（或测试显式放开）。
+    管道/CI 里 `isatty()` 为 False —— 那种环境下弹窗等于把任务挂死。
     """
-    ok, why = available()
-    if not ok:
-        raise GuiUnavailable(why)
+    if os.environ.get(_SELFTEST_ENV):
+        try:
+            import tkinter  # noqa: F401
+        except Exception:
+            return False
+        return True
+    try:
+        import tkinter  # noqa: F401
+    except Exception:
+        return False
+    try:
+        return sys.stdin.isatty() and sys.stdout.isatty()
+    except Exception:
+        return False
 
-    import tkinter as tk
-    from tkinter import ttk
 
-    if not rows.rows:
-        return []
-
+def _root(title):
+    try:
+        import tkinter as tk
+        from tkinter import ttk
+    except Exception as e:                      # pragma: no cover - 无 tkinter
+        raise GuiUnavailable(str(e))
     try:
         root = tk.Tk()
-    except Exception as e:                                      # noqa: BLE001
-        raise GuiUnavailable('无法创建窗口: %s' % e)
+    except Exception as e:                      # pragma: no cover - 无显示
+        raise GuiUnavailable(str(e))
+    root.title(title)
+    root.geometry('900x560')
+    root.minsize(620, 380)
+    return root, tk, ttk
 
-    result = {'value': None}
 
-    root.title('startupctl — 选择进程')
-    try:
-        root.geometry('1000x640')
-    except Exception:
-        pass
+def _tree(parent, tk, ttk, cols):
+    wrap = ttk.Frame(parent)
+    wrap.pack(fill='both', expand=True, padx=10, pady=(10, 6))
+    tree = ttk.Treeview(wrap, columns=cols, show='headings', selectmode='browse')
+    for c, w in zip(cols, (260, 560)):
+        tree.heading(c, text=c)
+        tree.column(c, width=w, anchor='w', stretch=True)
+    vs = ttk.Scrollbar(wrap, orient='vertical', command=tree.yview)
+    tree.configure(yscrollcommand=vs.set)
+    tree.pack(side='left', fill='both', expand=True)
+    vs.pack(side='right', fill='y')
+    return tree
 
-    # ---------------- 顶部：说明 + 筛选 ----------------
-    top = ttk.Frame(root, padding=(10, 8, 10, 4))
-    top.pack(fill='x')
 
-    head = ttk.Label(
-        top, justify='left',
-        text=('勾选要纳入策略的进程。灰底的「系统」行是系统基础进程，'
-              '任何模式下都不会被结束，也点不动。'))
-    head.pack(anchor='w')
+# ------------------------------------------------------------------ 选择器
+def pick(rows, title='选择', subtitle='', columns=('名称', '详情')):
+    """勾选式选择器。rows 是对象列表，需有 label / detail / frozen / selected。
 
-    sub = ttk.Label(
-        top, justify='left', foreground='#666',
-        text=('点「选择」列勾选/取消 · 点「锁定」列把它钉住（锁定后任何模式下都不结束） · '
-              '双击行也能勾选'))
-    sub.pack(anchor='w', pady=(2, 6))
+    返回**选中行的下标列表**（只含可选项）；用户取消返回 None。
+    系统基础进程与已锁定条目（frozen=True）在点击处理里就直接忽略，
+    不只是画成灰的——UI 只是提示，真正的防线仍在 guard/enforce 里。
+    """
+    if not rows:
+        return []
+    root, tk, ttk = _root(title)
 
-    filt_row = ttk.Frame(top)
-    filt_row.pack(fill='x')
-    ttk.Label(filt_row, text='筛选:').pack(side='left')
+    head = ttk.Frame(root)
+    head.pack(fill='x', padx=10, pady=(10, 0))
+    ttk.Label(head, text=subtitle or '勾选要加入的条目（系统项与锁定项不可选）',
+              foreground='#444').pack(side='left')
     filter_var = tk.StringVar()
-    filter_entry = ttk.Entry(filt_row, textvariable=filter_var, width=32)
-    filter_entry.pack(side='left', padx=(6, 12))
-    ttk.Label(filt_row, text='（按进程名或路径过滤，留空显示全部）',
-              foreground='#888').pack(side='left')
+    entry = ttk.Entry(head, textvariable=filter_var, width=22)
+    entry.pack(side='right')
+    ttk.Label(head, text='筛选:').pack(side='right', padx=(0, 6))
 
+    tree = _tree(root, tk, ttk, columns)
+    bot = ttk.Frame(root)
+    bot.pack(fill='x', padx=10, pady=(0, 10))
     status_var = tk.StringVar()
 
-    # ---------------- 中部：列表 ----------------
-    mid = ttk.Frame(root, padding=(10, 0, 10, 0))
-    mid.pack(fill='both', expand=True)
+    view = []          # tree iid -> rows 下标
+    result = {'value': None}
 
-    cols = ('sel', 'lock', 'name', 'pid', 'path')
-    tree = ttk.Treeview(mid, columns=cols, show='headings', selectmode='browse')
-    tree.heading('sel', text='选择')
-    tree.heading('lock', text='锁定')
-    tree.heading('name', text='进程名')
-    tree.heading('pid', text='PID')
-    tree.heading('path', text='可执行文件 / 命令行')
-    tree.column('sel', width=56, anchor='center', stretch=False)
-    tree.column('lock', width=56, anchor='center', stretch=False)
-    tree.column('name', width=200, anchor='w', stretch=False)
-    tree.column('pid', width=70, anchor='e', stretch=False)
-    tree.column('path', width=560, anchor='w', stretch=True)
+    def look(r):
+        return getattr(r, 'label', '') or ''
 
-    vsb = ttk.Scrollbar(mid, orient='vertical', command=tree.yview)
-    tree.configure(yscrollcommand=vsb.set)
-    tree.pack(side='left', fill='both', expand=True)
-    vsb.pack(side='right', fill='y')
+    def visible_idx():
+        f = filter_var.get().strip().lower()
+        if not f:
+            return list(range(len(rows)))
+        return [i for i, r in enumerate(rows) if f in look(r).lower()
+                or f in (getattr(r, 'detail', '') or '').lower()]
 
-    # 系统行灰底；锁定行浅黄
-    tree.tag_configure('sys', foreground='#9a9a9a', background='#f2f2f2')
-    tree.tag_configure('locked', background='#fff7d6')
-    tree.tag_configure('on', foreground='#0a6b1e')
+    def mark(r):
+        if getattr(r, 'frozen', False):
+            return '[系统]' if getattr(r, 'protected', False) else '[锁定]'
+        return '[x]' if r.selected else '[ ]'
 
-    # ---------------- 底部：按钮 ----------------
-    bot = ttk.Frame(root, padding=(10, 6, 10, 10))
-    bot.pack(fill='x')
+    def fill():
+        for iid in tree.get_children():
+            tree.delete(iid)
+        view[:] = visible_idx()
+        for n, idx in enumerate(view):
+            r = rows[idx]
+            tree.insert('', 'end', iid=str(n), values=(mark(r) + ' ' + look(r),
+                                                       getattr(r, 'detail', '')))
+        refresh_status()
 
     def refresh_status():
-        sel, prot, total, lock = rows.counts()
-        status_var.set('共 %d 个进程 · 已选 %d · 锁定 %d · 系统基础进程 %d（不可选）'
-                       % (total, sel, lock, prot))
-
-    # 行号 → 数据行下标（Treeview 的 iid 就是 rows.rows 的下标，便于回查）
-    def fill():
-        tree.delete(*tree.get_children())
-        f = filter_var.get().strip().lower()
-        shown = 0
-        for i, r in enumerate(rows.rows):
-            hay = '%s %s' % (r.proc.comm or '', r.proc.program or '')
-            if f and f not in hay.lower():
-                continue
-            if r.protected:
-                sel_mark, lock_mark, tag = _SYS_LABEL, '', 'sys'
-            else:
-                sel_mark = _MARK_ON if r.selected else _MARK_OFF
-                lock_mark = _LOCK_LABEL if r.locked else ''
-                tag = 'locked' if r.locked else ('on' if r.selected else '')
-            tree.insert('', 'end', iid=str(i),
-                        values=(sel_mark, lock_mark,
-                                (r.proc.comm or '?')[:40],
-                                r.proc.pid,
-                                (r.proc.program or r.proc.args_str or '')[:200]),
-                        tags=(tag,) if tag else ())
-            shown += 1
-        refresh_status()
-        return shown
+        n = sum(1 for r in rows if r.selected and not getattr(r, 'frozen', False))
+        status_var.set('已选 %d 项' % n)
 
     def toggle_selected():
-        s = tree.selection()
-        if not s:
-            return
-        idx = int(s[0])
-        ok2, why2 = rows.toggle(idx)
-        nxt = _next_row(idx)
-        _repaint_row(idx)
-        if nxt is not None:
-            tree.selection_set(str(nxt))
-            tree.see(str(nxt))
-        if not ok2:
-            status_var.set('不能改这一行：%s' % why2)
-
-    def toggle_locked():
-        s = tree.selection()
-        if not s:
-            return
-        idx = int(s[0])
-        ok2, why2 = rows.toggle_lock(idx)
-        _repaint_row(idx)
-        if not ok2:
-            status_var.set('不能改这一行：%s' % why2)
-
-    def _next_row(idx):
-        items = list(tree.get_children())
-        for n, iid in enumerate(items):
-            if iid == str(idx):
-                return int(items[n + 1]) if n + 1 < len(items) else None
-        return None
-
-    def _repaint_row(idx):
-        iid = str(idx)
-        if not tree.exists(iid):
-            return
-        r = rows.rows[idx]
-        if r.protected:
-            vals = (_SYS_LABEL, '', (r.proc.comm or '?')[:40], r.proc.pid,
-                    (r.proc.program or r.proc.args_str or '')[:200])
-            tag = 'sys'
-        else:
-            vals = (_MARK_ON if r.selected else _MARK_OFF,
-                    _LOCK_LABEL if r.locked else '',
-                    (r.proc.comm or '?')[:40], r.proc.pid,
-                    (r.proc.program or r.proc.args_str or '')[:200])
-            tag = 'locked' if r.locked else ('on' if r.selected else '')
-        tree.item(iid, values=vals, tags=(tag,) if tag else ())
+        for iid in tree.selection():
+            n = int(iid)
+            if n >= len(view):
+                continue
+            r = rows[view[n]]
+            if getattr(r, 'frozen', False):
+                continue                     # 在点击处理里就忽略，不只是画灰
+            r.selected = not r.selected
+            tree.item(iid, values=(mark(r) + ' ' + look(r),
+                                   getattr(r, 'detail', '')))
         refresh_status()
 
-    def on_click(event):
-        """点「选择」/「锁定」列即切换。**系统行在这里也直接忽略。**"""
-        rowid = tree.identify_row(event.y)
-        colid = tree.identify_column(event.x)
-        if not rowid:
-            return
-        tree.selection_set(rowid)
-        idx = int(rowid)
-        if rows.rows[idx].protected:
-            status_var.set('系统基础进程，任何模式下都不会被结束，不可选：%s'
-                           % rows.rows[idx].why)
-            return
-        if colid == '#1':
-            toggle_selected()
-        elif colid == '#2':
-            toggle_locked()
-
-    def on_double(event):
-        rowid = tree.identify_row(event.y)
-        if rowid:
-            tree.selection_set(rowid)
-            toggle_selected()
-
-    def on_key(event):
-        if event.keysym == 'space':
-            toggle_selected()
-            return 'break'
-        if event.keysym in ('l', 'L'):
-            toggle_locked()
-            return 'break'
-        return None
-
-    tree.bind('<Button-1>', on_click)
-    tree.bind('<Double-1>', on_double)
-    tree.bind('<space>', on_key)
-    tree.bind('<Key-l>', on_key)
-    tree.bind('<Key-L>', on_key)
-
     def select_all():
-        f = filter_var.get().strip().lower()
-        for i, r in enumerate(rows.rows):
-            if r.protected:
-                continue
-            hay = '%s %s' % (r.proc.comm or '', r.proc.program or '')
-            if f and f not in hay.lower():
-                continue
-            r.selected = True
+        for r in rows:
+            if not getattr(r, 'frozen', False):
+                r.selected = True
         fill()
 
     def select_none():
-        for r in rows.rows:
-            if not r.protected and not r.locked:
+        for r in rows:
+            if not getattr(r, 'frozen', False):
                 r.selected = False
         fill()
 
     def invert():
-        f = filter_var.get().strip().lower()
-        for i, r in enumerate(rows.rows):
-            if r.protected or r.locked:
-                continue
-            hay = '%s %s' % (r.proc.comm or '', r.proc.program or '')
-            if f and f not in hay.lower():
-                continue
-            r.selected = not r.selected
+        for r in rows:
+            if not getattr(r, 'frozen', False):
+                r.selected = not r.selected
         fill()
 
     def on_ok():
-        picked = [(p, lk) for (p, lk) in rows.results()
-                  if not guard_mod.is_protected(p, platform, own_pids)[0]]
-        result['value'] = picked
+        result['value'] = [i for i, r in enumerate(rows)
+                           if r.selected and not getattr(r, 'frozen', False)]
         root.destroy()
 
     def on_cancel():
         result['value'] = None
         root.destroy()
+
+    tree.bind('<Button-1>', lambda e: (tree.after_idle(toggle_selected), None)[1])
+    tree.bind('<space>', lambda e: (toggle_selected(), 'break')[1])
+    tree.bind('<Double-1>', lambda e: (toggle_selected(), None)[1])
 
     ttk.Button(bot, text='全选可选', command=select_all).pack(side='left')
     ttk.Button(bot, text='全不选', command=select_none).pack(side='left', padx=(6, 0))
@@ -315,13 +187,14 @@ def pick(rows, platform='', own_pids=()):
 
     filter_var.trace_add('write', lambda *a: (fill(), None)[1])
     fill()
-    filter_entry.focus_set()
+    entry.focus_set()
     try:
         root.bind('<Escape>', lambda e: on_cancel())
         root.bind('<Return>', lambda e: on_ok())
         root.protocol('WM_DELETE_WINDOW', on_cancel)
     except Exception:
         pass
+
     selftest = os.environ.get(_SELFTEST_ENV)
     if selftest:
         def _auto():
@@ -330,8 +203,8 @@ def pick(rows, platform='', own_pids=()):
             except ValueError:
                 n = 1
             cnt = 0
-            for r in rows.rows:
-                if r.protected:
+            for r in rows:
+                if getattr(r, 'frozen', False):
                     continue
                 if cnt >= n:
                     break
@@ -343,3 +216,62 @@ def pick(rows, platform='', own_pids=()):
 
     root.mainloop()
     return result['value']
+
+
+# ------------------------------------------------------------------ 管理窗口
+def manage(tabs, title='名单管理'):
+    """管理窗口：一个页签一个维度，列出条目、可删除。
+
+    tabs: [{'name': '启动项', 'provider': () -> [(左, 右)], 'on_remove': fn(下标)}]
+    provider 每次刷新时重新取，所以删除后编号不会错位。
+    """
+    root, tk, ttk = _root(title)
+    nb = ttk.Notebook(root)
+    nb.pack(fill='both', expand=True, padx=10, pady=(10, 6))
+
+    state = []      # 每个页签的 (tab, tree, provider, on_remove)
+
+    def build_tab(spec):
+        frame = ttk.Frame(nb)
+        nb.add(frame, text='%s（%d）' % (spec['name'], len(spec['provider']())))
+        tree = _tree(frame, tk, ttk, ('条目', '说明'))
+        state.append([spec, tree])
+        refill(len(state) - 1)
+        return tree
+
+    def refill(tab_i):
+        spec, tree = state[tab_i]
+        for iid in tree.get_children():
+            tree.delete(iid)
+        for i, (left, right) in enumerate(spec['provider']()):
+            tree.insert('', 'end', iid=str(i), values=(left, right))
+        nb.tab(tab_i, text='%s（%d）' % (spec['name'], len(spec['provider']())))
+
+    def remove_selected():
+        try:
+            tab_i = nb.index(nb.select())
+        except Exception:
+            return
+        if tab_i < 0 or tab_i >= len(state):
+            return
+        spec, tree = state[tab_i]
+        sel = tree.selection()
+        if not sel:
+            return
+        spec['on_remove'](int(sel[0]))
+        refill(tab_i)
+
+    bot = ttk.Frame(root)
+    bot.pack(fill='x', padx=10, pady=(0, 10))
+    ttk.Button(bot, text='删除选中', command=remove_selected).pack(side='left')
+    ttk.Button(bot, text='刷新', command=lambda: [refill(i) for i in range(len(state))]) \
+        .pack(side='left', padx=(6, 0))
+    ttk.Button(bot, text='关闭', command=root.destroy).pack(side='right')
+
+    for spec in tabs:
+        build_tab(spec)
+    try:
+        root.protocol('WM_DELETE_WINDOW', root.destroy)
+    except Exception:
+        pass
+    root.mainloop()

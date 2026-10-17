@@ -31,7 +31,7 @@ from datetime import datetime, timezone
 from . import paths
 
 GUARD_NAME = 'guard.json'
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 MODE_OFF = 'off'
 MODE_DENY_ALL = 'deny_all'
@@ -56,6 +56,16 @@ PROTECTED = 'protected'
 LIST_WHITELIST = 'whitelist'
 LIST_BLACKLIST = 'blacklist'
 LIST_CN = {LIST_WHITELIST: '白名单', LIST_BLACKLIST: '黑名单'}
+
+# ★ 名单的两个维度。
+#   启动项是"该不该开机起来"，进程是"现在该不该活着"。Windows 上大量自启
+#   根本不出现在启动项列表里（组策略 / 服务 / 注册表 / 启动文件夹各有各的存储），
+#   所以只看启动项会漏；反过来只看进程又分不清"这是开机自己起的"还是"你刚手敲的"。
+#   两个维度都收，且**互不替代**。
+DIM_STARTUP = 'startup'
+DIM_PROCESS = 'process'
+DIMS = (DIM_STARTUP, DIM_PROCESS)
+DIM_CN = {DIM_STARTUP: '启动项', DIM_PROCESS: '进程'}
 
 M_PROC_NAME = 'proc_name'      # 进程名（comm）
 M_EXEC_PATH = 'exec_path'      # 可执行文件完整路径
@@ -311,64 +321,88 @@ def _now():
 
 
 class Guard(object):
-    """进程守护策略。
+    """启动项 / 进程的放行策略。
 
-    **模式与选择是分开的两件事**（用户明确要求）：
+    **模式与选择分开**（用户明确要求）：
 
         mode        选哪种策略：off / deny_all / blacklist / whitelist
-        whitelist   一份清单 ─┐
-        blacklist   一份清单 ─┘ 两份**各自独立**，互不影响
+        whitelist   白名单 ─┐
+        blacklist   黑名单 ─┘ 两份**各自独立**，互不影响
 
-    以前是"一份 entries、含义随模式解释"，那样切模式会把上一份清单变成另一套语义——
-    刚在白名单里挑完要放行的东西，一切到黑名单，同一批条目立刻变成"要杀"。
-    两份分开之后，切模式只是"换用哪一份"，两份内容都原样留着。
+    每份名单又分**两个维度**（`DIM_STARTUP` / `DIM_PROCESS`）：
 
-    哪份清单在起作用，由 mode 决定（`active_list_name()`）：
+        startup     启动项条目（uid + anchor）——"这些允许/禁止开机自启"
+        process     进程条目（进程名 / 可执行路径）——"这些允许/禁止活着"
+
+    两个维度**互不替代**：Windows 上组策略、服务、注册表、启动文件夹都能自启，
+    只看启动项会漏；而只看进程又分不清"开机自己起的"和"你刚手敲的"。
+    判定时两个维度都查，命中任一即算命中（见 `verdict`）。
+
+    哪份名单在起作用由 mode 决定（`active_list_name()`）：
 
         off        不干预，两份都不用
         deny_all   用 whitelist 作**豁免**（"这些也留着"）
         blacklist  用 blacklist：命中即结束
         whitelist  用 whitelist：只放行命中的
 
-    **锁定的条目在两份清单里都受保护**（锁定 = 别动它，与它在哪份清单无关）。
+    **锁定的条目在两份名单里都受保护**（锁定 = 别动它，与它在哪份名单无关）。
     """
 
     def __init__(self, mode=MODE_OFF, whitelist=None, blacklist=None,
                  options=None, path=None):
         self.mode = mode if mode in MODES else MODE_OFF
-        self.whitelist = list(whitelist or [])
-        self.blacklist = list(blacklist or [])
+        self.whitelist = self._norm(whitelist)
+        self.blacklist = self._norm(blacklist)
         self.options = dict(options or {})
         self.path = path or os.path.join(paths.data_root(), GUARD_NAME)
 
-    # ---------------- 两份清单 ----------------
+    @staticmethod
+    def _norm(v):
+        """把一份名单规整成 {startup: [], process: []}。
+
+        兼容两种输入：v3 的 dict，以及 v2/更早的**扁平 list**（那时只有进程维度）。
+        """
+        out = {DIM_STARTUP: [], DIM_PROCESS: []}
+        if isinstance(v, dict):
+            out[DIM_STARTUP] = list(v.get(DIM_STARTUP) or [])
+            out[DIM_PROCESS] = list(v.get(DIM_PROCESS) or [])
+        elif isinstance(v, list):
+            out[DIM_PROCESS] = list(v)
+        return out
+
+    # ---------------- 两份名单 × 两个维度 ----------------
     def lists(self):
         return ((LIST_WHITELIST, self.whitelist), (LIST_BLACKLIST, self.blacklist))
 
-    def entries_of(self, name):
+    def entries_of(self, name, dim):
         if name == LIST_WHITELIST:
-            return self.whitelist
+            return self.whitelist[dim]
         if name == LIST_BLACKLIST:
-            return self.blacklist
-        raise ValueError('未知清单: %s' % name)
+            return self.blacklist[dim]
+        raise ValueError('未知名单: %s' % name)
 
     def active_list_name(self):
-        """当前模式下**起作用**的那份清单；off 返回 ''。"""
+        """当前模式下**起作用**的那份名单；off 返回 ''。"""
         if self.mode == MODE_WHITELIST or self.mode == MODE_DENY_ALL:
             return LIST_WHITELIST
         if self.mode == MODE_BLACKLIST:
             return LIST_BLACKLIST
         return ''
 
-    def active_entries(self):
+    def active_entries(self, dim):
         n = self.active_list_name()
-        return self.entries_of(n) if n else []
+        return self.entries_of(n, dim) if n else []
 
     def count(self):
-        return len(self.whitelist), len(self.blacklist)
+        """(白名单条数, 黑名单条数)，两个维度合计。"""
+        return (len(self.whitelist[DIM_STARTUP]) + len(self.whitelist[DIM_PROCESS]),
+                len(self.blacklist[DIM_STARTUP]) + len(self.blacklist[DIM_PROCESS]))
+
+    def count_dim(self, name, dim):
+        return len(self.entries_of(name, dim))
 
     # ---------------- 匹配 ----------------
-    def _entry_matches(self, e, proc):
+    def _proc_matches(self, e, proc):
         kind = e.get('match')
         val = e.get('value') or ''
         if not val:
@@ -383,40 +417,62 @@ class Guard(object):
             return bool(prog) and prog.startswith(val)
         return False
 
-    def matches_in(self, name, proc):
-        for e in self.entries_of(name):
-            if self._entry_matches(e, proc):
+    @staticmethod
+    def _startup_matches(e, startup):
+        if not startup:
+            return False
+        if e.get('uid') and startup.get('uid') and e['uid'] == startup['uid']:
+            return True
+        # uid 会随 UID_VER 演进；anchor（Label / 单元名 / 值名 / 任务路径）是
+        # 平台自己的身份，留着它当回退，升级后用户的条目不会静默失配。
+        return bool(e.get('anchor')) and e.get('anchor') == startup.get('anchor')
+
+    def matches_in(self, name, proc=None, startup=None):
+        """是否命中指定名单（任一维度）。"""
+        for e in self.entries_of(name, DIM_PROCESS):
+            if proc is not None and self._proc_matches(e, proc):
+                return True
+        for e in self.entries_of(name, DIM_STARTUP):
+            if self._startup_matches(e, startup):
                 return True
         return False
 
-    def matches(self, proc):
-        """是否命中**当前模式起作用的那份**清单。"""
+    def matches(self, proc, startup=None):
+        """是否命中**当前模式起作用的那份**名单。"""
         n = self.active_list_name()
-        return self.matches_in(n, proc) if n else False
+        return self.matches_in(n, proc, startup) if n else False
 
-    def matches_locked(self, proc):
-        """是否命中**任一份清单里已锁定**的条目。
+    def matches_locked(self, proc=None, startup=None):
+        """是否命中**任一份名单里已锁定**的条目。
 
         锁定 = 比普通条目更强的豁免：任何模式下都不结束，且要改必须先解锁。
-        故意跨两份清单查：锁定表达的是"别动它"，与它在哪份清单里无关。
+        故意跨两份名单查：锁定表达的是"别动它"，与它在哪份名单里无关。
         """
-        for name, entries in self.lists():
-            for e in entries:
-                if e.get('locked') and self._entry_matches(e, proc):
+        for _name, lists in self.lists():
+            for e in lists[DIM_PROCESS]:
+                if e.get('locked') and proc is not None and self._proc_matches(e, proc):
+                    return True
+            for e in lists[DIM_STARTUP]:
+                if e.get('locked') and self._startup_matches(e, startup):
                     return True
         return False
 
     def locked_entries(self):
         out = []
-        for name, entries in self.lists():
-            for e in entries:
-                if e.get('locked'):
-                    out.append((name, e))
+        for name, lists in self.lists():
+            for dim in DIMS:
+                for e in lists[dim]:
+                    if e.get('locked'):
+                        out.append((name, dim, e))
         return out
 
     # ---------------- 决策 ----------------
-    def verdict(self, proc, platform='', own_pids=()):
+    def verdict(self, proc, platform='', own_pids=(), startup=None):
         """唯一的决策入口。返回 (action, 原因)。
+
+        `startup` 是这个进程关联到的启动项（dict，含 uid/anchor），没有就传 None。
+        两个维度**命中任一即算命中**：白名单里钉了一个启动项，它拉起的进程
+        自然该放行；黑名单里钉了一个启动项，它拉起的进程自然该结束。
 
         action ∈ {protected, allow, deny}。**先问保护，再问锁定，最后才问模式**——
         这个顺序就是"三种模式都保留系统基础进程"与"锁定条目不随模式变化"的实现本身，
@@ -426,15 +482,15 @@ class Guard(object):
         if protected:
             return PROTECTED, why
 
-        if self.matches_locked(proc):
+        if self.matches_locked(proc, startup):
             return PROTECTED, '已锁定（你钉住的条目，任何模式下都不结束）'
 
         if self.mode == MODE_OFF:
             return ALLOW, '模式为不干预'
 
-        hit = self.matches(proc)
+        hit = self.matches(proc, startup)
         if self.mode == MODE_DENY_ALL:
-            # 全部拒绝模式下，白名单清单的作用是**豁免**（"这些也留着"）
+            # 全部拒绝模式下，白名单的作用是**豁免**（"这些也留着"）
             if hit:
                 return ALLOW, '在白名单豁免清单中'
             return DENY, '全部拒绝模式：不在豁免清单中'
@@ -447,37 +503,60 @@ class Guard(object):
     def ready_to_enforce(self):
         """现在这套策略**真的可以执行**吗？返回 (bool, 原因)。
 
-        「只有选择的时候才生效」——这条就是它的实现：**清单是空的就不许执行**。
-        否则白名单模式下"一份空清单"等于"除了系统全杀"，用户什么都没选，
+        「只有选择的时候才生效」——这条就是它的实现：**名单是空的就不许执行**。
+        否则白名单模式下"一份空名单"等于"除了系统全杀"，用户什么都没选，
         工具却按最激进的解释动手了。宁可拒绝并让他先去选。
+
+        两个维度**合计**为空才算空：只选了启动项、没选进程，白名单模式照样会
+        把没关联到那些启动项的进程全杀掉——那同样不是用户想要的。
         """
         if self.mode == MODE_OFF:
             return False, '模式为「不干预」，不会结束任何进程'
         n = self.active_list_name()
-        if not self.entries_of(n):
+        total = sum(len(self.entries_of(n, d)) for d in DIMS)
+        if not total:
             if self.mode == MODE_WHITELIST:
                 return False, ('白名单是空的 —— 此时白名单模式等于"除系统外全杀"。'
-                               '请先选择要放行的进程: startupctl guard choose')
+                               '请先选择: startupctl whitelist')
             if self.mode == MODE_DENY_ALL:
                 return True, ('全部拒绝 + 空豁免清单：除系统基础进程外**全部**结束'
-                              '（这正是全部拒绝的语义；想留什么请先 guard choose）')
+                              '（这正是全部拒绝的语义；想留什么请先 startupctl whitelist）')
             return False, ('黑名单是空的 —— 没有要结束的对象。'
-                           '请先选择: startupctl guard choose')
+                           '请先选择: startupctl blacklist')
         return True, ''
 
     # ---------------- 变更 ----------------
-    def add(self, proc, name=None, match=M_PROC_NAME, value=None, reason='', locked=False):
-        """往指定清单加一条。name 省略时用当前模式作用的那份（off 时用白名单）。"""
-        name = name or self.active_list_name() or LIST_WHITELIST
-        if name not in (LIST_WHITELIST, LIST_BLACKLIST):
-            raise ValueError('未知清单: %s' % name)
+    def add_startup(self, name, item, reason='', locked=False):
+        """往名单的**启动项**维度加一条。item 需有 uid / anchor / kind / scope / name。"""
+        entries = self.entries_of(name, DIM_STARTUP)
+        uid = getattr(item, 'uid', '') or (item.get('uid') if isinstance(item, dict) else '')
+        anchor = getattr(item, 'anchor', '') or (item.get('anchor') if isinstance(item, dict) else '')
+        for e in entries:
+            if e.get('uid') == uid or (anchor and e.get('anchor') == anchor):
+                if locked:
+                    e['locked'] = True
+                return e
+        e = {
+            'uid': uid, 'anchor': anchor,
+            'kind': getattr(item, 'kind', '') or '',
+            'scope': getattr(item, 'scope', '') or '',
+            'label': getattr(item, 'name', '') or anchor,
+            'reason': reason or '',
+            'added': _now(),
+            'locked': bool(locked),
+        }
+        entries.append(e)
+        return e
+
+    def add_process(self, name, proc, match=M_PROC_NAME, value=None, reason='', locked=False):
+        """往名单的**进程**维度加一条。"""
         if match not in MATCH_KINDS:
             raise ValueError('未知的匹配方式: %s' % match)
         if value is None:
             value = self._default_value(proc, match)
         if not value:
-            raise ValueError('无法从该进程推断匹配值，请用 --value 显式指定')
-        entries = self.entries_of(name)
+            raise ValueError('无法从该进程推断匹配值')
+        entries = self.entries_of(name, DIM_PROCESS)
         for e in entries:
             if e.get('match') == match and e.get('value') == value:
                 if locked:
@@ -494,6 +573,29 @@ class Guard(object):
         entries.append(e)
         return e
 
+    # ---- 进程维度的便捷别名（旧调用点与测试用）----
+    def add(self, proc, name=None, match=M_PROC_NAME, value=None,
+            reason='', locked=False):
+        name = name or self.active_list_name() or LIST_WHITELIST
+        return self.add_process(name, proc, match, value, reason, locked)
+
+    def set_locked(self, value, locked=True, name=None):
+        names = [name] if name else [LIST_WHITELIST, LIST_BLACKLIST]
+        n = 0
+        for nm in names:
+            for e in self.entries_of(nm, DIM_PROCESS):
+                if e.get('value') == value:
+                    e['locked'] = bool(locked)
+                    n += 1
+        return n
+
+    def is_locked_value(self, value):
+        for _name, lists in self.lists():
+            for e in lists[DIM_PROCESS]:
+                if e.get('value') == value:
+                    return bool(e.get('locked'))
+        return False
+
     def _default_value(self, proc, match):
         if match == M_PROC_NAME:
             return getattr(proc, 'comm', '') or os.path.basename(
@@ -505,71 +607,34 @@ class Guard(object):
             return os.path.dirname(prog) + os.sep if prog else ''
         return ''
 
-    def replace_list(self, name, pairs):
-        """整体替换一份清单。pairs 是 [(proc, locked)]。返回写入条数。"""
-        entries = []
-        for proc, locked in pairs:
-            try:
-                e = self._make_entry(proc, locked)
-            except ValueError:
-                continue
-            entries.append(e)
-        if name == LIST_WHITELIST:
-            self.whitelist = entries
-        else:
-            self.blacklist = entries
+    def replace_dim(self, name, dim, entries):
+        """整体替换某名单的某个维度。entries 已经是条目 dict。"""
+        self.entries_of(name, dim)[:] = list(entries)
         return len(entries)
 
-    def _make_entry(self, proc, locked):
-        value = self._default_value(proc, M_PROC_NAME)
-        if not value:
-            raise ValueError('进程名为空')
-        return {
-            'match': M_PROC_NAME, 'value': value,
-            'reason': 'guard choose', 'added': _now(), 'locked': bool(locked),
-            'seen_comm': getattr(proc, 'comm', '') or '',
-            'seen_program': getattr(proc, 'program', '') or '',
-        }
+    def remove_at(self, name, dim, index):
+        """按序号删一条（GUI 管理窗口用）。返回被删的条目。"""
+        entries = self.entries_of(name, dim)
+        if index < 0 or index >= len(entries):
+            raise IndexError('序号越界: %s' % index)
+        return entries.pop(index)
 
-    def remove_value(self, value, name=None):
+    def set_locked_at(self, name, dim, index, locked=True):
+        entries = self.entries_of(name, dim)
+        if index < 0 or index >= len(entries):
+            raise IndexError('序号越界: %s' % index)
+        entries[index]['locked'] = bool(locked)
+        return entries[index]
+
+    def clear(self, name=None, dim=None):
         names = [name] if name else [LIST_WHITELIST, LIST_BLACKLIST]
+        dims = [dim] if dim else list(DIMS)
         n = 0
         for nm in names:
-            entries = self.entries_of(nm)
-            keep = [e for e in entries if e.get('value') != value]
-            n += len(entries) - len(keep)
-            if nm == LIST_WHITELIST:
-                self.whitelist = keep
-            else:
-                self.blacklist = keep
-        return n
-
-    def set_locked(self, value, locked=True, name=None):
-        names = [name] if name else [LIST_WHITELIST, LIST_BLACKLIST]
-        n = 0
-        for nm in names:
-            for e in self.entries_of(nm):
-                if e.get('value') == value:
-                    e['locked'] = bool(locked)
-                    n += 1
-        return n
-
-    def is_locked_value(self, value):
-        for _name, entries in self.lists():
-            for e in entries:
-                if e.get('value') == value:
-                    return bool(e.get('locked'))
-        return False
-
-    def clear(self, name=None):
-        names = [name] if name else [LIST_WHITELIST, LIST_BLACKLIST]
-        n = 0
-        for nm in names:
-            n += len(self.entries_of(nm))
-            if nm == LIST_WHITELIST:
-                self.whitelist = []
-            else:
-                self.blacklist = []
+            for d in dims:
+                entries = self.entries_of(nm, d)
+                n += len(entries)
+                del entries[:]
         return n
 
     def set_mode(self, mode):
@@ -587,22 +652,22 @@ class Guard(object):
                 d = json.load(fh)
             self.mode = d.get('mode') if d.get('mode') in MODES else MODE_OFF
             if 'whitelist' in d or 'blacklist' in d:
-                self.whitelist = list(d.get('whitelist') or [])
-                self.blacklist = list(d.get('blacklist') or [])
+                self.whitelist = self._norm(d.get('whitelist'))
+                self.blacklist = self._norm(d.get('blacklist'))
             elif 'entries' in d:
-                # v1 老格式：一份 entries、含义随模式。迁到**当前模式对应的那份**，
-                # 而不是丢掉——用户挑过的条目不该因为升级就消失。
+                # v1 老格式：一份 entries、含义随模式。迁到**当前模式对应的那份**的
+                # 进程维度，而不是丢掉——用户挑过的条目不该因为升级就消失。
                 old = list(d.get('entries') or [])
                 if self.mode == MODE_BLACKLIST:
-                    self.blacklist = old
+                    self.blacklist[DIM_PROCESS] = old
                 else:
-                    self.whitelist = old
+                    self.whitelist[DIM_PROCESS] = old
             self.options = dict(d.get('options') or {})
         except (OSError, ValueError):
             # 坏文件绝不覆盖（可能是手改错了）：按"不干预"跑，并留痕
             self.mode = MODE_OFF
-            self.whitelist = []
-            self.blacklist = []
+            self.whitelist = self._norm(None)
+            self.blacklist = self._norm(None)
             self._broken = True
         return self
 
@@ -617,9 +682,10 @@ class Guard(object):
             'options': self.options,
             'whitelist': self.whitelist,
             'blacklist': self.blacklist,
-            '_note': 'mode 决定用哪份清单：off 不用 · deny_all 用 whitelist 作豁免 · '
-                     'blacklist 用 blacklist · whitelist 用 whitelist。'
-                     '两份清单互相独立。锁定条目（locked=true）在任何模式下都不结束。',
+            '_note': '每份名单分两个维度：startup（启动项）与 process（进程），'
+                     '判定时命中任一即算命中。mode 决定用哪份名单：off 不用 · '
+                     'deny_all 用 whitelist 作豁免 · blacklist 用 blacklist · '
+                     'whitelist 用 whitelist。锁定条目（locked=true）在任何模式下都不结束。',
         }
         tmp = self.path + '.tmp'
         with open(tmp, 'w', encoding='utf-8') as fh:

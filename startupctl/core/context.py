@@ -75,11 +75,7 @@ class Ctx(object):
         return self.scan(force).items
 
     # -- 白名单（懒加载）--
-    def wl(self):
-        if self.whitelist is None:
-            from . import whitelist as wl_mod
-            self.whitelist = wl_mod.load()
-        return self.whitelist
+
 
     # -- 输出辅助 --
     def warn(self, msg):
