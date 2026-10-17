@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# encoding: utf-8
 # ctfsweep 从源码安装 / 卸载（macOS / Linux）—— devtools 布局（与 jtool / ptool 同规）
 #
 # 用法:

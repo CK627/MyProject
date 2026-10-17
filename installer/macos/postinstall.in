@@ -1,0 +1,66 @@
+#!/bin/bash
+# encoding: utf-8
+# ctfsweep 安装后脚本
+#
+# 由 Installer 以 root 执行，环境有三个坑：
+#   1. 不经过 sudo，所以 $SUDO_USER 为空、$USER 是 root
+#   2. $HOME 是 /var/root
+#   3. PATH 为最小集，且没有 TTY
+# 因此下面全部使用绝对路径；用户级配置（rc 文件）一律降权到登录用户执行。
+
+TOOL="ctfsweep"
+VERSION="@VERSION@"
+STAGE="/Library/devtools/$TOOL-$VERSION"
+DEST="/Library/devtools/$TOOL"
+
+# ---------------------------------------------------------------
+# 1) 部署成 devtools 布局
+#    复用 installer/deploy.sh —— 布局的唯一实现。这里**不要**自己拼一份目录：
+#    那会让安装包和 update / 冒烟测试各有一套布局，迟早对不上。
+# ---------------------------------------------------------------
+DEPLOY_OK=0
+if [ -f "$STAGE/installer/deploy.sh" ]; then
+    if /bin/bash "$STAGE/installer/deploy.sh" "$STAGE" "$DEST"; then
+        DEPLOY_OK=1
+    else
+        /bin/echo "$TOOL: 部署失败，见上方输出"
+    fi
+else
+    /bin/echo "$TOOL: 安装载荷不完整（缺 installer/deploy.sh）"
+fi
+
+# ---------------------------------------------------------------
+# 2) shell 配置（PATH + 补全）
+#    rc 文件属于登录用户，必须以他的身份写，否则会全落到 /var/root。
+#    这一步和上一步必须分开：一个要 root，一个要登录用户。
+# ---------------------------------------------------------------
+if [ "$DEPLOY_OK" -eq 1 ]; then
+    TARGET="$(/usr/bin/stat -f%Su /dev/console 2>/dev/null)"
+    case "$TARGET" in
+        ""|root|loginwindow) TARGET="" ;;   # 登录窗口 / FileVault / 无人登录
+    esac
+
+    if [ -n "$TARGET" ] && /usr/bin/id -u "$TARGET" >/dev/null 2>&1; then
+        if ! /usr/bin/sudo -u "$TARGET" -H /bin/bash "$DEST/shell-setup.sh" install "$DEST"; then
+            /bin/echo "$TOOL: 写入 shell 配置失败，请手动执行:"
+            /bin/echo "       $DEST/shell-setup.sh install $DEST"
+        fi
+    else
+        /bin/echo "$TOOL: 未检测到登录用户，已跳过 shell 配置"
+        /bin/echo "       首次登录后请执行: $DEST/shell-setup.sh install $DEST"
+    fi
+fi
+
+# ---------------------------------------------------------------
+# 3) 清掉暂存树
+#    成功才删；失败时留着，方便用户/维护者直接看载荷。
+# ---------------------------------------------------------------
+if [ "$DEPLOY_OK" -eq 1 ]; then
+    /bin/rm -rf "$STAGE"
+else
+    /bin/echo "$TOOL: 暂存树保留在 $STAGE（便于排查）"
+fi
+
+# 系统文件已经就位时返回 0：postinstall 失败会让安装界面显示「安装失败」，
+# 而实际是可用的，反而更难处理。
+exit 0

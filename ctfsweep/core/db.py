@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """数据库导出分析模块（.sql / MongoDB JSON）。
 
 分析链路：

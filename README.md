@@ -63,6 +63,24 @@ CTFSWEEP_MIRROR=https://mirror.example.com/ctfsweep source <(curl -fsSL .../inst
 CTFSWEEP_MIRROR=none source <(curl -fsSL .../install.sh)   # 强制只走 GitHub
 ```
 
+### 离线安装包（macOS / Linux / Windows）
+
+三个平台各有独立安装包（与 jtool / ptool 同规），适合无网络或想双击安装的场景。
+版本目录名与 `VERSION` 一致：
+
+```
+http://101.132.165.98/dist/ctfsweep/<版本>/ctfsweep-<版本>.dmg            # macOS
+http://101.132.165.98/dist/ctfsweep/<版本>/ctfsweep-<版本>-linux.tar.gz  # Linux
+http://101.132.165.98/dist/ctfsweep/<版本>/ctfsweep-setup-<版本>.exe     # Windows
+```
+
+- **`.dmg`**：双击 `.pkg`，装到 `/Library/devtools/ctfsweep`
+- **`.tar.gz`**：解压后 `./installer/install-from-source.sh install`
+- **`.exe`**：用户级装到 `%USERPROFILE%\.devtools\ctfsweep`，不需要管理员
+
+> `.pkg` / `.exe` 都未签名。macOS 首次打开需右键「打开」，Windows 可能提示
+> SmartScreen「更多信息 → 仍要运行」。
+
 ### macOS / Linux（源码安装）
 
 ```bash

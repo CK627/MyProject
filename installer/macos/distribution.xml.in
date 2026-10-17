@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Installer 的界面描述文件。
+  没有它的话产物只是一个裸的 component package，Finder 双击时 Installer
+  无法渲染安装界面 —— 必须用 productbuild 包成 product archive 才会带上它。
+-->
+<installer-gui-script minSpecVersion="1">
+    <title>@TOOL@ @VERSION@</title>
+    <organization>CK627</organization>
+    <domains enable_localSystem="true" enable_currentUserHome="false"/>
+    <options customize="never" require-scripts="false" hostArchitectures="x86_64,arm64"/>
+
+    <choices-outline>
+        <line choice="default">
+            <line choice="@IDENTIFIER@"/>
+        </line>
+    </choices-outline>
+
+    <choice id="default"/>
+    <choice id="@IDENTIFIER@" visible="false">
+        <pkg-ref id="@IDENTIFIER@"/>
+    </choice>
+
+    <pkg-ref id="@IDENTIFIER@" version="@VERSION@" onConclusion="none">#@TOOL@-@VERSION@.pkg</pkg-ref>
+</installer-gui-script>

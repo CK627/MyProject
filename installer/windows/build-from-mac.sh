@@ -1,4 +1,5 @@
 #!/bin/bash
+# encoding: utf-8
 # 在 macOS 上驱动 Windows 安装包（.exe）的构建
 #
 # 流程: 组装 staging → tar → scp 到目标机 → 远程用 Inno Setup 编译 → scp 取回

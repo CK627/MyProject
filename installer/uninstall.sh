@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# encoding: utf-8
 # ctfsweep 清理脚本（macOS / Linux）
 #
 # 「uninstall」= 卸载安装副本 + 摘除 shell 接线：

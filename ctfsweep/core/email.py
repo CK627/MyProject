@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """邮件取证模块（.eml / .mbox / .msg / .pst）。
 
 分析链路：

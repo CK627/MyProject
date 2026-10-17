@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """内存转储分析模块（Volatility / raw memory）。
 
 支持格式：

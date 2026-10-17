@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """配置/密钥泄露扫描模块（.env / config.php / settings.json / .git / docker-compose.yml）。
 
 分析链路：

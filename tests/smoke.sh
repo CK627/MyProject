@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# encoding: utf-8
 # ctfsweep 冒烟（macOS / Linux）：语法门 + 单元冒烟 + 启动器 + 安装/布局契约 + 引导模式 + 自管理子命令
 # （5/7 守布局契约：PATH 上只能有一个无后缀软链；7/7 用 file:// 镜像跑真更新与离线失败路径，
 #   全程无需网络与 sudo，同时守住「部署/卸载都不碰扫描缓存」与「clear 只清数据、不碰功能项」）
@@ -33,6 +34,8 @@ bash -n installer/shell-setup.sh
 bash -n installer/uninstall.sh
 bash -n installer/publish-mirror.sh
 bash -n installer/windows/build-from-mac.sh
+bash -n installer/linux-build.sh
+bash -n installer/macos/build.sh
 bash -n completions/ctfsweep.bash
 if command -v zsh >/dev/null 2>&1; then
     zsh -n completions/ctfsweep.zsh

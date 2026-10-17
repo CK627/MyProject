@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """浏览器取证模块（Chrome/Edge/Firefox）。
 
 支持格式：

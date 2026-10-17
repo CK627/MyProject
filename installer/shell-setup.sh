@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# encoding: utf-8
 # ctfsweep shell 接线：PATH + 补全（macOS / Linux）
 #
 # 用法:

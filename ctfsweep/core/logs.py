@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """日志分析模块（Nginx/Apache/syslog/auth.log）。
 
 分析链路：
