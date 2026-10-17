@@ -278,6 +278,13 @@ stage "8/9 域契约 —— 见 tests/test_smoke.py「域契约」段"
 stage "9/9 安全不变量 —— 见 tests/test_smoke.py「安全不变量」段"
 
 # ================================================================ 10 描述文件
+stage "9.5/10 .bat 编码契约（无 BOM · 有中文则须 chcp 65001）"
+if _bat_out="$("$PY" tests/check_bat_encoding.py bin/*.bat installer/windows/*.bat 2>&1)"; then
+    ok ".bat 编码契约通过"
+else
+    bad ".bat 编码契约（${_bat_out}）"
+fi
+
 stage "10/10 README 骨架章节（devtool 系列一致）"
 # 系列以 ptool 的 README 为基准，13 个顶级章节是这套文档的招牌。只要求"至少包含"
 # ——各项目可以有额外章节（本项目有「进程守护」）。缺任何一个都算漂了。
