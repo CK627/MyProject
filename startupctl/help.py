@@ -17,29 +17,30 @@ from .core.output import dw, pad
 
 TITLE = 'startupctl - 启动项扫描与管理（零依赖，Python 3.8+）'
 
-USAGE = [
-    ('startupctl <子命令> [参数]', '扫描 / 查看 / 管理（见下）'),
-    ('startupctl <子命令> --help', '看该子命令的完整选项'),
-    ('python3 -m startupctl <子命令> ...', '未安装时在项目目录内直接跑'),
-]
-
-SUBCOMMANDS = [
-    ('list [筛选]', '扫描并列启动项（默认只列第三方，--all 全列）'),
-    ('show <项>', '看一项详情：来源 · 命令 · 分类依据 · 原始内容'),
-    ('check', '只读体检：启动项干不干净（干净退 0，否则退 1）'),
-    ('scan --save|--diff', '存快照 / 比对载荷漂移（身份没变但命令被换了）'),
-    ('disable <项>...', '禁用（可逆：改 plist / 删软链 / 改名注册表值）'),
-    ('enable <项>...', '恢复启用'),
-    ('remove <项>...', '移到备份目录（不删文件，可 restore 回来）'),
-    ('add <名> <命令>', '新建用户级自启项（让某项目开机自动运行）'),
-    ('restore [时间]', '从备份还原并重新启用（默认最近一次）'),
-    ('backup list|prune', '看备份 / 按保留策略清理备份'),
-    ('clean [-y]', '批量禁用第三方项（预览在前，默认只禁用不删）'),
-    ('proc [--orphans]', '进程视图：三方进程与启动项聚合'),
-    ('kill <pid|项>', '结束进程（先 TERM，--force 才 KILL）'),
-    ('whitelist ...', '白名单：留住自留项（add/remove/list/doctor/prune）'),
-    ('guard ...', '进程守护：模式与选择分开 · 白/黑名单独立 · 系统项永不结束'),
-    ('update 等', '自管理：update install uninstall config help（--help 看详情）'),
+# 与 ptool 同形：**「用法:」本身就是命令清单**，一行一条、全部可见。
+# 不设「子命令:」分区，也不写 `whitelist ...` 这种省略号——分组命令把可用的
+# 动作名写在描述里。ptool 那 15 行是这套工具族的视觉基准，照着它走。
+COMMANDS = [
+    ('startupctl list [筛选]', '扫描并列启动项（默认只列第三方）'),
+    ('startupctl show <项>', '看一项详情：来源 · 命令 · 分类依据'),
+    ('startupctl check', '只读体检（干净退 0，否则退 1）'),
+    ('startupctl scan --save|--diff', '存快照 / 比对载荷漂移'),
+    ('startupctl disable <项>...', '禁用（可逆）'),
+    ('startupctl enable <项>...', '恢复启用'),
+    ('startupctl remove <项>...', '移到备份目录（不删，可 restore）'),
+    ('startupctl add <名> <命令>', '新建用户级自启项'),
+    ('startupctl restore [时间]', '从备份还原并重新启用'),
+    ('startupctl backup list|prune', '看备份 / 按保留策略清理'),
+    ('startupctl clean [-y]', '批量禁用第三方项（预览在前）'),
+    ('startupctl proc [--orphans]', '进程视图：三方进程与启动项聚合'),
+    ('startupctl kill <pid|项>', '结束进程（先 TERM，--force 才 KILL）'),
+    ('startupctl whitelist <动作>', '白名单：add remove list doctor prune'),
+    ('startupctl guard <动作>', '进程守护：off deny_all blacklist whitelist choose arm status'),
+    ('startupctl update [--check]', '检查并更新到最新版本'),
+    ('startupctl install', '完整安装（从源码目录）'),
+    ('startupctl uninstall [-y]', '卸载（-y 跳过确认）'),
+    ('startupctl config', '显示配置'),
+    ('startupctl help [子命令]', '帮助（给子命令名则看它的完整选项）'),
 ]
 
 OPTIONS = [
@@ -50,9 +51,9 @@ OPTIONS = [
     ('-y --yes', '跳过确认（非交互环境必须显式给）'),
     ('--dry-run', '只打印将要做什么，绝不改动任何东西'),
     ('--sudo', '需要管理员时整条命令交给 sudo 跑一次'),
-    ('--config F', '指定配置文件（默认见「说明」）'),
+    ('--config F', '指定配置文件'),
+    ('-h --help', '显示帮助'),
     ('--version', '显示版本'),
-    ('-h --help', '显示本帮助'),
 ]
 
 EXAMPLES = [
@@ -64,6 +65,7 @@ EXAMPLES = [
 ]
 
 NOTES = [
+    '子命令帮助: startupctl <子命令> --help，或 startupctl help <子命令>',
     '只碰第三方: com.apple.*、%SystemRoot% 下的、发行版单元一律按系统项（判不准也按）',
     '预览在前: 改动类子命令一律先打印清单再动手；管道里没 -y 就拒绝执行',
     '可回退: remove 是移到数据根 backups/ 而非删除，restore 能还原并重新启用',
@@ -86,10 +88,7 @@ def _rows(rows, indent=2, gap=2):
 def _build():
     lines = [TITLE, '']
     lines.append('用法:')
-    lines.extend(_rows(USAGE))
-    lines.append('')
-    lines.append('子命令:')
-    lines.extend(_rows(SUBCOMMANDS))
+    lines.extend(_rows(COMMANDS))
     lines.append('')
     lines.append('选项:')
     lines.extend(_rows(OPTIONS))

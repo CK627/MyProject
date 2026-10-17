@@ -1464,9 +1464,13 @@ def check_cli_contracts():
     from startupctl import help as H
 
     check(H.help_lines() <= 50, 'HELP 行数 %d <= 50' % H.help_lines())
-    for anchor in ('用法:', '子命令:', '选项:', '示例:', '说明:'):
+    # 与 ptool 同形：「用法:」本身就是命令清单，不另设「子命令:」分区。
+    for anchor in ('用法:', '选项:', '示例:', '说明:'):
         check(any(l.strip() == anchor for l in H.HELP.splitlines()),
               'HELP 含分节 %s' % anchor)
+    # 命令清单必须**全部可见**：不允许出现 `whitelist ...` 这类省略号条目。
+    check(not any(' ... ' in l for l in H.HELP.splitlines()),
+          '用法里没有 `...` 省略条目')
     probs = H.align_report()
     check(not probs, 'HELP 各节描述列对齐一致（问题: %s）' % (probs[:2] or '无'))
     check(max(__import__('startupctl.core.output', fromlist=['dw']).dw(l)
@@ -1484,6 +1488,11 @@ def check_cli_contracts():
           '--version 打印版本号（%s）' % _v)
     rc, out = run_cli(['help'])
     check_eq(rc, 0, 'help 退出 0')
+    rc, out = run_cli(['help', 'list'])
+    check_eq(rc, 0, 'help <子命令> 退出 0')
+    check('用法: startupctl list' in out, 'help <子命令> 打印该子命令的帮助')
+    rc, out = run_cli(['help', 'nosuch'])
+    check_eq(rc, 2, 'help 未知子命令退出 2')
     rc, out = run_cli(['nosuchcmd'])
     check_eq(rc, 2, '未知子命令退出 2（用法错）')
 

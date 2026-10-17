@@ -1432,10 +1432,22 @@ def main(argv=None):
     rest = pos[1:]
 
     if sub in ('help', 'version', '--version', '--help'):
-        print(help_mod.HELP if sub in ('help', '--help') else '', end='')
-        if sub in ('version', '--version'):
-            from . import __version__
-            print('startupctl %s' % __version__)
+        if sub in ('help', '--help'):
+            # `startupctl help <子命令>` 与 `startupctl <子命令> --help` 等价。
+            # ptool 的 `help` 只有一种形态；这里两种都收，因为两种写法用户都会敲。
+            target = rest[0] if rest else None
+            if target:
+                text = help_mod.sub_help(target)
+                if text is None:
+                    sys.stderr.write('错误: 没有子命令 %s 的帮助'
+                                     '（可用: startupctl help）\n' % target)
+                    return EXIT_USAGE
+                print(text, end='')
+                return EXIT_OK
+            print(help_mod.HELP, end='')
+            return EXIT_OK
+        from . import __version__
+        print('startupctl %s' % __version__)
         return EXIT_OK
     if sub not in SUBCOMMANDS:
         sys.stderr.write('错误: 未知子命令 %s（可用: startupctl help）\n' % sub)
