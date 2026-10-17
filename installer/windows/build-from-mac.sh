@@ -56,7 +56,11 @@ if [ "$FORCE" -eq 0 ]; then
     # 那时 `git status` 看到的是**别的项目的**未跟踪目录——检查会永远失败，
     # 而且报出来的东西与本次构建毫无关系。宁可明确拒绝，也不要让 --force 变成常态。
     TOPLEVEL="$(git rev-parse --show-toplevel 2>/dev/null || true)"
-    if [ "$TOPLEVEL" != "$REPO_DIR" ]; then
+    # 比字符串会在 macOS 上误判：/tmp 是指向 /private/tmp 的软链，
+    # git 给的是解析后的物理路径。两边都取 pwd -P 再比。
+    REPO_REAL="$(cd "$REPO_DIR" && pwd -P)"
+    TOP_REAL="$(cd "$TOPLEVEL" 2>/dev/null && pwd -P || true)"
+    if [ "$TOP_REAL" != "$REPO_REAL" ]; then
         echo "错误: 当前仓库顶层是 '${TOPLEVEL:-<不在 git 仓库里>}'，不是 $REPO_DIR" >&2
         echo "      这里的工作区检查看的是别的项目，结果无意义。" >&2
         echo "      请在本项目分支的独立克隆/工作树里构建，或加 --force。" >&2

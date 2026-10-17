@@ -45,7 +45,11 @@ cd "$REPO_DIR"
 #   那种情况下 HEAD 指向的是 **main**，打出来的快照会是整个作品集、而不是本项目，
 #   而且自检（只验 HTTP 200 与 VERSION 一致）照样全绿——静默发错内容，最难发现。
 TOPLEVEL="$(git rev-parse --show-toplevel 2>/dev/null || true)"
-if [ "$TOPLEVEL" != "$REPO_DIR" ]; then
+# 比字符串会在 macOS 上误判：/tmp 是指向 /private/tmp 的软链，git 给的是
+# 解析后的物理路径。两边都取 pwd -P 再比。
+REPO_REAL="$(cd "$REPO_DIR" && pwd -P)"
+TOP_REAL="$(cd "$TOPLEVEL" 2>/dev/null && pwd -P || true)"
+if [ "$TOP_REAL" != "$REPO_REAL" ]; then
     echo "错误: 当前仓库顶层是 '${TOPLEVEL:-<不在 git 仓库里>}'，不是 $REPO_DIR" >&2
     echo "      在这里发布会把另一个仓库的树打成快照。" >&2
     echo "      请在本项目分支的独立克隆/工作树里执行，例如：" >&2
