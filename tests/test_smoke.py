@@ -1096,6 +1096,57 @@ def check_gui_only_via_choose():
     check('--tui' in csrc and '--plain' in csrc, 'choose 支持 --tui/--plain 强制别的界面')
 
 
+def check_self_info_layouts():
+    """安装态识别：**两个平台装出来的布局都要认得**。
+
+    这条是血的教训：为了让 Windows 载荷变干净，`uninstall`（POSIX 专有的卸载脚本）
+    被从 Windows 安装里去掉了，而原来的判定条件是「`lib/` + `VERSION` + `uninstall`」。
+    于是 Windows 上**装了也报「无法识别当前布局」**——`update` / `config` / `uninstall`
+    全部失灵。实测：`startupctl update` 报「既不是源码仓库，也不是 devtools 安装」。
+
+    判定标记必须选**两个平台都会有的东西**：`lib/` + `VERSION`。
+    """
+    import tempfile
+    from startupctl.core import selfmgr
+
+    def fake_tree(with_uninstall):
+        d = tempfile.mkdtemp(prefix='sc-layout-')
+        lib = os.path.join(d, 'lib')
+        os.makedirs(os.path.join(lib, 'startupctl', 'core'))
+        with open(os.path.join(d, 'VERSION'), 'w') as fh:
+            fh.write('1.0.0\n')
+        if with_uninstall:
+            with open(os.path.join(d, 'uninstall'), 'w') as fh:
+                fh.write('#!/bin/bash\n')
+        return d, os.path.join(lib, 'startupctl')
+
+    # POSIX 安装态（有 uninstall）
+    d1, pkg1 = fake_tree(True)
+    mode1, root1, _ = selfmgr.self_info(pkg1)
+    check_eq(mode1, 'installed', 'POSIX 布局（lib/ + VERSION + uninstall）识别为安装态')
+    check_eq(os.path.basename(root1), os.path.basename(d1), '识别出的安装根正确')
+
+    # Windows 安装态（**没有** uninstall）—— 曾经在这里失灵
+    d2, pkg2 = fake_tree(False)
+    mode2, root2, _ = selfmgr.self_info(pkg2)
+    check_eq(mode2, 'installed',
+             'Windows 布局（lib/ + VERSION，**无** uninstall）也识别为安装态')
+    check_eq(os.path.basename(root2), os.path.basename(d2), 'Windows 安装根识别正确')
+
+    # 仓库检出：容器目录不叫 lib → repo
+    d3 = tempfile.mkdtemp(prefix='sc-repo-')
+    os.makedirs(os.path.join(d3, 'installer'))
+    with open(os.path.join(d3, 'installer', 'install-from-source.sh'), 'w') as fh:
+        fh.write('#!/bin/bash\n')
+    os.makedirs(os.path.join(d3, 'startupctl', 'core'))
+    mode3, _r, _ = selfmgr.self_info(os.path.join(d3, 'startupctl'))
+    check_eq(mode3, 'repo', '仓库检出识别为 repo')
+
+    import shutil
+    for d in (d1, d2, d3):
+        shutil.rmtree(d, ignore_errors=True)
+
+
 def check_no_posix_only_calls():
     section('跨平台：后端不能调 Windows 上不存在的 POSIX 接口')
 
@@ -1493,6 +1544,7 @@ def main():
     check_iss_matches_payload()
     check_eof_is_noninteractive()
     check_windows_payload_is_clean()
+    check_self_info_layouts()
     check_gui_picker()
     check_writeback_verified()
     check_cli_contracts()

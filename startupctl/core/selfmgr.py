@@ -151,7 +151,7 @@ def _system_root():
     return '/usr/local/devtools/startupctl'
 
 
-def self_info():
+def self_info(pkg_dir=None):
     """探测运行方式，返回 (mode, root, devtools)。
 
     mode:
@@ -160,13 +160,26 @@ def self_info():
       'repo'      —— 源码仓库；root 为仓库根
       'unknown'   —— 其他（如 pip 安装）
     """
-    core_dir = os.path.dirname(os.path.abspath(__file__))   # .../startupctl/core
-    pkg_dir = os.path.dirname(core_dir)                     # .../startupctl
+    if pkg_dir is None:
+        core_dir = os.path.dirname(os.path.abspath(__file__))   # .../startupctl/core
+        pkg_dir = os.path.dirname(core_dir)                     # .../startupctl
+    # 传入 pkg_dir 只为测试：造一棵假的安装树来验「布局识别」，
+    # 不必真的装一遍。生产调用一律走上面的默认值。
     container = os.path.dirname(pkg_dir)                    # .../lib 或 仓库根
     if os.path.basename(container) == 'lib':
         root = os.path.normpath(os.path.join(container, os.pardir))
-        if (os.path.isfile(os.path.join(root, 'VERSION'))
-                and os.path.isfile(os.path.join(root, 'uninstall'))):
+        # ★ 判定标记必须**两个平台都有**。
+        #
+        #   原来还要求 `<root>/uninstall` —— 那是 POSIX 专有的卸载脚本，Windows 载荷
+        #   里没有（那边由 _win_uninstall() 实现，不需要脚本文件）。Windows 载荷瘦身
+        #   之后这个条件永远为假，于是 **装了也报「无法识别当前布局」**：
+        #   `update` / `config` / `uninstall` 在 Windows 上全部失灵。
+        #   实测：`ctfsweep update` 报「既不是源码仓库，也不是 devtools 安装」。
+        #
+        #   `lib/` + `VERSION` 两侧都有：POSIX 与 Windows 的部署都会建 lib/ 并在根放
+        #   VERSION。而且 `basename(container) == 'lib'` 这一条已经排除了仓库检出
+        #   （仓库根不叫 lib）和 pip 安装（site-packages）。
+        if os.path.isfile(os.path.join(root, 'VERSION')):
             return 'installed', root, os.path.dirname(root)
     if os.path.isfile(os.path.join(container, 'installer', 'install-from-source.sh')):
         return 'repo', container, None
