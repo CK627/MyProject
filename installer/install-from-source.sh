@@ -1,4 +1,5 @@
 #!/bin/bash
+# encoding: utf-8
 # 从源码安装 / 卸载（macOS / Linux 通用）
 #
 # 用法:

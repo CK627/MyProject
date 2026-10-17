@@ -1,4 +1,5 @@
 #!/bin/bash
+# encoding: utf-8
 # 构建 macOS 安装包（.pkg + .dmg）
 #
 # 用法:
@@ -107,11 +108,15 @@ echo ""
 # 第一步: 由 payload 生成 component package
 COMPONENT="$DIST/.$TOOL-component.pkg"
 rm -f "$COMPONENT"
+# --ownership recommended：把 payload 统一记成 root:wheel。
+# 默认（preserve）会记下**构建者**的 uid/gid —— 实测解包出来是 501/staff，
+# 也就是 /Library/devtools 下的文件属于某个普通用户，谁都能改。
 pkgbuild --root "$PKG_ROOT" \
          --identifier "$IDENTIFIER" \
          --version "$VERSION" \
          --scripts "$SCRIPTS_DIR" \
          --install-location "/Library/devtools/$TOOL" \
+         --ownership recommended \
          "$COMPONENT"
 
 # 第二步: 包成 product archive。

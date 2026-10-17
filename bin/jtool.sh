@@ -1,4 +1,5 @@
 #!/bin/bash
+# encoding: utf-8
 # jtool - 统一 Java 版本管理工具
 # 支持 macOS / Linux
 

@@ -1,4 +1,5 @@
 #!/bin/bash
+# encoding: utf-8
 # 构建 Linux 安装包（.tar.gz，通用格式）
 #
 # 用法:

@@ -1,4 +1,5 @@
 #!/bin/bash
+# encoding: utf-8
 # jtool 一键安装脚本（macOS / Linux）
 #
 # 用法（安装后自动刷新当前终端，无需手动 source）:
