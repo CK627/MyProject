@@ -1,3 +1,4 @@
+@rem encoding: utf-8
 @echo off
 chcp 65001 >nul 2>&1
 setlocal enabledelayedexpansion

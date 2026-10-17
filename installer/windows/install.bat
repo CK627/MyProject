@@ -1,3 +1,4 @@
+@rem encoding: utf-8
 @echo off
 chcp 65001 >nul
 rem ctfsweep 安装程序（Windows）— 右键本文件运行即可（不需要管理员）

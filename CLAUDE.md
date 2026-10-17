@@ -577,12 +577,19 @@ DNS 相关的 `KNOWN_INFRA_SUFFIXES` / `dns_lead_reason` 也在这里（见上�
   check_windows_path_helpers()` 逐条守着——写坏 PATH 是全机器级事故。
 - **部署**：`selfmgr.deploy_nt()` 按同一份 `_PAYLOAD_REPO` 拷文件 + 写启动器，
   替代 shell 的 `deploy.sh`；`cmd_update` 在 nt 上走它，`_shell_setup()` 直接返回 0。
-- ⚠️ **`.bat` 一律纯 ASCII**：无 BOM 的 UTF-8 `.bat` 会被 cmd 按 ANSI 代码页（简中 GBK）
-  解析，中文被从中间劈开、cmd 转头执行文本碎片（ptool 的 build-remote.bat 记着这笔）。
-  ⚠️ **`.ps1` 同样纯 ASCII、且不要 BOM**：`irm … | iex` 是把响应体当**字符串**喂给
-  Invoke-Expression——开头那个 BOM 会并进第一行，PowerShell 转头去执行一个叫 `<BOM>#`
-  的命令（实测 `CommandNotFoundException (ï»¿#)`）；非 ASCII 文本经这条路会按 ANSI 代码页
-  解码、整段乱码。用户可见的中文一律由 Python 侧打印（它自己管控制台编码）。
+- ⚠️ **文本编码契约：UTF-8，声明行 + 按类型的落地机制**（`tests/check_text_encoding.py`
+  逐条核对「声明 = 实际字节」）。各运行环境**没有共通的 pragma**，别指望一个声明走天下：
+  - `.bat` → `@rem encoding: utf-8`。**UTF-8 无 BOM + CRLF + `chcp 65001` 必须在第一处
+    非 ASCII 之前**。带 BOM 第一行报 `'?@echo' 不是内部或外部命令`；LF-only 会碎片化
+    解析（ptool 的 build-remote.bat 记着这笔）。
+  - `.ps1`（`irm … | iex` 分发）→ `# encoding: ascii-b64`。正文**必须纯 ASCII**：
+    响应体被当**字符串**喂给 Invoke-Expression，BOM 会并进第一行去执行一个叫 `<BOM>#`
+    的命令（实测 `CommandNotFoundException (ï»¿#)`），非 ASCII 按 ANSI 解码后整段乱码。
+    中文以 UTF-8 Base64 内嵌、运行时 `T()` 解码；检查器会把每条 Base64 反解一遍。
+  - `.ps1`（磁盘执行）→ `# encoding: utf-8-bom`，**BOM 是 Windows PowerShell 5.1
+    唯一认的编码信号**（无 BOM 按 ANSI/GBK 读）。
+  - `.iss` → `; encoding: utf-8`。ISCC 6.7.3 实测默认按 UTF-8 读，有无 BOM 都对。
+  - 用户可见的中文仍优先由 Python 侧打印（它自己管控制台编码）。
 - **控制台编码**：`cli._console_utf8()` 在入口把重定向的 stdout/stderr 切到 UTF-8 +
   `errors='replace'`（真控制台只加 `errors='replace'`）。不这么做，Windows 上
   `ssh`/管道/`> file` 一遇到 GBK 编不出的字符（主机表 `↔`、会话告警 `⚠️`）就

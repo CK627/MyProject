@@ -1,3 +1,4 @@
+# encoding: ascii-b64
 # ctfsweep one-click installer (Windows, PowerShell 5.1+)
 #
 # Usage (refreshes PATH in the current session when done):
