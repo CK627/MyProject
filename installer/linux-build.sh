@@ -64,7 +64,11 @@ README_EOF
 
 TARBALL="$DIST/$TOOL-$VERSION-linux.tar.gz"
 rm -f "$TARBALL"
-tar czf "$TARBALL" -C "$DIST" "$TOOL-$VERSION"
+# --no-xattrs：macOS 26+ 给每个文件加了 com.apple.provenance（xattr 清不掉），
+# bsdtar 默认把它写成 LIBARCHIVE.xattr.* 扩展头 —— Linux 的 GNU tar 解包时会
+# 刷几十行 "Ignoring unknown extended header keyword"。载荷本身不受影响，
+# 但用户看到的是噪音，所以在归档这一层就剔掉。
+tar --no-xattrs -czf "$TARBALL" -C "$DIST" "$TOOL-$VERSION"
 rm -rf "$STAGE"
 
 echo "==> 已生成 $TARBALL"
