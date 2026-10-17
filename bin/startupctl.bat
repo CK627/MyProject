@@ -1,3 +1,4 @@
+@rem encoding: utf-8
 @echo off
 rem startupctl launcher (Windows): put the checkout root on PYTHONPATH, then run the package.
 rem ASCII only, and CRLF line endings -- both are load-bearing. cmd decodes a *called*

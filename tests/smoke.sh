@@ -278,11 +278,14 @@ stage "8/9 域契约 —— 见 tests/test_smoke.py「域契约」段"
 stage "9/9 安全不变量 —— 见 tests/test_smoke.py「安全不变量」段"
 
 # ================================================================ 10 描述文件
-stage "9.5/10 .bat 编码契约（无 BOM · 有中文则须 chcp 65001）"
-if _bat_out="$("$PY" tests/check_bat_encoding.py bin/*.bat installer/windows/*.bat 2>&1)"; then
-    ok ".bat 编码契约通过"
+stage "9.5/10 文本编码契约（声明 = 实际字节）"
+# 覆盖 .bat/.ps1/.iss/.sh/.py。各运行环境没有共通的编码 pragma：cmd 认控制台
+# 代码页、磁盘上的 .ps1 只认 BOM、irm|iex 分发的 .ps1 连 BOM 都不能有（只能纯
+# ASCII + Base64）。声明行是契约，机制按类型分开——详见 tests/check_text_encoding.py。
+if _enc_out="$("$PY" tests/check_text_encoding.py 2>&1)"; then
+    ok "$_enc_out"
 else
-    bad ".bat 编码契约（${_bat_out}）"
+    bad "文本编码契约（${_enc_out}）"
 fi
 
 stage "10/10 README 骨架章节（devtool 系列一致）"

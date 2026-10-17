@@ -1,3 +1,4 @@
+@rem encoding: utf-8
 @echo off
 chcp 65001 >nul
 rem startupctl 卸载程序（Windows）— 删除安装副本与 PATH 项。

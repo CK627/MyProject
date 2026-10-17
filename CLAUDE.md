@@ -34,11 +34,32 @@ python3 -I tests/test_smoke.py # 只跑单元冒烟 + 安全不变量
 > 补全走 `$commands` 哈希，不检查可执行位**。所以 `installer/deploy.sh` 用**白名单拷贝**，
 > 绝不 `cp -R bin`。冒烟测试断言 `ls -A <安装根>/bin | wc -l` == 1。
 
-`.bat` / `.ps1` 必须 **纯 ASCII + CRLF**：cmd 用**调用方**的代码页解码被 call 的批处理，
-UTF-8 中文注释在 GBK 控制台上会跨行错位，cmd 会去执行文本碎片。所有面向用户的中文都由
-Python 打印（它自己管控制台编码）。CI 的 `contract` job 验这两条，**并且单独验一遍
-`git archive` 导出物**——GitHub 生成的 tarball 不套用 `.gitattributes`，而 `update`
-正是从那里取文件的。
+### 2.1 文本编码契约：UTF-8，声明行 + 按类型的落地机制
+
+**编码统一为 UTF-8 无 BOM，每个文本文件首部写一行编码声明**，由
+`tests/check_text_encoding.py` 逐条核对「声明 = 实际字节」。但声明**只是契约**，
+各运行环境并没有共通的 pragma，真正的解码机制必须按类型分开：
+
+| 文件 | 声明 | 落地机制 |
+|---|---|---|
+| `.py` | `# -*- coding: utf-8 -*-` | Python 3 默认 UTF-8；PEP 263 声明真实生效 |
+| `.sh` | `# encoding: utf-8`（可选） | shell 字节透明，UTF-8 天然可用 |
+| `.bat` | `@rem encoding: utf-8` | **`chcp 65001` 必须在第一处非 ASCII 之前**；无 BOM；全部 CRLF |
+| `.ps1`（`irm\|iex` 分发） | `# encoding: ascii-b64` | 正文**必须纯 ASCII**；中文以 UTF-8 Base64 内嵌，运行时 `T()` 解码 |
+| `.ps1`（磁盘执行） | `# encoding: utf-8-bom` | **必须带 BOM**（Windows PowerShell 5.1 无 BOM 会按 ANSI/GBK 读） |
+| `.iss` | `; encoding: utf-8` | ISCC 6.7.3 默认按 UTF-8 读（有无 BOM 均可，实测） |
+
+`.bat` 的规则是实测出来的（Windows 10 / 代码页 936）：带 BOM 第一行直接报
+`'?@echo' 不是内部或外部命令`；LF-only 会碎片化解析（`'not' 不是内部或外部命令`）；
+UTF-8 无 BOM + CRLF + `chcp 65001` 在直接调用与 `call` 两种方式下都正常。
+
+`.ps1` 走 `irm … | iex` 时，响应体被当作**字符串**交给 Invoke-Expression：BOM 会并进
+第一行去执行一个叫 `<BOM>#` 的命令；非 ASCII 按 ANSI 解码后变成 `ä¸æ` 那类乱码
+（2026-10 在中文 Windows 上实测）。所以这一条只能纯 ASCII + Base64——**没有第二种
+正确写法**，也没有任何声明能让它变好。
+
+CI 的 `contract` job 跑同一个检查器，**并且单独验一遍 `git archive` 导出物**——
+GitHub 生成的 tarball 不套用 `.gitattributes`，而 `update` 正是从那里取文件的。
 
 ### 3. 数据目录永不自动删除
 
