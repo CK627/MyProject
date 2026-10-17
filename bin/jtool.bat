@@ -69,8 +69,8 @@ if "%~1"=="shim" goto :cmd_shim
 REM Run a tool
 set "tool=%~1"
 if "!JAVA_BASE_DIR!"=="" (
-    echo Error: JAVA_BASE_DIR not set
-    echo Run: jtool scan
+    echo 错误: 未设置 JAVA_BASE_DIR
+    echo 请执行: jtool scan
     exit /b 1
 )
 
@@ -107,24 +107,24 @@ if not "!version!"=="" (
     goto :run_tool
 )
 
-echo Error: need tool name and version
-echo No default version is set and no JDK was found under !JAVA_BASE_DIR!
-echo Run: jtool use ^<version^>
+echo 错误: 需要指定工具名与版本号
+echo 未设置默认版本，且在 !JAVA_BASE_DIR! 下没有找到 JDK
+echo 请执行: jtool use ^<版本号^>
 exit /b 1
 
 :run_tool
 call :resolve_jdk "!version!" jdk_home
 if not defined jdk_home (
-    echo Error: JDK !version! not found
-    echo Base dir: !JAVA_BASE_DIR!
-    echo Run "jtool scan" or fix JAVA_BASE_DIR
+    echo 错误: 找不到 JDK !version!
+    echo 基准目录: !JAVA_BASE_DIR!
+    echo 请执行 "jtool scan" 或修正 JAVA_BASE_DIR
     exit /b 1
 )
 set "tool_path=!jdk_home!\bin\!tool!"
 
 if not exist "!tool_path!.exe" (
     if not exist "!tool_path!" (
-        echo Error: JDK !version! has no !tool! tool
+        echo 错误: JDK !version! 下没有 !tool! 工具
         exit /b 1
     )
 )
@@ -147,14 +147,14 @@ REM List JDKs
 REM ============================================
 :list_jdks
 if "!JAVA_BASE_DIR!"=="" (
-    echo Error: JAVA_BASE_DIR not set
-    echo Run: jtool scan
+    echo 错误: 未设置 JAVA_BASE_DIR
+    echo 请执行: jtool scan
     exit /b 1
 )
 
-echo Java path: !JAVA_BASE_DIR!
+echo Java 路径: !JAVA_BASE_DIR!
 echo.
-echo Installed JDKs:
+echo 已安装的 JDK:
 set "found=0"
 for /d %%d in ("!JAVA_BASE_DIR!\*") do (
     call :jdk_home_of "%%d" _LH
@@ -176,24 +176,24 @@ REM ============================================
 REM Help
 REM ============================================
 :show_help
-echo jtool - Java version manager for Windows
+echo jtool - Windows 下的 Java 版本管理工具
 echo.
-echo Usage:
-echo   jtool ^<tool^> ^<version^> [args...]   Run a tool
-echo   jtool list                          List JDKs
-echo   jtool use ^<version^>                Set default version
-echo   jtool current                       Show current version
-echo   jtool home ^<version^>               Show JAVA_HOME
-echo   jtool info ^<version^>               Show details
-echo   jtool tools ^<version^>              List tools
-echo   jtool run ^<version^> ^<file.java^>  Compile and run
-echo   jtool scan                          Scan Java paths
-echo   jtool config                        Show config
-echo   jtool install                       Full install
-echo   jtool update                        Check and update
-echo   jtool uninstall [-y]                Uninstall (-y silent)
-echo   jtool shim                          Rebuild shims
-echo   jtool help                          Show help
+echo 用法:
+echo   jtool ^<工具^> ^<版本^> [参数...]   运行指定版本的工具
+echo   jtool list                          列出已安装的 JDK
+echo   jtool use ^<版本^>                设置默认版本
+echo   jtool current                       查看当前默认版本
+echo   jtool home ^<版本^>               输出 JAVA_HOME
+echo   jtool info ^<版本^>               显示详细信息
+echo   jtool tools ^<版本^>              列出可用工具
+echo   jtool run ^<版本^> ^<文件.java^>  编译并运行
+echo   jtool scan                          重新扫描 Java 路径
+echo   jtool config                        查看配置信息
+echo   jtool install                       完整安装
+echo   jtool update                        检查并更新
+echo   jtool uninstall [-y]                卸载（-y 跳过确认）
+echo   jtool shim                          重建 shim 脚本
+echo   jtool help                          显示帮助
 exit /b 0
 
 :cmd_use
@@ -208,8 +208,8 @@ REM the other order adds a trailing space to the probe file, which does not
 REM matter here but keeps the pattern consistent across the file.
 >"%CONFIG_DIR%\.write-probe" echo ok 2>nul
 if not exist "%CONFIG_DIR%\.write-probe" (
-    echo Error: cannot write %CONFIG_FILE%
-    echo Administrator privileges are required. Open an elevated CMD and run:
+    echo 错误: 无法写入 %CONFIG_FILE%
+    echo 需要管理员权限。请以管理员身份打开 CMD 后执行:
     echo   jtool use %~2
     exit /b 1
 )
@@ -221,7 +221,7 @@ REM Redirect before echo: the other order appends a trailing space.
 >>"%CONFIG_FILE%.tmp" echo JTOOL_DEFAULT_VERSION="%~2"
 move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
 set "JTOOL_DEFAULT_VERSION=%~2"
-echo Default version set: %~2
+echo 已设置默认版本: %~2
 echo JAVA_HOME: !use_home!
 exit /b 0
 
@@ -231,11 +231,11 @@ REM ============================================
 :cmd_current
 if "!JTOOL_DEFAULT_VERSION!"=="" ( echo No default version & exit /b 1 )
 call :resolve_jdk "!JTOOL_DEFAULT_VERSION!" cur_home
-echo Default: !JTOOL_DEFAULT_VERSION!
+echo 默认版本: !JTOOL_DEFAULT_VERSION!
 if defined cur_home (
     echo JAVA_HOME: !cur_home!
 ) else (
-    echo JAVA_HOME: not found, run jtool scan
+    echo JAVA_HOME: 未找到，请执行 jtool scan
 )
 exit /b 0
 
@@ -261,7 +261,7 @@ echo JAVA_HOME: !info_home!
 echo.
 "!info_home!\bin\java.exe" -version 2>&1
 echo.
-echo Tools:
+echo 工具:
 for %%f in ("!info_home!\bin\*") do echo   %%~nxf
 exit /b 0
 
@@ -272,7 +272,7 @@ REM ============================================
 if "%~2"=="" ( echo Error: specify a version & exit /b 1 )
 call :resolve_jdk "%~2" tools_home
 if not defined tools_home ( echo Error: JDK %~2 not found & exit /b 1 )
-echo JDK %~2 tools:
+echo JDK %~2 的可用工具:
 for %%f in ("!tools_home!\bin\*") do echo   %%~nxf
 exit /b 0
 
@@ -303,7 +303,7 @@ shift /1
 goto :run_collect
 :run_ready
 
-echo === Compile (JDK !run_ver!) ===
+echo === 编译 (JDK !run_ver!) ===
 "!run_home!\bin\javac.exe" "!java_file!"
 if !errorlevel! neq 0 ( echo Compile failed & exit /b 1 )
 echo.
@@ -324,7 +324,7 @@ REM ============================================
 REM config
 REM ============================================
 :cmd_config
-echo Config file: %CONFIG_FILE%
+echo 配置文件: %CONFIG_FILE%
 echo.
 if exist "%CONFIG_FILE%" ( type "%CONFIG_FILE%" ) else ( echo (not found, run: jtool scan) )
 exit /b 0
@@ -345,7 +345,7 @@ REM Use fltmc, not `net session`: the latter needs the Server service, so a
 REM machine with it stopped would keep re-elevating in a loop.
 fltmc >nul 2>&1
 if !errorlevel! neq 0 (
-    echo update needs admin, requesting elevation...
+    echo 更新需要管理员权限，正在请求提权...
     powershell -NoProfile -Command "Start-Process -FilePath '%~f0' -ArgumentList 'update' -Verb RunAs"
     exit /b 0
 )
@@ -360,7 +360,7 @@ REM ============================================
 REM update via curl + tar (no git needed)
 REM ============================================
 :update_via_curl
-echo Checking for updates...
+echo 正在检查更新...
 set "REMOTE_VERSION="
 REM Mirror first. raw.githubusercontent.com / api.github.com are not reachable from
 REM every network, and this one is: same VERSION file, one GET, no VPN needed.
@@ -377,7 +377,7 @@ REM probing the version check fails even though the archive download below (whic
 REM goes through codeload) would have succeeded.
 if "!REMOTE_VERSION!"=="" for /f "usebackq delims=" %%v in (`curl -fsSL -H "Accept: application/vnd.github.raw" "https://api.github.com/repos/CK627/MyProject/contents/VERSION?ref=jtool" 2^>nul`) do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
 if "!REMOTE_VERSION!"=="" (
-    echo Version read failed, falling back to git...
+    echo 读取版本号失败，改用 git 方式...
     goto :update_via_git
 )
 
@@ -391,17 +391,17 @@ if defined LOCAL_VERSION set "LOCAL_VERSION=!LOCAL_VERSION:"=!"
 if defined LOCAL_VERSION set "LOCAL_VERSION=!LOCAL_VERSION: =!"
 
 if "!LOCAL_VERSION!"=="!REMOTE_VERSION!" (
-    echo Already up to date ^(v!LOCAL_VERSION!^)
+    echo 已是最新版本 ^(v!LOCAL_VERSION!^)
     exit /b 0
 )
 
-echo New version: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
+echo 发现新版本: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
 
 set "UPD_TMP=%TEMP%\jtool-update"
 rmdir /s /q "%UPD_TMP%" 2>nul
 mkdir "%UPD_TMP%"
 
-echo Downloading update...
+echo 正在下载更新...
 REM Mirror first here too. The mirror's source tarball is packed with the same
 REM top-level directory as GitHub's archive (MyProject-jtool\), so %UPD_SRC%
 REM below resolves either way.
@@ -425,8 +425,8 @@ set "SRC=%UPD_TMP%\MyProject-jtool"
 
 copy /y "!SRC!\bin\jtool.bat" "%BIN_DIR%\" >nul
 if !errorlevel! neq 0 (
-    echo Error: cannot write %BIN_DIR%
-    echo Please run as administrator
+    echo 错误: 无法写入 %BIN_DIR%
+    echo 请以管理员身份运行
     exit /b 1
 )
 if exist "!SRC!\installer\windows\install.bat" (
@@ -445,8 +445,8 @@ move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
 
 rmdir /s /q "%UPD_TMP%" 2>nul
 
-echo Update complete!
-echo   Version: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
+echo 更新完成！
+echo   版本: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
 exit /b 0
 
 REM ============================================
@@ -455,7 +455,7 @@ REM ============================================
 :update_via_git
 where git >nul 2>&1
 if !errorlevel! neq 0 (
-    echo Error: no git and no curl/tar, cannot update
+    echo 错误: 没有 git，也没有 curl/tar，无法更新
     exit /b 1
 )
 
@@ -467,7 +467,7 @@ REM the user has to know about (and uninstall has to remember to clean).
 set "REPO_DIR=%TEMP%\jtool-repo"
 rmdir /s /q "!REPO_DIR!" 2>nul
 
-echo First update, cloning repo...
+echo 首次更新，正在克隆仓库...
 git clone --branch jtool --single-branch --depth 1 https://github.com/CK627/MyProject.git "!REPO_DIR!"
 if !errorlevel! neq 0 ( echo Clone failed & goto :git_fail )
 
@@ -485,16 +485,16 @@ if defined LOCAL_VERSION set "LOCAL_VERSION=!LOCAL_VERSION:"=!"
 if defined LOCAL_VERSION set "LOCAL_VERSION=!LOCAL_VERSION: =!"
 
 if "!LOCAL_VERSION!"=="!REMOTE_VERSION!" (
-    echo Already up to date ^(v!LOCAL_VERSION!^)
+    echo 已是最新版本 ^(v!LOCAL_VERSION!^)
     goto :git_done
 )
 
-echo New version: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
+echo 发现新版本: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
 
 copy /y "!REPO_DIR!\bin\jtool.bat" "%BIN_DIR%\" >nul
 if !errorlevel! neq 0 (
-    echo Error: cannot write %BIN_DIR%
-    echo Please run as administrator
+    echo 错误: 无法写入 %BIN_DIR%
+    echo 请以管理员身份运行
     goto :git_fail
 )
 if exist "!REPO_DIR!\installer\windows\install.bat" (
@@ -509,8 +509,8 @@ REM Redirect before echo: the other order appends a trailing space.
 >>"%CONFIG_FILE%.tmp" echo JTOOL_VERSION="!REMOTE_VERSION!"
 move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
 
-echo Update complete!
-echo   Version: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
+echo 更新完成！
+echo   版本: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
 goto :git_done
 
 :git_fail
@@ -528,19 +528,19 @@ REM ============================================
 if "%~2"=="-y" goto :uninstall_silent
 if exist "%INSTALL_DIR%\unins000.exe" (
     start "" "%INSTALL_DIR%\unins000.exe"
-    echo Uninstaller started, confirm in dialog
+    echo 卸载程序已启动，请在弹窗中确认
 ) else (
-    echo Uninstaller not found %INSTALL_DIR%\unins000.exe
-    echo Uninstall via Control Panel - Add or Remove Programs
+    echo 找不到卸载程序: %INSTALL_DIR%\unins000.exe
+    echo 请到「控制面板 → 程序和功能」中卸载
 )
 exit /b 0
 
 :uninstall_silent
 if exist "%INSTALL_DIR%\unins000.exe" (
     start /wait "" "%INSTALL_DIR%\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
-    echo Uninstall complete
+    echo 卸载完成
 ) else (
-    echo Uninstaller not found %INSTALL_DIR%\unins000.exe
+    echo 找不到卸载程序: %INSTALL_DIR%\unins000.exe
 )
 exit /b 0
 
@@ -572,8 +572,8 @@ REM dir, no admin), so the probe is what actually decides. Redirect first: the
 REM other order appends a trailing space to the file.
 >"!SHIMS_DIR!\.shim-probe" echo ok 2>nul
 if not exist "!SHIMS_DIR!\.shim-probe" (
-    echo Error: cannot write !SHIMS_DIR!
-    echo Administrator privileges are required. Open an elevated CMD and run:
+    echo 错误: 无法写入 !SHIMS_DIR!
+    echo 需要管理员权限。请以管理员身份打开 CMD 后执行:
     echo   jtool shim
     exit /b 1
 )
@@ -588,14 +588,14 @@ for %%t in (java javac jar jshell javadoc javap) do (
         echo set "CONFIG_FILE=!CONFIG_FILE!"
         echo for %%%%i in ^("%%CONFIG_FILE%%\..\.."^) do set "JTOOL_ROOT=%%%%~fi"
         echo if not exist "%%JTOOL_ROOT%%\bin\jtool.bat" ^(
-        echo     echo jtool: %%JTOOL_ROOT%%\bin\jtool.bat not found ^>^&2
+        echo     echo jtool: 找不到 %%JTOOL_ROOT%%\bin\jtool.bat ^>^&2
         echo     exit /b 1
         echo ^)
         echo "%%JTOOL_ROOT%%\bin\jtool.bat" %%t %%*
     ) > "!SHIMS_DIR!\%%t.bat"
 )
 
-echo Shims created: !SHIMS_DIR!
+echo Shim 已创建: !SHIMS_DIR!
 
 if "!SHIMS_SCOPE!"=="machine" (
     REM Put on the machine PATH by the installer -- the Registry section in the
@@ -604,7 +604,7 @@ if "!SHIMS_SCOPE!"=="machine" (
     REM No brackets or parens in these comment lines on purpose: this is a
     REM parenthesised block, and cmd counts a closing paren in a REM as ending
     REM it.
-    echo Scope: machine ^(prepended to the machine PATH by the installer^)
+    echo 作用域: 机器级 ^(安装程序已将其前置到机器级 PATH^)
     exit /b 0
 )
 

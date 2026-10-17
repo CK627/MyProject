@@ -251,6 +251,15 @@ else
     fail "shell 变量名体检（${_cv}）"
 fi
 
+# ------------------------------- .bat 编码契约（无 BOM · 有中文则须 chcp 65001）
+# 放在这里而不是只在 CI：本地跑一遍就能发现（CI 要等推上去才知道）。
+echo "== .bat 编码契约 =="
+if _bat="$(python3 -I tests/check_bat_encoding.py $(git ls-files '*.bat') 2>&1)"; then
+    pass ".bat 编码契约（无 BOM / CRLF / 有中文须 chcp 65001）"
+else
+    fail ".bat 编码契约（${_bat}）"
+fi
+
 echo "== README 骨架章节 =="
 if _rd="$(python3 -I tests/check_readme.py README.md 2>&1)"; then
     pass "$_rd"

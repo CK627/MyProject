@@ -68,27 +68,22 @@ jobs:
             < <(find "$tmp" -type f \( -name '*.bat' -o -name '*.ps1' \))
           exit "$fail"
 
-      # 纯 ASCII：cmd 用**调用方**的 codepage 解码被 call 的批处理文件，文件头那句
-      # `chcp 65001` 救不了已经进缓冲的那一段。实测在 936 的 cmd 里
-      # `call jtool.bat update`，中文 REM 会被错位解码后当命令执行
-      # （'（管理员：后者要求' is not recognized ...）；错位还可能拼出 & | > 之类，
-      # 那就不是噪音而是真的执行。所以 .bat 里连注释都必须英文。
+      # .bat 编码契约（2026-10 修订，原为「纯 ASCII」）：
+      #   · **不许有 BOM**：cmd 会把 BOM 当成命令的一部分，第一行直接报错
+      #     （实测 `'?@echo' 不是内部或外部命令`），之后整段退化成逐行交互执行；
+      #   · **必须 CRLF**（由上一步检查）；
+      #   · 含中文时，`chcp 65001` 必须出现在第一处非 ASCII **之前**。
+      #
+      # 2026-10 在 Windows 10 19045 / 代码页 936 的 cmd 上实测：UTF-8 无 BOM +
+      # CRLF + chcp 65001 的 .bat，中文 REM / echo / if 块在**直接调用与 `call`
+      # 两种方式下都正确显示**。此前「必须纯 ASCII」是基于一次（很可能带 BOM 或
+      # 用了 LF 的）失败推断出来的，结论过宽了——现在 .bat 也可以面向中文用户。
+      #
       # .ps1 不受此限：PowerShell 自己管编码，且它从不被 cmd `call`。
-      - name: .bat 必须是纯 ASCII
+      - name: .bat 编码契约（无 BOM · 有中文则须 chcp 65001）
         run: |
           set -uo pipefail
-          fail=0
-          while IFS= read -r f; do
-            if LC_ALL=C grep -qP '[\x80-\xFF]' "$f"; then
-              echo "  FAIL - $f（含非 ASCII 字节）"
-              LC_ALL=C grep -nP '[\x80-\xFF]' "$f" | head -5
-              fail=1
-            else
-              echo "  ok   - $f"
-            fi
-          done < <(git ls-files '*.bat')
-          exit "$fail"
-
+          python3 tests/check_bat_encoding.py $(git ls-files '*.bat')
   # Windows 侧冒烟：cmd 的行为只能在 Windows 上验
   windows:
     name: windows smoke

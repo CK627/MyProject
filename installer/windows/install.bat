@@ -51,17 +51,17 @@ REM ============================================
 REM Full install
 REM ============================================
 echo ========================================
-echo   jtool installer (Windows)
+echo   jtool 安装程序（Windows）
 echo ========================================
 echo.
 
-echo [1/4] Copying files...
+echo [1/4] 复制文件...
 if not exist "%BIN_DIR%" mkdir "%BIN_DIR%"
 if not exist "%CONFIG_DIR%" mkdir "%CONFIG_DIR%"
 if not exist "%MODULE_DIR%" mkdir "%MODULE_DIR%"
 if not exist "%SHIMS_DIR%" mkdir "%SHIMS_DIR%"
 if "%INSTALLED%"=="1" (
-    echo Installed layout, skip copying
+    echo 检测到已安装的布局，跳过复制
 ) else (
     copy "%PROJECT_DIR%\bin\jtool.bat" "%BIN_DIR%\" >nul
     if not exist "%CONFIG_FILE%" copy "%PROJECT_DIR%\config\jtool.conf" "%CONFIG_DIR%\" >nul
@@ -71,10 +71,10 @@ if "%INSTALLED%"=="1" (
     REM install dir, so the first update would print "v(unknown) -> vX" noise.
     if exist "%PROJECT_DIR%\VERSION" copy "%PROJECT_DIR%\VERSION" "%INSTALL_DIR%\" >nul
 )
-echo Done
+echo 完成
 echo.
 
-echo [2/4] Setting permissions...
+echo [2/4] 设置权限...
 REM Deliberately NO write grant for anyone but administrators:
 REM   config  decides which java.exe the machine-level shims run, so a writable
 REM           config would let any user make an admin run an arbitrary binary.
@@ -90,10 +90,10 @@ REM explicit ACEs away and lays down the inherited ones, which after the
 REM Everyone:RX grant above means: administrators write, users only read.
 icacls "%CONFIG_DIR%" /reset /T /C /Q >nul 2>&1
 icacls "%SHIMS_DIR%" /reset /T /C /Q >nul 2>&1
-echo Done
+echo 完成
 echo.
 
-echo [3/4] Scanning and generating shims...
+echo [3/4] 扫描并生成 shim...
 call :do_scan_inner
 if errorlevel 1 exit /b 1
 call :write_version
@@ -104,7 +104,7 @@ call "%BIN_DIR%\jtool.bat" shim
 if errorlevel 1 exit /b 1
 echo.
 
-echo [4/4] Configuring PATH...
+echo [4/4] 配置 PATH...
 REM Machine scope, and shims FIRST. Order is the whole point: the effective PATH
 REM is machine entries + ';' + user entries, so anything user-level lands after
 REM every machine entry. Oracle drops javapath into the machine PATH, so old
@@ -129,24 +129,24 @@ powershell -NoProfile -Command "$root=Join-Path $env:USERPROFILE '.devtools\jtoo
 REM Check the exit code: without this a failed write (no admin) would still fall
 REM through to the "Install complete" banner below, which is a lie.
 if !errorlevel! equ 3 (
-    echo Error: administrator privileges are required to update the machine PATH.
-    echo Right-click install.bat and choose "Run as administrator".
+    echo 错误: 更新机器级 PATH 需要管理员权限。
+    echo 请右键 install.bat，选择「以管理员身份运行」。
     exit /b 1
 )
 if !errorlevel! neq 0 (
-    echo Error: failed to update the machine PATH, see the message above.
+    echo 错误: 更新机器级 PATH 失败，详见上面的信息。
     exit /b 1
 )
-echo Done
+echo 完成
 echo.
 
 echo ========================================
-echo   Install complete!
+echo   安装完成！
 echo ========================================
 echo.
-echo Install dir: %INSTALL_DIR%
-echo Config file: %CONFIG_FILE%
-echo Please reopen a new CMD window
+echo 安装目录: %INSTALL_DIR%
+echo 配置文件: %CONFIG_FILE%
+echo 请重新打开一个 CMD 窗口
 echo.
 pause
 exit /b 0
@@ -155,31 +155,31 @@ REM ============================================
 REM Scan
 REM ============================================
 :do_scan
-echo [Scan] Detecting Java path...
+echo [扫描] 正在检测 Java 路径...
 echo.
 
 call :find_java_base found_dir
 
 if not defined found_dir (
-    echo Java dir not found
+    echo 未找到 Java 目录
     set /p "found_dir=Enter Java install path: "
     if not exist "!found_dir!" (
-        echo Error: path does not exist
+        echo 错误: 路径不存在
         exit /b 1
     )
 )
 
 :scan_found
-echo Found: !found_dir!
+echo 已找到: !found_dir!
 echo.
-echo Installed JDKs:
+echo 已安装的 JDK:
 call :list_jdks_of "!found_dir!"
 echo.
 
 call :write_config
 if errorlevel 1 exit /b 1
 
-echo Config written: %CONFIG_FILE%
+echo 配置已写入: %CONFIG_FILE%
 echo.
 type "%CONFIG_FILE%"
 exit /b 0
@@ -189,7 +189,7 @@ call :find_java_base found_dir
 if not defined found_dir set "found_dir=C:\Program Files\Java"
 call :write_config
 if errorlevel 1 exit /b 1
-echo Written: %CONFIG_FILE%
+echo 已写入: %CONFIG_FILE%
 exit /b 0
 
 REM ============================================
@@ -277,8 +277,8 @@ REM non-elevated run would otherwise die halfway through with whatever raw error
 REM cmd happens to print. Redirect first: the other order adds a trailing space.
 >"%CONFIG_DIR%\.write-probe" echo ok 2>nul
 if not exist "%CONFIG_DIR%\.write-probe" (
-    echo Error: cannot write %CONFIG_FILE%
-    echo Administrator privileges are required. Open an elevated CMD and run:
+    echo 错误: 无法写入 %CONFIG_FILE%
+    echo 需要管理员权限。请以管理员身份打开 CMD 后执行:
     echo   install.bat scan
     exit /b 1
 )
@@ -307,13 +307,13 @@ if not defined HAS_DEFAULT (
     call :pick_best_version
     if defined BEST_VERSION (
         set "KEEP_DEFAULT=JTOOL_DEFAULT_VERSION="!BEST_VERSION!""
-        echo Auto-selected default version: !BEST_VERSION!
-        echo   from !found_dir!
-        echo   change it with: jtool use ^<version^>
+        echo 已自动选择默认版本: !BEST_VERSION!
+        echo   来源: !found_dir!
+        echo   要修改请执行: jtool use ^<版本号^>
     ) else (
-        echo Warning: no JDK found under !found_dir!
-        echo   default version left unset; shims fall back to the highest
-        echo   version they find at run time
+        echo 警告: 在 !found_dir! 下没有找到 JDK
+        echo   默认版本保持未设置；shim 会在运行时回退到
+        echo   它能找到的最高版本
     )
 )
 
@@ -344,8 +344,8 @@ REM how a machine once ended up with a macOS path in its Windows config and no
 REM error anywhere. Turn that silence into a hard failure.
 findstr /b /c:"JAVA_BASE_DIR=" "%CONFIG_FILE%" >nul 2>&1
 if errorlevel 1 (
-    echo Error: %CONFIG_FILE% was not written
-    echo Administrator privileges are required. Open an elevated CMD and run:
+    echo 错误: %CONFIG_FILE% 没有写入成功
+    echo 需要管理员权限。请以管理员身份打开 CMD 后执行:
     echo   install.bat scan
     exit /b 1
 )
@@ -432,12 +432,12 @@ REM ============================================
 REM Show config
 REM ============================================
 :do_config
-echo Config file: %CONFIG_FILE%
+echo 配置文件: %CONFIG_FILE%
 echo.
 if exist "%CONFIG_FILE%" (
     type "%CONFIG_FILE%"
 ) else (
-    echo (not found, run: install.bat scan)
+    echo （未找到，请执行: install.bat scan）
 )
 exit /b 0
 
@@ -445,11 +445,11 @@ REM ============================================
 REM Help
 REM ============================================
 :do_help
-echo jtool installer (Windows)
+echo jtool 安装程序（Windows）
 echo.
-echo Usage:
-echo   install.bat          Full install
-echo   install.bat scan     Scan Java path, update config
-echo   install.bat config   Show config
-echo   install.bat help     Show help
+echo 用法:
+echo   install.bat          完整安装
+echo   install.bat scan     扫描 Java 路径并更新配置
+echo   install.bat config   查看配置
+echo   install.bat help     显示帮助
 exit /b 0
