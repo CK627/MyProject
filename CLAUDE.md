@@ -151,8 +151,10 @@ GitHub 生成的 tarball 不套用 `.gitattributes`，而 `update` 正是从那�
 
 要点：
 
-- **用 `ttk.Treeview` 而不是一堆 Checkbutton**：登录项加上进程动辄上千行，
-  一行两个复选框就是两千个控件，建窗口要好几秒。
+- **用原生 `ttk.Checkbutton`**（用户明确要原生控件，不要自绘的字符/图标）。
+  实测 900 个 `ttk.Checkbutton` 建好只要 0.03 秒——早年"上千行会卡"的判断过时了。
+  分组用可折叠标题行；"部分选中"用 `ttk.Checkbutton` 的 `alternate` 状态表达，
+  比自己画三态图标更原生。
 - **只在交互式终端下弹窗**（`gui.available()` 里查 `isatty`）。CI/管道里弹一个等人点的
   窗口会让任务**直接挂住**，而且没有输出、没有报错，极难归因。
 - **两种"没结果"必须分清**：窗口打不开 → `GuiUnavailable`（调用方回退）；
@@ -160,12 +162,12 @@ GitHub 生成的 tarball 不套用 `.gitattributes`，而 `update` 正是从那�
 - 回退链 窗口 → curses → 编号清单，每一步都**说明原因**，绝不静默换界面。
 - **系统行在点击处理里就忽略**，不只是画成灰的；`picker.pick_processes` 返回前
   再过一遍 `is_protected()`。
-- **勾选单独成列**（用户反馈：和名字挤在一起看不出来）。`☐/☑` 是勾选，`⊘` 系统、
-  `▣` 锁定，右侧另有 `[系统]`/`[锁定]` 文字标签。
-- **按应用分组**：`picker.app_group()` 用应用包路径（`.app/Contents/`）归并，
-  其他平台退回名字前缀。分组页用 `show='tree headings'`，#0 列是勾选列，
-  组行 `☐/◩/☑` 三态，点组 = 整组切换。**点展开箭头只折叠**（靠
-  `identify_element() == 'Treeitem.indicator'` 判断），别把它当成勾选。
+- **勾选是原生复选框**，系统项与锁定项 `state(['disabled'])`（选不动）。
+  纯文本/TUI 兜底里仍用 `☐/☑/⊘/▣` 字符——那里没有图形控件。
+- **按应用分组**：进程用 `picker.app_group()`（`.app` 包路径优先），启动项用
+  `picker.startup_group()`（反域名取前两段 / 去单元扩展名 / 登录项按应用名）。
+  组标题行是一个 `ttk.Checkbutton` + `▾/▸` 折叠标签；点组 = 整组切换，
+  点箭头只折叠。启动项的名称列用 `display_name`（应用名/可执行名），不是包名。
 - 测试接缝 `STARTUPCTL_GUI_SELFTEST=<N>`：窗口弹出后自动"选前 N 个可选项并确定"。
   没有它，"GUI 真的能选出结果"就只能靠人手点，于是 CI 永远验不到这条路径。
 
