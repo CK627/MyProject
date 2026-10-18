@@ -13,8 +13,8 @@
 ;    两条安装路径（exe 与 install.ps1）给出同一个结果，否则 update 会按一边的
 ;    形状去校验另一边的产物。tests/smoke.sh 里对两者都有布局断言。
 ;
-; 与 ptool 的 .iss 的关键差别：ptool 是**机器级**安装（HKLM PATH + shims + 提权），
-; 本项目是**用户级**（HKCU PATH，不需要管理员）——所以这里 PrivilegesRequired=lowest，
+; 与 ptool 的同规之处：Program Files + HKLM PATH + 提权。
+; 差别只有载荷形式（ptool 生成 shims，本项目是 Python 包 + 一个 .bat 启动器）。
 ; 且没有 shim 那一套。
 
 [Setup]
@@ -24,15 +24,17 @@ AppVersion=@VERSION@
 AppVerName=@TOOL@ @VERSION@
 AppPublisher=CK627
 ; 用户级：与 _win_install_root() 一致，不需要管理员
-DefaultDirName={%USERPROFILE}\.devtools\@TOOL@
+DefaultDirName={autopf}\devtools\@TOOL@
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 OutputDir=.
 OutputBaseFilename=@TOOL@-setup-@VERSION@
 Compression=lzma2/max
 SolidCompression=yes
-; 纯用户级安装，绝不提权：写 HKCU 不需要，写 HKLM 只会静默失败
-PrivilegesRequired=lowest
+; 必须声明 64 位安装模式，否则 {autopf} 会落到 C:\Program Files (x86)，与 Python 侧不一致
+ArchitecturesInstallIn64BitMode=x64compatible
+; 机器级安装必须提权
+PrivilegesRequired=admin
 ChangesEnvironment=yes
 UninstallDisplayName=@TOOL@ @VERSION@
 WizardStyle=modern
@@ -49,15 +51,15 @@ Source: "src\VERSION";             DestDir: "{app}";             Flags: ignoreve
 Source: "src\config\@TOOL@.conf";  DestDir: "{app}\config";      Flags: onlyifdoesntexist
 
 [Dirs]
-; 数据目录与安装根同址（用户级安装的既定形态）：cache/ 等扫描缓存住在这里。
-; 不给它单独的 ACL —— 整棵树都在用户自己的家目录下。
+; 扫描缓存**不在**安装根里（住在 ~/.devtools/ctfsweep/cache），所以这里没有
+; 需要单独授权可写的数据目录——Program Files 整棵树保持只读。
 
 [Registry]
-; 把 bin 追加到**用户级** PATH（与 win_path_join 的做法一致：大小写不敏感去重）。
+; 把 bin 追加到**机器级** PATH（与 win_path_join 的做法一致：大小写不敏感去重）。
 ;   {olddata}           保留已有内容
 ;   preservestringtype   维护原有的 REG_SZ / REG_EXPAND_SZ 类型
 ;   NeedsAddPath        已存在时不重复追加（重复安装/升级的关键）
-Root: HKCU; Subkey: "Environment"; \
+Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; \
   ValueType: expandsz; ValueName: "Path"; ValueData: "{olddata};{app}\bin"; \
   Flags: preservestringtype; Check: NeedsAddPath('{app}\bin')
 
@@ -87,7 +89,7 @@ Type: filesandordirs; Name: "{app}\lib"
 
 [Code]
 const
-  UserEnvironmentKey = 'Environment';
+  MachineEnvironmentKey = 'SYSTEM\CurrentControlSet\Control\Session Manager\Environment';
 
 // 去掉首尾空白和结尾的反斜杠，再统一大小写。
 // Windows 的 PATH 比较必须这样处理：注册表里可能存着 C:\PROGRA~1\... 这类短名，
@@ -139,9 +141,9 @@ begin
   // 每装一次就往 PATH 里追加一条重复项。（ExpandConstant 幂等）
   Target := ExpandConstant(Param);
   Result := True;
-  if not RegQueryStringValue(HKCU, UserEnvironmentKey, 'Path', OrigPath) then
+  if not RegQueryStringValue(HKLM, MachineEnvironmentKey, 'Path', OrigPath) then
   begin
-    Log('NeedsAddPath: 读取用户 Path 失败，将直接追加 ' + Target);
+    Log('NeedsAddPath: 读取机器级 Path 失败，将直接追加 ' + Target);
     Exit;
   end;
   if PathContains(OrigPath, Target) then
@@ -154,12 +156,12 @@ begin
 end;
 
 // 外科式移除，而不是 uninsdeletevalue —— 后者会清空整个 Path，把用户 PATH 毁掉
-procedure RemoveFromUserPath(Param: string);
+procedure RemoveFromMachinePath(Param: string);
 var
   OrigPath, NewPath, Rest, Seg: string;
   P: Integer;
 begin
-  if not RegQueryStringValue(HKCU, UserEnvironmentKey, 'Path', OrigPath) then
+  if not RegQueryStringValue(HKLM, MachineEnvironmentKey, 'Path', OrigPath) then
     Exit;
   NewPath := '';
   Rest := OrigPath;
@@ -183,8 +185,8 @@ begin
       NewPath := NewPath + Seg;
     end;
   end;
-  RegWriteExpandStringValue(HKCU, UserEnvironmentKey, 'Path', NewPath);
-  Log('RemoveFromUserPath: 已移除 ' + Param);
+  RegWriteExpandStringValue(HKLM, MachineEnvironmentKey, 'Path', NewPath);
+  Log('RemoveFromMachinePath: 已移除 ' + Param);
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
@@ -197,6 +199,6 @@ begin
   // （本脚本没用任何 uninsdelete* 标志，Inno 不会自动还原 Path）。
   if CurUninstallStep = usUninstall then
   begin
-    RemoveFromUserPath(ExpandConstant('{app}\bin'));
+    RemoveFromMachinePath(ExpandConstant('{app}\bin'));
   end;
 end;

@@ -353,7 +353,8 @@ def _deploy(srcdir, root):
 # Windows（nt）：没有 bash、也没有 rc 文件，安装形态换成
 #   安装根 = %USERPROFILE%\\.devtools\\ctfsweep（与数据目录同址，和 macOS/Linux
 #            用户级安装一致），PATH 上挂 <根>\\bin\\ctfsweep.bat。
-# PATH 走 HKCU\Environment（用户级，不需要管理员）——不用 setx：它会把超过 1024
+# PATH 走 HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment
+# （机器级，装/卸都**需要管理员**）——不用 setx：它会把超过 1024
 # 字符的 PATH 截断，是老牌事故。
 # ============================================================================
 # Windows 的安装载荷。**刻意比 POSIX 短。**
@@ -362,7 +363,7 @@ def _deploy(srcdir, root):
 # lib/ctfsweep.sh / completions/*.zsh|.bash 全是 POSIX 专有，Windows 上用不到也不该装；
 # 它们各自在 Windows 上都有替代：
 #   · deploy.sh      → deploy_nt()（Python 重写，不依赖 bash）
-#   · shell-setup.sh → Windows 没有 rc 文件，PATH 走 HKCU 注册表
+#   · shell-setup.sh → Windows 没有 rc 文件，PATH 走 HKLM 注册表
 #   · uninstall      → _win_uninstall()（Python 实现）
 #   · 启动器 .sh     → bin\ctfsweep.bat（deploy_nt 生成）
 #   · completions    → 没有可 source 的 rc，补全无从接线
@@ -418,8 +419,33 @@ _WIN_LAUNCHER = (
 )
 
 
+# 机器级 PATH 所在的注册表键（写它需要管理员）
+_WIN_ENV_KEY = r'SYSTEM\CurrentControlSet\Control\Session Manager\Environment'
+
+
+def _is_admin():
+    if os.name != 'nt':
+        return False
+    try:
+        import ctypes
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+
+def _need_admin(what):
+    if os.name == 'nt' and not _is_admin():
+        print('错误: %s 需要管理员权限。' % what)
+        print('      请右键「以管理员身份运行」，或改用安装包（会自动弹 UAC）。')
+        return False
+    return True
+
+
 def _win_install_root():
-    return os.path.join(os.path.expanduser('~'), '.devtools', 'ctfsweep')
+    """Windows 安装根：C:\\Program Files\\devtools\\ctfsweep（与 ptool / jtool 同规）。"""
+    base = (os.environ.get('ProgramW6432') or os.environ.get('ProgramFiles')
+            or r'C:\Program Files')
+    return os.path.join(base, 'devtools', 'ctfsweep')
 
 
 def win_path_join(cur, entry):
@@ -446,7 +472,7 @@ def win_path_drop(cur, entry):
 def _win_path_read():
     import winreg
     try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, 'Environment') as k:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, _WIN_ENV_KEY) as k:
             v, _t = winreg.QueryValueEx(k, 'Path')
             return v or ''
     except OSError:
@@ -455,7 +481,7 @@ def _win_path_read():
 
 def _win_path_write(value):
     import winreg
-    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, 'Environment', 0,
+    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, _WIN_ENV_KEY, 0,
                         winreg.KEY_SET_VALUE) as k:
         # REG_EXPAND_SZ：PATH 里常有 %USERPROFILE% 这类变量，写成 REG_SZ 就不再展开
         winreg.SetValueEx(k, 'Path', 0, winreg.REG_EXPAND_SZ, value)
@@ -487,6 +513,8 @@ def deploy_nt(srcdir, root):
 
     只删功能项，数据（cache/ 等）永不动——与 deploy.sh 的契约逐条对齐。
     """
+    if os.name == 'nt' and not _is_admin():
+        raise PermissionError('写入 %s 需要管理员权限' % root)
     os.makedirs(root, exist_ok=True)
     for rel in _WIN_FUNC_ITEMS:
         p = os.path.join(root, rel)
@@ -635,11 +663,13 @@ def cmd_update(argv):
 
 
 def _win_install(mode, src):
-    """Windows 用户级安装：拷到 %USERPROFILE%\\.devtools\\ctfsweep 并把 bin 挂进用户 PATH。
+    """Windows 机器级安装：拷到 C:\\Program Files\\devtools\\ctfsweep 并把 bin 挂进机器级 PATH。
 
-    与 macOS/Linux 用户级的形态逐条对齐：安装根就是数据目录（cache/ 等住在同一层），
-    所以只删/写功能项；PATH 走注册表（不需要管理员），不用 setx（会截断长 PATH）。
+    与 ptool / jtool 同规；写 Program Files 与 HKLM 都需要管理员。
+    扫描缓存仍在 ~/.devtools/ctfsweep/cache（卸载不删，那是缓存不是安装物）。
     """
+    if not _need_admin('安装到 Program Files'):
+        return 1
     dest = _win_install_root()
     if mode == 'installed' and os.path.normcase(os.path.abspath(src)) == os.path.normcase(os.path.abspath(dest)):
         print('ctfsweep 已安装: %s（v%s）' % (dest, _read_version(dest) or '?'))
@@ -648,7 +678,7 @@ def _win_install(mode, src):
     if mode not in ('repo', 'installed'):
         print('无法识别当前布局，找不到要安装的源码（在源码目录里运行 install.bat）。')
         return 1
-    print('ctfsweep 安装（Windows · 用户级）')
+    print('ctfsweep 安装（Windows · 机器级）')
     print('  源码: %s' % src)
     print('  目标: %s' % dest)
     try:
@@ -658,7 +688,7 @@ def _win_install(mode, src):
         return 1
     changed = _win_path_ensure(os.path.join(dest, 'bin'))
     print('已安装: %s（v%s）' % (dest, _read_version(dest) or '?'))
-    print('  PATH: %s' % ('已加入用户 PATH' if changed else '用户 PATH 里已有'))
+    print('  PATH: %s' % ('已加入机器级 PATH' if changed else '机器级 PATH 里已有'))
     print('  数据目录: %s（扫描缓存等；卸载不删）' % paths.data_root())
     print('  重开一个终端后可直接敲 ctfsweep（当前终端的 PATH 还是旧的）。')
     return 0
@@ -673,6 +703,8 @@ def _win_uninstall(argv):
         else:
             print('未知参数: %s（用法: ctfsweep uninstall [-y]）' % a)
             return 2
+    if not _need_admin('从 Program Files 卸载'):
+        return 1
     dest = _win_install_root()
     if not os.path.isdir(dest):
         print('未安装: %s（无需卸载）' % dest)
@@ -702,9 +734,9 @@ def _win_uninstall(argv):
     print('ctfsweep 卸载程序（Windows）')
     print('安装目录: %s' % dest)
     if _win_path_remove(os.path.join(dest, 'bin')):
-        print('已从用户 PATH 摘除: %s' % os.path.join(dest, 'bin'))
+        print('已从机器级 PATH 摘除: %s' % os.path.join(dest, 'bin'))
     else:
-        print('用户 PATH 里没有这一项（可能已摘除）')
+        print('机器级 PATH 里没有这一项（可能已摘除）')
     removed = []
     for rel in _WIN_FUNC_ITEMS:
         p = os.path.join(dest, rel)
