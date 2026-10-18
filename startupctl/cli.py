@@ -321,6 +321,7 @@ def _policy_add(ctx, g, name, dim):
     if picked is None:
         print('已取消。')
         return EXIT_OK
+    before = len(g.entries_of(name, dim))
     n = 0
     for obj in picked:
         try:
@@ -339,8 +340,14 @@ def _policy_add(ctx, g, name, dim):
             print(c('跳过 %s: %s' % (label, e), 'yellow'))
     g.save()
     total = len(g.entries_of(name, dim))
-    print('已加入 %d 条；%s · %s 现有 %d 条。'
-          % (n, guard_mod.LIST_CN[name], guard_mod.DIM_CN[dim], total))
+    added = total - before
+    note = ''
+    if len(picked) != added:
+        # 同名的多个进程共用一条规则（匹配方式就是进程名），必须说出来，
+        # 否则用户会以为"选了 8 个只进去 4 条"是丢了。
+        note = '（选中 %d 个，同名的合并为一条）' % len(picked)
+    print('新增 %d 条，%s · %s 现有 %d 条%s'
+          % (added, guard_mod.LIST_CN[name], guard_mod.DIM_CN[dim], total, note))
     return EXIT_OK
 
 
