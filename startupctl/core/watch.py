@@ -93,6 +93,23 @@ def log(msg, also_stdout=None):
             pass
 
 
+class _LogWriter(object):
+    """把 apply_decisions 的逐条结果也写进 watch.log。
+
+    计划任务用 wscript 启动时没有 stdout，逐条「跳过/失败」原本只打到空控制台，
+    日志里只剩汇总数字——想弄清"到底哪个失败、为什么"就没证据了。
+    """
+
+    def write(self, text):
+        text = (text or '').rstrip()
+        if text:
+            log(text, also_stdout=False)
+        return len(text)
+
+    def flush(self):
+        pass
+
+
 def _on_signal(signum, _frame):
     _STOP['flag'] = True
 
@@ -119,7 +136,8 @@ def _scan_once(ctx, guard):
     # 预先写「结束」就是在日志里谎报。成没成由下面这行汇总。
     for d in deny[:20]:
         log('命中 %s (pid=%s) — %s' % (d.proc.comm or '?', d.proc.pid, d.reason))
-    ok, fail, refused = enforce.apply_decisions(deny, guard, term_first=True)
+    ok, fail, refused = enforce.apply_decisions(
+        deny, guard, term_first=True, out=_LogWriter())
     log('本轮：结束 %d · 权限不足/失败 %d · 跳过（受保护）%d' % (ok, fail, refused),
         also_stdout=False)
     return ok
