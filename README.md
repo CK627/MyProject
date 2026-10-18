@@ -32,7 +32,7 @@ ctfsweep update               # 更新到最新版（--check 只比对版本，�
 ```
 
 Windows（PowerShell，与 ptool / jtool 同规的一键安装：下载快照 → 装到
-`%USERPROFILE%\.devtools\ctfsweep` → 把 `bin` 挂进用户 PATH，**不需要管理员**）：
+`C:\Program Files\devtools\ctfsweep` → 把 `bin` 挂进机器级 PATH，**需要管理员**）：
 
 ```powershell
 irm https://raw.githubusercontent.com/CK627/MyProject/CtfSweep/installer/install.ps1 | iex
@@ -76,7 +76,7 @@ http://101.132.165.98/dist/ctfsweep/<版本>/ctfsweep-setup-<版本>.exe     # W
 
 - **`.dmg`**：双击 `.pkg`，装到 `/Library/devtools/ctfsweep`
 - **`.tar.gz`**：解压后 `./installer/install-from-source.sh install`
-- **`.exe`**：用户级装到 `%USERPROFILE%\.devtools\ctfsweep`，不需要管理员
+- **`.exe`**：机器级装到 `C:\Program Files\devtools\ctfsweep`，安装时弹 UAC
 
 > `.pkg` / `.exe` 都未签名。macOS 首次打开需右键「打开」，Windows 可能提示
 > SmartScreen「更多信息 → 仍要运行」。
@@ -520,13 +520,14 @@ NO_DECODE=false                # true 关闭自动解码
 |------|--------|----------|----------|------|
 | macOS | `ctfsweep`（→ `lib/ctfsweep.sh`） | `/Library/devtools/ctfsweep/` | `…/config/ctfsweep.conf` | `installer/` |
 | Linux | `ctfsweep`（→ `lib/ctfsweep.sh`） | `/usr/local/devtools/ctfsweep/` | `…/config/ctfsweep.conf` | `installer/` |
-| Windows | `ctfsweep.bat` | `%USERPROFILE%\.devtools\ctfsweep\` | `…\config\ctfsweep.conf` | `installer/windows/` |
+| Windows | `ctfsweep.bat` | `C:\Program Files\devtools\ctfsweep\` | `…\config\ctfsweep.conf` | `installer/windows/` |
 
 用户级安装（`CTFSWEEP_USER=1`）三平台都是 `~/.devtools/ctfsweep`。
 
-> Windows 上是**纯用户级**安装：不需要管理员，PATH 走 `HKCU\Environment`。
-> 这和 ptool 不同——ptool 的 shim 必须在机器级 PATH 最前才能生效，所以要提权；
-> 本工具没有 shim，一个用户级 `bin` 目录就够了。
+> Windows 上与 ptool / jtool 同规：**机器级**安装（`C:\Program Files\devtools\ctfsweep`
+> + `HKLM\...\Session Manager\Environment` 里的 PATH），装/卸都需要管理员。
+> 早先这里是用户级（`%USERPROFILE%\.devtools\ctfsweep` + HKCU），四个 devtool
+> 摆在一起时「装在哪、PATH 在哪一层」各不相同，已统一。
 >
 > 用户级安装下**安装根就是数据根**（扫描缓存 `cache/` 住在同一层），所以安装 / 更新 /
 > 卸载一律**只碰功能项**，那三样数据永不自动删除。

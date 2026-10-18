@@ -565,7 +565,7 @@ DNS 相关的 `KNOWN_INFRA_SUFFIXES` / `dns_lead_reason` 也在这里（见上�
 
 `os.name == 'nt'` 时**整条安装链换一套**（没有 bash、没有 rc 文件）：
 
-- **安装形态**：`%USERPROFILE%\.devtools\ctfsweep`（**用户级、不需要管理员**），
+- **安装形态**：`C:\Program Files\devtools\ctfsweep`（**机器级、需要管理员**，与 ptool/jtool 同规），
   PATH 上挂 `<根>\bin\ctfsweep.bat`。与 macOS/Linux 用户级一致——**安装根就是数据目录**，
   所以 `_CLEAR_KEEP`（含 `bin`/`lib`）在这里同样是"别把程序删掉"的那道闸门。
 - **入口**：`installer/install.ps1`（一键：下载快照 → 解压 → 交给 `ctfsweep install`
