@@ -261,6 +261,28 @@ def _pick_tui(rows, title, note=''):
     return curses.wrapper(_run)
 
 
+def app_group(proc):
+    """把一个进程归到它所属的应用。
+
+    macOS 上最可靠的是**应用包路径**：`/Applications/抖音.app/Contents/...` 里的
+    主进程与各 Helper 全部归到「抖音」。其他平台退回名字前缀
+    （`Google Chrome Helper` → `Google Chrome`）。
+    """
+    prog = getattr(proc, 'program', '') or ''
+    for marker in ('.app/Contents/', '.app\\Contents\\'):
+        i = prog.find(marker)
+        if i > 0:
+            base = prog[:i].replace('\\', '/').rsplit('/', 1)[-1]
+            if base:
+                return base
+    comm = (getattr(proc, 'comm', '') or '').strip()
+    for suffix in (' Helper', ' helper', ' Renderer', ' Plugin', ' Service',
+                   ' (GPU)', ' (Renderer)'):
+        if suffix in comm:
+            return comm.split(suffix)[0]
+    return comm or '其他'
+
+
 def _run_picker(rows, title, note='', allow_gui=True, tabs=None):
     if allow_gui and gui_mod.available():
         try:
@@ -287,7 +309,10 @@ def pick_processes(procs, platform='', own_pids=(), preselect=None,
     # 页面只是**视图分组**，可选性仍由 Rows 决定——系统行在哪个页面都选不动。
     sys_rows = [i for i, r in enumerate(state.rows) if r.protected]
     other_rows = [i for i, r in enumerate(state.rows) if not r.protected]
-    tabs = [('系统进程（必要，不可选）', sys_rows), ('其他进程', other_rows)]
+    # 第三项是该页的分组函数：系统页不分组（系统进程之间没有"应用"可言），
+    # 其他页按应用归并，便于整组勾选。
+    tabs = [('系统进程（必要，不可选）', sys_rows, None),
+            ('其他进程', other_rows, app_group)]
     picked = _run_picker(state.rows, '选择进程',
                          '系统基础进程与锁定项不可选；空格切换',
                          allow_gui=allow_gui, tabs=tabs)

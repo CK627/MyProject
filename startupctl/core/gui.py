@@ -89,8 +89,8 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
          widths=(70, 340, 480), tabs=None):
     """勾选式选择器。rows 是对象列表，需有 label / detail / frozen / selected。
 
-    `tabs` 为 [(页签名, [行下标...])]；不给就单页。用户要求进程选择器分成
-    「系统进程（必要）」与「其他进程」两页，点页签切换。
+    `tabs` 为 [(页签名, [行下标])] 或 [(页签名, [行下标], 分组函数)]。
+    给了分组函数时按它的返回值分组成可折叠的树：组行可整组勾选，子行各自勾选。
 
     返回**选中行的下标列表**（只含可选项）；用户取消返回 None。
     系统基础进程与已锁定条目（frozen=True）在点击处理里就直接忽略，
@@ -112,26 +112,50 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
     nb = ttk.Notebook(root)
     nb.pack(fill='both', expand=True, padx=10, pady=(8, 6))
     if not tabs:
-        tabs = [('全部', list(range(len(rows))))]
+        tabs = [('全部', list(range(len(rows))), None)]
 
-    trees = []                     # [(tree, [全局下标...])]
-    for name, idxs in tabs:
+    trees = []          # [(tree, [全局下标], 分组函数)]
+    for spec in tabs:
+        name, idxs = spec[0], list(spec[1])
+        group_by = spec[2] if len(spec) > 2 else None
         frame = ttk.Frame(nb)
         nb.add(frame, text='%s（%d）' % (name, len(idxs)))
-        trees.append((_tree(frame, tk, ttk, columns, widths), list(idxs)))
+        if group_by:
+            # 分组用树形：#0 是「选择」列（带缩进与展开箭头），勾选仍单独成列。
+            tree = ttk.Treeview(frame, columns=('名称', '说明'),
+                                show='tree headings', selectmode='browse')
+            tree.heading('#0', text='选择')
+            tree.column('#0', width=80, stretch=False, anchor='w')
+            tree.heading('名称', text='名称')
+            tree.column('名称', width=340, stretch=True, anchor='w')
+            tree.heading('说明', text='说明')
+            tree.column('说明', width=420, stretch=True, anchor='w')
+        else:
+            tree = ttk.Treeview(frame, columns=columns, show='headings',
+                                selectmode='browse')
+            ws = widths if len(widths) == len(columns) else \
+                tuple(560 // max(1, len(columns)) for _ in columns)
+            for c, w in zip(columns, ws):
+                tree.heading(c, text=c)
+                tree.column(c, width=w, anchor='w', stretch=True)
+        vs = ttk.Scrollbar(frame, orient='vertical', command=tree.yview)
+        tree.configure(yscrollcommand=vs.set)
+        tree.pack(side='left', fill='both', expand=True, padx=(10, 0), pady=(10, 6))
+        vs.pack(side='right', fill='y', pady=(10, 6))
+        trees.append((tree, idxs, group_by))
 
     bot = ttk.Frame(root)
     bot.pack(fill='x', padx=10, pady=(0, 10))
     status_var = tk.StringVar()
     result = {'value': None}
 
-    def row_values(r):
-        # 勾选**单独一列**：用户反馈并进名称里看不明显。
+    def detail_of(r):
         tag = getattr(r, 'tag', '') or ''
         detail = getattr(r, 'detail', '') or ''
-        return (getattr(r, 'mark', ''),
-                getattr(r, 'label', ''),
-                (tag + '  ' + detail) if tag else detail)
+        return (tag + '  ' + detail) if tag else detail
+
+    def row_values(r):
+        return (getattr(r, 'mark', ''), getattr(r, 'label', ''), detail_of(r))
 
     def match(r, f):
         if not f:
@@ -139,36 +163,91 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
         return f in (getattr(r, 'label', '') or '').lower() \
             or f in (getattr(r, 'detail', '') or '').lower()
 
+    def group_mark(kids):
+        live = [rows[gi] for gi in kids if not getattr(rows[gi], 'frozen', False)]
+        if not live:
+            return '⊘'
+        n = sum(1 for r in live if r.selected)
+        if n == 0:
+            return '☐'
+        if n == len(live):
+            return '☑'
+        return '◩'                 # 部分选中
+
     def fill():
         f = filter_var.get().strip().lower()
-        for tree, idxs in trees:
-            for iid in tree.get_children():
+        for tree, idxs, group_by in trees:
+            for iid in tree.get_children(''):
                 tree.delete(iid)
-            for gi in idxs:
-                r = rows[gi]
-                if not match(r, f):
-                    continue
-                tree.insert('', 'end', iid=str(gi), values=row_values(r))
+            if group_by:
+                groups, order = {}, []
+                for gi in idxs:
+                    r = rows[gi]
+                    if not match(r, f):
+                        continue
+                    g = group_by(r) or '其他'
+                    if g not in groups:
+                        groups[g] = []
+                        order.append(g)
+                    groups[g].append(gi)
+                for gname in sorted(order, key=lambda x: (x == '其他', x.lower())):
+                    kids = groups[gname]
+                    iid = 'g:' + gname
+                    tree.insert('', 'end', iid=iid, open=True,
+                                text=group_mark(kids),
+                                values=('%s（%d）' % (gname, len(kids)), ''))
+                    for gi in kids:
+                        r = rows[gi]
+                        tree.insert(iid, 'end', iid='r:%d' % gi,
+                                    text=getattr(r, 'mark', ''),
+                                    values=(getattr(r, 'label', ''), detail_of(r)))
+            else:
+                for gi in idxs:
+                    r = rows[gi]
+                    if not match(r, f):
+                        continue
+                    tree.insert('', 'end', iid='r:%d' % gi, values=row_values(r))
         refresh_status()
 
     def refresh_status():
         n = sum(1 for r in rows if r.selected and not getattr(r, 'frozen', False))
         status_var.set('已选 %d 项' % n)
 
-    def toggle_gi(gi):
-        r = rows[gi]
-        if getattr(r, 'frozen', False):
-            return                     # 在点击处理里就忽略，不只是画灰
-        r.selected = not r.selected
-
-    def toggle_tree(tree):
-        for iid in tree.selection():
+    def toggle_iid(tree, iid):
+        if iid.startswith('g:'):
+            kids = [int(x[2:]) for x in tree.get_children(iid)]
+            live = [rows[gi] for gi in kids if not getattr(rows[gi], 'frozen', False)]
+            if not live:
+                return
+            want = not all(r.selected for r in live)
+            for r in live:
+                r.selected = want
+        else:
             try:
-                gi = int(iid)
+                gi = int(iid[2:])
             except ValueError:
-                continue
-            toggle_gi(gi)
+                return
+            r = rows[gi]
+            if getattr(r, 'frozen', False):
+                return
+            r.selected = not r.selected
         fill()
+
+    def on_click(e, tree):
+        # 点展开箭头只折叠，不改变勾选
+        try:
+            if tree.identify_element(e.x, e.y) == 'Treeitem.indicator':
+                return
+        except Exception:
+            pass
+        if tree.identify_region(e.x, e.y) not in ('cell', 'tree'):
+            return
+        # 只有「选择」列（分组时是 #0，平铺时是 #1）响应点击
+        if tree.identify_column(e.x) not in ('#0', '#1'):
+            return
+        iid = tree.identify_row(e.y)
+        if iid:
+            tree.after_idle(lambda: toggle_iid(tree, iid))
 
     def select_all():
         for r in rows:
@@ -197,10 +276,12 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
         result['value'] = None
         root.destroy()
 
-    for tree, _idxs in trees:
-        tree.bind('<Button-1>', lambda e, t=tree: (t.after_idle(lambda: toggle_tree(t)), None)[1])
-        tree.bind('<space>', lambda e, t=tree: (toggle_tree(t), 'break')[1])
-        tree.bind('<Double-1>', lambda e, t=tree: (toggle_tree(t), None)[1])
+    for tree, _idxs, _gb in trees:
+        tree.bind('<Button-1>', lambda e, t=tree: on_click(e, t))
+        tree.bind('<space>', lambda e, t=tree: (
+            t.selection() and toggle_iid(t, t.selection()[0]), 'break')[1])
+        tree.bind('<Double-1>', lambda e, t=tree: (
+            t.identify_row(e.y) and toggle_iid(t, t.identify_row(e.y)), None)[1])
 
     ttk.Button(bot, text='全选可选', command=select_all).pack(side='left')
     ttk.Button(bot, text='全不选', command=select_none).pack(side='left', padx=(6, 0))
