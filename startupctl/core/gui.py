@@ -71,6 +71,39 @@ def _root(title):
     return root, tk, ttk
 
 
+def _check_images(tk):
+    """14x14 的勾选方框（未选 / 选中 / 部分 / 系统 / 锁定）。
+
+    用 PhotoImage 画而不是 ☐☑ 字符：字符大小跟着**字体**走，和系统自带的
+    展开三角放在一起时高矮不齐（用户反馈"折叠标记比选择框大"）。
+    固定像素就与字体无关，观感也和原生复选框一致。
+    """
+    def box(mark=None, color='#5f6368', fill='#ffffff'):
+        img = tk.PhotoImage(width=14, height=14)
+        img.put(fill, to=(0, 0, 14, 14))
+        for i in range(14):
+            img.put(color, (i, 0))
+            img.put(color, (i, 13))
+            img.put(color, (0, i))
+            img.put(color, (13, i))
+        if mark == 'check':
+            for (x, y) in ((3, 7), (4, 8), (5, 9), (6, 8), (7, 7), (8, 6), (9, 5), (10, 4)):
+                img.put('#1a73e8', (x, y))
+                img.put('#1a73e8', (x, y + 1))
+        elif mark == 'dash':
+            for x in range(4, 10):
+                img.put(color, (x, 7))
+        return img
+
+    return {
+        'off': box(),
+        'on': box('check'),
+        'part': box('dash'),
+        'none': box('dash', '#b8b8b8', '#f2f2f2'),
+        'lock': box('dash', '#b08a00', '#fff8e1'),
+    }
+
+
 def _tree(parent, tk, ttk, cols, widths=None):
     wrap = ttk.Frame(parent)
     wrap.pack(fill='both', expand=True, padx=10, pady=(10, 6))
@@ -156,6 +189,23 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
     bot.pack(fill='x', padx=10, pady=(0, 10))
     status_var = tk.StringVar()
     result = {'value': None}
+    IMGS = _check_images(tk)
+    _MARK_IMG = {'☑': IMGS['on'], '☐': IMGS['off'],
+                 '⊘': IMGS['none'], '▣': IMGS['lock']}
+
+    def img_of(r):
+        return _MARK_IMG.get(getattr(r, 'mark', ''), IMGS['off'])
+
+    def group_img(kids):
+        live = [rows[gi] for gi in kids if not getattr(rows[gi], 'frozen', False)]
+        if not live:
+            return IMGS['none']
+        n = sum(1 for r in live if r.selected)
+        if n == 0:
+            return IMGS['off']
+        if n == len(live):
+            return IMGS['on']
+        return IMGS['part']
 
     def detail_of(r):
         tag = getattr(r, 'tag', '') or ''
@@ -229,24 +279,25 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
                         gi = kids[0]
                         r = rows[gi]
                         tree.insert('', 'end', iid='r:%d' % gi,
-                                    text=getattr(r, 'mark', ''),
+                                    image=img_of(r), text='',
                                     values=_group_values(r, '', flat=True))
                         continue
                     iid = 'g:' + gname
                     tree.insert('', 'end', iid=iid, open=EXPAND_BY_DEFAULT,
-                                text=group_mark(kids),
-                                values=('%s（%d）' % (gname, len(kids)), ''))
+                                image=group_img(kids), text='',
+                                values=('%s（%d）' % (gname, len(kids)),))
                     for gi in kids:
                         r = rows[gi]
                         tree.insert(iid, 'end', iid='r:%d' % gi,
-                                    text=getattr(r, 'mark', ''),
+                                    image=img_of(r), text='',
                                     values=_group_values(r, gname))
             else:
                 for gi in idxs:
                     r = rows[gi]
                     if not match(r, f):
                         continue
-                    tree.insert('', 'end', iid='r:%d' % gi, values=row_values(r))
+                    tree.insert('', 'end', iid='r:%d' % gi, image=img_of(r),
+                                values=row_values(r)[1:])
         refresh_status()
 
     def refresh_status():

@@ -1147,6 +1147,19 @@ def check_startup_grouping():
                                  name='CC Switch', source='/Applications/CC Switch.app'))
     check_eq(picker.startup_group(login), 'CC Switch', '登录项按应用名分组')
 
+    # 名称列给人看的名字，不是包名
+    app = picker.StartupRow(it(anchor='cn.better365.StateTool', name='cn.better365.StateTool',
+                               program='/Library/Application Support/Better365/State/State Tool.app/Contents/MacOS/State Tool'))
+    check_eq(app.display_name, 'State Tool', '优先用 .app 的应用名')
+    helper = picker.StartupRow(it(anchor='com.adobe.ARMDC.Communicator',
+                                  name='com.adobe.ARMDC.Communicator',
+                                  program='/Library/PrivilegedHelperTools/com.adobe.ARMDC.Communicator'))
+    check_eq(helper.display_name, 'Communicator',
+             '可执行文件本身是反域名时取最后一段（不显示整串包名）')
+    plain = picker.StartupRow(it(anchor='com.docker.vmnetd', name='com.docker.vmnetd',
+                                 program='/Library/PrivilegedHelperTools/com.docker.vmnetd'))
+    check_eq(plain.display_name, 'vmnetd', 'com.docker.vmnetd → vmnetd')
+
 
 def check_app_group():
     section('进程按应用分组')

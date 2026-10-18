@@ -112,9 +112,41 @@ class StartupRow(object):
         it = self.item
         return getattr(it, 'name', '') or getattr(it, 'anchor', '') or '?'
 
+    @property
+    def display_name(self):
+        """给人看的名字，**不是包名**。
+
+        优先级：登录项的显示名 → 可执行文件所属的 `.app` 名 → 可执行文件名
+        → 标识最后一段。包名（com.oray.sunlogin.client.startup）只在最后兜底，
+        而且会被截成最后一段。
+        """
+        it = self.item
+        kind = getattr(it, 'kind', '') or ''
+        name = getattr(it, 'name', '') or ''
+        anchor = getattr(it, 'anchor', '') or ''
+        prog = getattr(it, 'program', '') or ''
+
+        if kind in ('login-item', 'startup-folder', 'task-scheduler', 'win-service'):
+            return name or anchor or '?'
+        marker = '.app/Contents/'
+        i = prog.find(marker)
+        if i > 0:
+            base = prog[:i].replace('\\', '/').rsplit('/', 1)[-1]
+            if base:
+                return base
+        base = prog.replace('\\', '/').rstrip('/').rsplit('/', 1)[-1]
+        if base.endswith('.exe'):
+            base = base[:-4]
+        if base and '.' not in base:
+            return base
+        # 可执行文件本身就叫 com.docker.vmnetd 之类：取标识最后一段
+        if anchor and '.' in anchor:
+            return anchor.rsplit('.', 1)[-1]
+        return base or name or anchor or '?'
+
     def short_name(self, group=''):
-        """去掉分组前缀后的短名：`com.docker.vmnetd` → `vmnetd`。"""
-        name = self.label
+        """去掉分组前缀后的短名（分组树里用）。"""
+        name = getattr(self, 'display_name', '') or self.label
         if group and name.startswith(group + '.'):
             return name[len(group) + 1:]
         return name
@@ -141,7 +173,7 @@ class StartupRow(object):
 
     @property
     def cells(self):
-        return [self.label, self.ext, self.detail]
+        return [self.display_name, self.ext, self.detail]
 
 
 class Rows(object):
