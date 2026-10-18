@@ -1161,6 +1161,27 @@ def check_startup_grouping():
     check_eq(plain.display_name, 'vmnetd', 'com.docker.vmnetd → vmnetd')
 
 
+def check_process_display_names():
+    section('进程显示名：反域名取末段、去 .node 扩展名')
+    sys.path.insert(0, ROOT)
+    from startupctl.core import picker
+    from startupctl.core import proc as proc_mod
+
+    def row(comm, program=''):
+        p = proc_mod.ProcRecord(pid=1, ppid=0, uid=501, user='jj',
+                                program=program, comm=comm, args_str='')
+        return picker.Row(p, False, '')
+
+    r = row('cn.better365.iShotProHelper', '/Library/PrivilegedHelperTools/cn.better365.iShotProHelper')
+    check_eq(r.display_name, 'iShotProHelper', '反域名 comm 取最后一段')
+    check_eq(r.label, 'cn.better365.iShotProHelper', 'label（匹配/筛选用）保持原样')
+    check_eq(picker.app_group(r), 'cn.better365', '归到厂商前缀')
+    r = row('Creative Cloud Content Manager.node', '/Applications/CCXProcess.app/Contents/x')
+    check_eq(r.display_name, 'Creative Cloud Content Manager', '去掉 .node 扩展名')
+    r = row('mysqld', '/opt/db/bin/mysqld')
+    check_eq(r.display_name, 'mysqld', '普通进程名原样保留')
+
+
 def check_gui_columns():
     section('选择器列定义兜底（None 会 TypeError）')
     sys.path.insert(0, ROOT)
@@ -1324,6 +1345,7 @@ def main():
     check_cli_contracts()
     check_app_group()
     check_gui_columns()
+    check_process_display_names()
     check_startup_grouping()
     check_windows_machine_level()
     check_fixture_links_are_relative()

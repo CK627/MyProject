@@ -77,6 +77,28 @@ class Row(object):
         return p.comm or p.program or '?'
 
     @property
+    def display_name(self):
+        """给人看的进程名：反域名 comm 取最后一段，`.node` 之类去掉扩展名。
+
+        用户反馈进程列表里还有 `cn.better365.iShotProHelper` 这种包名。
+        `label`（comm）仍用于匹配与筛选，只有显示走这里。
+        """
+        p = self.proc
+        comm = (p.comm or '').strip()
+        prog = p.program or ''
+        if '.' in comm:
+            parts = comm.split('.')
+            if parts[0].lower() in ('com', 'cn', 'org', 'io', 'net', 'me',
+                                    'dev', 'co', 'app', 'edu', 'gov'):
+                return parts[-1] or comm
+        for ext in ('.node', '.exe', '.driver', '.app'):
+            if comm.lower().endswith(ext):
+                return comm[:-len(ext)]
+        if comm:
+            return comm
+        return prog.replace('\\', '/').rstrip('/').rsplit('/', 1)[-1] or '?'
+
+    @property
     def detail(self):
         p = self.proc
         return 'pid=%s  %s' % (p.pid, p.program or p.args_str or '')
@@ -84,7 +106,7 @@ class Row(object):
     @property
     def cells(self):
         """统一渲染用：[名称, 说明]。勾选列由调用方单独加。"""
-        return [self.label, self.detail]
+        return [self.display_name, self.detail]
 
 
 class StartupRow(object):
@@ -363,6 +385,13 @@ def app_group(proc):
             if base:
                 return base
     comm = (getattr(proc, 'comm', '') or '').strip()
+    # 反域名式进程名（cn.better365.iShotProHelper）→ 归到厂商前缀，
+    # 这样组头和启动项那边一致（display 时会显示成 Better365）。
+    if '.' in comm:
+        parts = comm.split('.')
+        if (len(parts) >= 3 and parts[0].lower() in
+                ('com', 'cn', 'org', 'io', 'net', 'me', 'dev', 'co', 'app')):
+            return '.'.join(parts[:2])
     for suffix in (' Helper', ' helper', ' Renderer', ' Plugin', ' Service',
                    ' (GPU)', ' (Renderer)'):
         if suffix in comm:
