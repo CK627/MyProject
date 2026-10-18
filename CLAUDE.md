@@ -69,11 +69,14 @@ GitHub 生成的 tarball 不套用 `.gitattributes`，而 `update` 正是从那�
 `~/.devtools` 里另开目录）：
 
 - 装到哪、数据就在哪——`/Library/devtools/startupctl/data/`、仓库里的 `data/`、
-  Windows 的 `%USERPROFILE%\.devtools\startupctl\data\` 是同一个规则；
+  Windows 的 `C:\Program Files\devtools\startupctl\data\` 是同一个规则；
 - **卸载连安装根一起删**（`rm -rf`，但先检查 `VERSION` / `lib/startupctl` 标记，
   不按路径无脑删），删掉项目不留无主文件；
 - **升级不删** `data/`：`deploy.sh` 只删功能项（bin lib config completions VERSION
   uninstall deploy.sh shell-setup.sh）。
+- Windows 的安装根是 `C:\Program Files\devtools\startupctl`（机器级，与 ptool/jtool 同规），
+  `data/` 由安装器授 `BUILTIN\Users:(OI)(CI)(M)`——Program Files 默认只有管理员可写，
+  而存名单是普通用户的事。
 - `data/` 必须归**登录用户**：系统级安装以 root 部署，deploy.sh 用
   `STARTUPCTL_DATA_OWNER`（pkg postinstall 传）/ `SUDO_USER` / 控制台用户 依次兜底
   chown；否则普通用户存名单会被拒。

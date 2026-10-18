@@ -61,7 +61,7 @@ http://101.132.165.98/dist/startupctl/<版本>/startupctl-setup-<版本>.exe    
 
 - **`.dmg`**：双击 `.pkg`，装到 `/Library/devtools/startupctl`
 - **`.tar.gz`**：解压后 `./installer/install-from-source.sh install`
-- **`.exe`**：用户级装到 `%USERPROFILE%\.devtools\startupctl`，不需要管理员
+- **`.exe`**：机器级装到 `C:\Program Files\devtools\startupctl`，安装时弹 UAC
 
 > `.pkg` / `.exe` 都未签名。macOS 首次打开需右键「打开」，Windows 可能提示
 > SmartScreen「更多信息 → 仍要运行」。
@@ -74,14 +74,14 @@ http://101.132.165.98/dist/startupctl/<版本>/startupctl-setup-<版本>.exe    
 http://101.132.165.98/dist/startupctl/<版本>/startupctl-setup-<版本>.exe
 ```
 
-或一行命令（无需管理员）：
+或一行命令（需要管理员）：
 
 ```powershell
 irm http://101.132.165.98/dist/startupctl/install.ps1 | iex
 ```
 
-装到 `%USERPROFILE%\.devtools\startupctl`，并把 `<安装根>\bin` 追加进**用户级** PATH。
-**不需要管理员**——本项目在 Windows 上是纯用户级安装（不像 ptool 那样要写机器级 PATH）。
+装到 `C:\Program Files\devtools\startupctl`，并把 `<安装根>\bin` 追加进**机器级** PATH。
+**需要管理员**——与 ptool / jtool 同规（Program Files + HKLM），安装时会弹 UAC。
 
 ### 安装后的目录布局
 
@@ -127,7 +127,7 @@ sudo /Library/devtools/startupctl/uninstall -y
 控制面板 →「程序和功能」→ startupctl 卸载；或用安装目录里的卸载器静默卸载：
 
 ```powershell
-& "$env:USERPROFILE\.devtools\startupctl\unins000.exe" /VERYSILENT
+& "C:\Program Files\devtools\startupctl\unins000.exe" /VERYSILENT
 ```
 
 ### 数据跟着项目一起删
@@ -298,7 +298,7 @@ source completions/startupctl.bash    # bash
 ```
 
 - macOS 系统级：`/Library/devtools/startupctl/data/guard.json`
-- Windows：`%USERPROFILE%\.devtools\startupctl\data\guard.json`
+- Windows：`C:\Program Files\devtools\startupctl\data\guard.json`
 - 仓库里直接跑：`<仓库>/data/guard.json`（已在 `.gitignore` 里）
 - 覆盖位置：`STARTUPCTL_DATA_DIR=<目录>`
 
