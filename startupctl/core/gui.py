@@ -72,41 +72,49 @@ def _root(title):
 
 
 def _check_images(tk):
-    """14x14 的勾选方框（未选 / 选中 / 部分 / 系统 / 锁定）。
+    """16x16 的勾选方框（未选 / 选中 / 部分 / 系统 / 锁定）。
 
-    用 PhotoImage 画而不是 ☐☑ 字符：字符大小跟着**字体**走，和系统自带的
-    展开三角放在一起时高矮不齐（用户反馈"折叠标记比选择框大"）。
-    固定像素就与字体无关，观感也和原生复选框一致。
+    用 PhotoImage 画而不是 ☐☑ 字符：字符大小跟着**字体**走，和系统自带的展开
+    三角放在一起高矮不齐。固定 16px 与 macOS 原生复选框同尺寸，观感一致。
+
+    选中是蓝底白勾（macOS 的样子），不是白底蓝勾。
     """
-    def box(mark=None, color='#5f6368', fill='#ffffff'):
-        img = tk.PhotoImage(width=14, height=14)
-        img.put(fill, to=(0, 0, 14, 14))
-        for i in range(14):
-            img.put(color, (i, 0))
-            img.put(color, (i, 13))
-            img.put(color, (0, i))
-            img.put(color, (13, i))
+    S = 16
+
+    def box(mark=None, border='#8e8e93', fill='#ffffff', mark_color='#0a84ff'):
+        img = tk.PhotoImage(width=S, height=S)
+        img.put(fill, to=(0, 0, S, S))
+        for i in range(S):
+            img.put(border, (i, 0))
+            img.put(border, (i, S - 1))
+            img.put(border, (0, i))
+            img.put(border, (S - 1, i))
         if mark == 'check':
-            for (x, y) in ((3, 7), (4, 8), (5, 9), (6, 8), (7, 7), (8, 6), (9, 5), (10, 4)):
-                img.put('#1a73e8', (x, y))
-                img.put('#1a73e8', (x, y + 1))
+            for (x, y) in ((4, 8), (5, 9), (6, 10), (7, 9), (8, 8), (9, 7), (10, 6), (11, 5)):
+                img.put(mark_color, (x, y))
+                img.put(mark_color, (x, y + 1))
         elif mark == 'dash':
-            for x in range(4, 10):
-                img.put(color, (x, 7))
+            for x in range(5, 11):
+                img.put(mark_color, (x, 8))
         return img
 
     return {
         'off': box(),
-        'on': box('check'),
-        'part': box('dash'),
-        'none': box('dash', '#b8b8b8', '#f2f2f2'),
-        'lock': box('dash', '#b08a00', '#fff8e1'),
+        'on': box('check', '#0a84ff', '#0a84ff', '#ffffff'),
+        'part': box('dash', '#0a84ff', '#ffffff', '#0a84ff'),
+        'none': box('dash', '#c7c7cc', '#f2f2f7', '#c7c7cc'),
+        'lock': box('dash', '#c9a227', '#fff8e1', '#a67c00'),
     }
 
 
 def _tree(parent, tk, ttk, cols, widths=None):
     wrap = ttk.Frame(parent)
     wrap.pack(fill='both', expand=True, padx=10, pady=(10, 6))
+    # 16px 图标要在行里放得下；默认行高会把它挤扁
+    try:
+        ttk.Style().configure('Treeview', rowheight=24)
+    except Exception:
+        pass
     tree = ttk.Treeview(wrap, columns=cols, show='headings', selectmode='browse')
     if not widths or len(widths) != len(cols):
         widths = tuple(560 // max(1, len(cols)) for _ in cols)
@@ -284,7 +292,7 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
                         continue
                     iid = 'g:' + gname
                     tree.insert('', 'end', iid=iid, open=EXPAND_BY_DEFAULT,
-                                image=group_img(kids), text='',
+                                image=group_img(kids), text='', tags=('grp',),
                                 values=('%s（%d）' % (gname, len(kids)),))
                     for gi in kids:
                         r = rows[gi]
@@ -368,6 +376,10 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
         root.destroy()
 
     for tree, _idxs, _gb in trees:
+        try:
+            tree.tag_configure('grp', font=('TkDefaultFont', 11, 'bold'))
+        except Exception:
+            pass
         tree.bind('<Button-1>', lambda e, t=tree: on_click(e, t))
         tree.bind('<space>', lambda e, t=tree: (
             t.selection() and toggle_iid(t, t.selection()[0]), 'break')[1])
