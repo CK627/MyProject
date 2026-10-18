@@ -15,9 +15,52 @@
 没有它，"GUI 真的能选出结果"就只能靠人手点，于是 CI 永远验不到这条路径。
 """
 import os
+import subprocess
 import sys
 
 _SELFTEST_ENV = 'STARTUPCTL_GUI_SELFTEST'
+
+
+def double_click_ms():
+    """系统设置里的双击间隔（毫秒）。
+
+    单击与双击要分开，靠的就是"单击延迟多久才生效"——这个延迟**必须不小于**
+    系统的双击判定窗口，否则一次稍慢的双击会被拆成两次单击（用户实测踩到：
+    原来写死 240ms，而 macOS 默认是 500ms）。
+
+    macOS 从 NSGlobalDomain 的 com.apple.mouse.doubleClickThreshold 读（秒），
+    Windows 用 GetDoubleClickTime()，Linux 试 gsettings。读不到就按平台默认。
+    """
+    try:
+        if sys.platform == 'darwin':
+            out = subprocess.check_output(
+                ['defaults', 'read', '-g', 'com.apple.mouse.doubleClickThreshold'],
+                stderr=subprocess.DEVNULL, timeout=5).decode().strip()
+            v = float(out)
+            return int(v * 1000) if v <= 10 else int(v)
+        if os.name == 'nt':
+            import ctypes
+            v = ctypes.windll.user32.GetDoubleClickTime()
+            return int(v) if v else 500
+        for cmd in (['gsettings', 'get',
+                     'org.gnome.settings-daemon.peripherals.mouse', 'double-click'],
+                    ['gsettings', 'get',
+                     'org.gnome.desktop.peripherals.mouse', 'double-click']):
+            try:
+                out = subprocess.check_output(
+                    cmd, stderr=subprocess.DEVNULL, timeout=5).decode().strip()
+                if out.isdigit():
+                    return int(out)
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return {'darwin': 500, 'win32': 500}.get(sys.platform, 400)
+
+
+def single_click_delay_ms():
+    """单击生效的延迟 = 系统双击窗口 + 80ms 余量。"""
+    return double_click_ms() + 80
 
 # 分组默认**折叠**：用户要求一打开是收起来的状态，先看应用列表再展开。
 EXPAND_BY_DEFAULT = False
@@ -379,7 +422,7 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
         iid = tree.identify_row(e.y)
         if not iid:
             return
-        # ★ 单击延迟 240ms 再切换：双击时第二下会先取消它。
+        # ★ 单击延迟 = 系统双击窗口 + 余量：双击时第二下会先取消它。
         #   否则双击 = 切换两次（净效果不变）+ 双击动作，用户看到的就是"乱跳"。
         if CLICK['id'] is not None:
             try:
@@ -392,7 +435,7 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
         def _fire():
             CLICK['id'] = None
             toggle_iid(tree, iid)
-        CLICK['id'] = tree.after(240, _fire)
+        CLICK['id'] = tree.after(single_click_delay_ms(), _fire)
 
     def on_double(e, tree):
         """双击：分组行 = 展开/折叠；子行不响应（避免和单击混淆）。"""
