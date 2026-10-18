@@ -1118,6 +1118,36 @@ def check_windows_machine_level():
     check('ProgramFiles' in ps1, 'install.ps1 认 Program Files')
 
 
+def check_startup_grouping():
+    section('启动项选择器：短名 / 类型 / 分组')
+    sys.path.insert(0, ROOT)
+    from startupctl.core import picker
+    from startupctl.core.model import StartupItem
+
+    def it(**kw):
+        base = dict(uid='u', anchor='a', kind='launchd-daemon', scope='system',
+                    name='', source='', program='')
+        base.update(kw)
+        return StartupItem(**base)
+
+    d = picker.StartupRow(it(anchor='com.docker.vmnetd', name='com.docker.vmnetd',
+                             source='/Library/LaunchDaemons/com.docker.vmnetd.plist'))
+    check_eq(picker.startup_group(d), 'com.docker', 'com.docker.* 归到 com.docker')
+    check_eq(d.short_name('com.docker'), 'vmnetd', '组内显示短名（去掉包前缀）')
+    check_eq(d.ext, '.plist', '类型列取源文件扩展名')
+    # 曾经的 bug：label 里自带勾选标记，纯文本/GUI 又加一次，变成「☐ ☐」
+    check(not d.label.startswith('☐') and '[ ]' not in d.label,
+          'label 不含勾选标记（避免重复显示）')
+
+    svc = picker.StartupRow(it(anchor='nginx.service', kind='systemd', name='nginx.service'))
+    check_eq(picker.startup_group(svc), 'nginx', 'systemd 单元按去扩展名分组')
+    check_eq(svc.ext, 'systemd', '没有源路径时类型列退回种类短名')
+
+    login = picker.StartupRow(it(anchor='loginitem:CC Switch', kind='login-item',
+                                 name='CC Switch', source='/Applications/CC Switch.app'))
+    check_eq(picker.startup_group(login), 'CC Switch', '登录项按应用名分组')
+
+
 def check_app_group():
     section('进程按应用分组')
     sys.path.insert(0, ROOT)
@@ -1266,6 +1296,7 @@ def main():
     check_gui_picker()
     check_cli_contracts()
     check_app_group()
+    check_startup_grouping()
     check_windows_machine_level()
     check_fixture_links_are_relative()
     check_deploy_ignores_umask()

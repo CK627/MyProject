@@ -125,14 +125,19 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
         nb.add(frame, text='%s（%d）' % (name, len(idxs)))
         if group_by:
             # 分组用树形：#0 是「选择」列（带缩进与展开箭头），勾选仍单独成列。
-            tree = ttk.Treeview(frame, columns=('名称', '说明'),
+            # 数据列 = 调用方给的 columns[1:]（启动项是 名称|类型|说明，
+            # 进程是 名称|说明）。
+            gcols = tuple(columns[1:]) if columns and len(columns) > 1 else ('名称', '说明')
+            gws = tuple(widths[1:]) if widths and len(widths) > 1 else \
+                tuple(560 // max(1, len(gcols)) for _ in gcols)
+            tree = ttk.Treeview(frame, columns=gcols,
                                 show='tree headings', selectmode='browse')
-            tree.heading('#0', text='选择')
-            tree.column('#0', width=80, stretch=False, anchor='w')
-            tree.heading('名称', text='名称')
-            tree.column('名称', width=340, stretch=True, anchor='w')
-            tree.heading('说明', text='说明')
-            tree.column('说明', width=420, stretch=True, anchor='w')
+            tree.heading('#0', text=(columns[0] if columns else '选择'))
+            tree.column('#0', width=(widths[0] if widths else 80),
+                        stretch=False, anchor='w')
+            for c, w in zip(gcols, gws):
+                tree.heading(c, text=c)
+                tree.column(c, width=w, stretch=True, anchor='w')
         else:
             tree = ttk.Treeview(frame, columns=columns, show='headings',
                                 selectmode='browse')
@@ -158,7 +163,30 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
         return (tag + '  ' + detail) if tag else detail
 
     def row_values(r):
-        return (getattr(r, 'mark', ''), getattr(r, 'label', ''), detail_of(r))
+        # 勾选**单独一列**：用户反馈并进名称里看不明显。
+        tag = getattr(r, 'tag', '') or ''
+        cells = list(getattr(r, 'cells', None)
+                     or [getattr(r, 'label', ''), getattr(r, 'detail', '')])
+        if tag:
+            cells[-1] = tag + '  ' + cells[-1]
+        return tuple([getattr(r, 'mark', '')] + cells)
+
+    def _group_values(r, group, flat=False):
+        """分组树里的数据列：短名 + 其余字段。
+
+        启动项有 cells = [名称, 类型, 说明]；进程是 [名称, 说明]。
+        `flat=True` 是"只有一个成员的组摊平"，此时没有组前缀可去，用原名。
+        """
+        cells = list(getattr(r, 'cells', None)
+                     or [getattr(r, 'label', ''), getattr(r, 'detail', '')])
+        if not flat and hasattr(r, 'short_name'):
+            cells[0] = r.short_name(group)
+        else:
+            cells[0] = getattr(r, 'label', '')
+        tag = getattr(r, 'tag', '') or ''
+        if tag:
+            cells[-1] = tag + '  ' + cells[-1]
+        return tuple(cells)
 
     def match(r, f):
         if not f:
@@ -202,7 +230,7 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
                         r = rows[gi]
                         tree.insert('', 'end', iid='r:%d' % gi,
                                     text=getattr(r, 'mark', ''),
-                                    values=(getattr(r, 'label', ''), detail_of(r)))
+                                    values=_group_values(r, '', flat=True))
                         continue
                     iid = 'g:' + gname
                     tree.insert('', 'end', iid=iid, open=EXPAND_BY_DEFAULT,
@@ -212,7 +240,7 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
                         r = rows[gi]
                         tree.insert(iid, 'end', iid='r:%d' % gi,
                                     text=getattr(r, 'mark', ''),
-                                    values=(getattr(r, 'label', ''), detail_of(r)))
+                                    values=_group_values(r, gname))
             else:
                 for gi in idxs:
                     r = rows[gi]
