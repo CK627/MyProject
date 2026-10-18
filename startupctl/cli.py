@@ -480,6 +480,11 @@ def cmd_starting(args):
         return EXIT_OK
 
     if arg in ('true', 'on', '1', 'yes'):
+        # 先停旧循环再注册：Windows 的计划任务 /create /f 不会结束正在跑的实例，
+        # 不先停就会多出一个循环（真机出现过 4 个同时跑）。
+        _was, _m = autostart.stop_running()
+        if _was:
+            print(_m)
         ok, msg = autostart.install()
         print(msg)
         if not ok:

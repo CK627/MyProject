@@ -81,7 +81,10 @@ _PAYLOAD_WIN = (
     ('config/startupctl.conf', 'config/startupctl.conf'),
 )
 
-# Windows 的功能项（deploy_nt 部署前先删这批，_win_uninstall 也按它删）。
+# Windows 的功能项。部署与卸载用的**不是同一张表**：
+#   · 部署（升级）只删功能文件，**绝不碰 data/**（删了等于把用户的名单和模式清零）；
+#   · 卸载按用户契约连 data/ 一起删（删掉项目不留垃圾）。
+# 早期把 data 也放进部署表里，导致每次 Windows 更新都把黑名单抹掉——真机踩到。
 #
 # 除了本版真正要装的四项，还列上**历史版本的 POSIX 遗留**
 # （completions / deploy.sh / shell-setup.sh / uninstall）：早期 deploy_nt 遍历的是
@@ -91,9 +94,11 @@ _PAYLOAD_WIN = (
 #
 # `data/` 在**功能项**里：名单与模式跟着项目走（用户要求），卸载一起带走；
 # 升级不会删它（deploy_nt 只按 _PAYLOAD_WIN 覆盖功能文件，不碰 data/）。
-_WIN_FUNC_ITEMS = ('bin', 'lib', 'config', 'VERSION', 'data',
-                   # 历史遗留（新版不再装，装上时要顺手清掉）
-                   'completions', 'deploy.sh', 'shell-setup.sh', 'uninstall')
+_WIN_DEPLOY_ITEMS = ('bin', 'lib', 'config', 'VERSION',
+                     # 历史遗留（新版不再装，装上时要顺手清掉）
+                     'completions', 'deploy.sh', 'shell-setup.sh', 'uninstall')
+
+_WIN_FUNC_ITEMS = _WIN_DEPLOY_ITEMS + ('data',)
 
 # Windows 安装态应有的组件
 _INSTALLED_ITEMS_WIN = ('lib/startupctl', 'VERSION', 'config/startupctl.conf')
@@ -530,7 +535,7 @@ def deploy_nt(srcdir, root):
     if os.name == 'nt' and not _is_admin():
         raise PermissionError('写入 %s 需要管理员权限' % root)
     os.makedirs(root, exist_ok=True)
-    for rel in _WIN_FUNC_ITEMS:
+    for rel in _WIN_DEPLOY_ITEMS:
         p = os.path.join(root, rel)
         if os.path.isdir(p) and not os.path.islink(p):
             shutil.rmtree(p, ignore_errors=True)

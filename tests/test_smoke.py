@@ -1303,21 +1303,9 @@ def check_watch_and_starting():
         os.environ.pop('STARTUPCTL_PLATFORM', None)
         os.environ.pop('STARTUPCTL_DRY_RUN', None)
 
-        # 单实例：pid 文件里是活着的父进程 → 本进程什么都不做就退出
-        pid_path = os.path.join(d, 'watch.pid')
-        with open(pid_path, 'w', encoding='utf-8') as fh:
-            fh.write(str(os.getppid()))
-        rc = watch.run(interval=1, max_rounds=1)
-        check_eq(rc, 0, '已有循环时第二个进程退出 0（单实例）')
-        with open(os.path.join(d, 'watch.log'), encoding='utf-8') as fh:
-            first = fh.read()
-        check('已有监视循环在跑' in first, '日志说明第二个进程为什么退出')
-        with open(pid_path, encoding='utf-8') as fh:
-            check_eq(fh.read().strip(), str(os.getppid()),
-                     '单实例退出时不动别人的 pid 文件')
-
         # 不干预模式：跑一轮就退出，不结束任何进程
-        os.remove(pid_path)
+        # （单实例由文件锁保证，见 check_deploy_preserves_data_and_lock）
+        pid_path = os.path.join(d, 'watch.pid')
         rc = watch.run(interval=1, max_rounds=1)
         check_eq(rc, 0, '不干预模式跑一轮退出 0')
         with open(os.path.join(d, 'watch.log'), encoding='utf-8') as fh:
@@ -1332,6 +1320,63 @@ def check_watch_and_starting():
                 _signal.signal(_s, _h)
             except Exception:
                 pass
+        _sh.rmtree(d, ignore_errors=True)
+
+
+def check_deploy_preserves_data_and_lock():
+    section('升级不碰数据 / 监视循环单实例锁')
+    sys.path.insert(0, ROOT)
+    from startupctl.core import selfmgr as SM
+    from startupctl.core import watch
+
+    check('data' not in SM._WIN_DEPLOY_ITEMS,
+          'Windows 部署表不含 data（升级不会抹掉名单与模式）')
+    check('data' in SM._WIN_FUNC_ITEMS,
+          'Windows 卸载表含 data（卸载连数据一起删）')
+
+    import shutil as _sh
+    import tempfile as _tf
+    d = _tf.mkdtemp()
+    old_env = dict(os.environ)
+    try:
+        snap = os.path.join(d, 'snap')
+        root = os.path.join(d, 'root')
+        os.makedirs(os.path.join(snap, 'startupctl'))
+        os.makedirs(os.path.join(snap, 'config'))
+        with open(os.path.join(snap, 'startupctl', '__init__.py'), 'w',
+                  encoding='utf-8') as fh:
+            fh.write('__version__ = "9.9.9"\n')
+        with open(os.path.join(snap, 'VERSION'), 'w', encoding='utf-8') as fh:
+            fh.write('9.9.9\n')
+        with open(os.path.join(snap, 'config', 'startupctl.conf'), 'w',
+                  encoding='utf-8') as fh:
+            fh.write('A=1\n')
+        os.makedirs(os.path.join(root, 'data'))
+        guard_path = os.path.join(root, 'data', 'guard.json')
+        with open(guard_path, 'w', encoding='utf-8') as fh:
+            fh.write('{"schema": 3, "mode": "blacklist"}\n')
+
+        rc = SM.deploy_nt(snap, root)
+        check_eq(rc, 0, 'deploy_nt 能完成部署')
+        check(os.path.isfile(guard_path), '部署后 data/guard.json 还在（不被升级抹掉）')
+        check(os.path.isfile(os.path.join(root, 'lib', 'startupctl', '__init__.py')),
+              '部署后包文件已更新')
+
+        # 单实例锁：同一数据目录，第二次拿不到
+        os.environ['STARTUPCTL_DATA_DIR'] = os.path.join(d, 'datadir')
+        first = watch._acquire_lock()
+        check(first is not None, '第一次能拿到监视循环锁')
+        second = watch._acquire_lock()
+        check(second is None, '第二次拿不到锁（不会起第二个循环）')
+        if first is not None:
+            first.close()
+        third = watch._acquire_lock()
+        check(third is not None, '释放后能被重新获取')
+        if third is not None:
+            third.close()
+    finally:
+        os.environ.clear()
+        os.environ.update(old_env)
         _sh.rmtree(d, ignore_errors=True)
 
 
@@ -1535,6 +1580,7 @@ def main():
     check_gui_picker()
     check_watch_and_starting()
     check_windows_verify_payload()
+    check_deploy_preserves_data_and_lock()
     check_cli_contracts()
     check_app_group()
     check_gui_columns()

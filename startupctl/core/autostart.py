@@ -64,6 +64,10 @@ def stop_running(timeout=5.0):
     end = time.time() + timeout
     while time.time() < end:
         if running() is None:
+            try:
+                os.remove(watch_pid_path())
+            except OSError:
+                pass
             return True, '已停止监视循环（pid %d）' % pid
         time.sleep(0.2)
     return False, '进程 %d 没有在 %d 秒内退出' % (pid, timeout)

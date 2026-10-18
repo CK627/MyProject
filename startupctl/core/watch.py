@@ -27,6 +27,41 @@ from . import guard as guard_mod
 from . import proc as proc_mod
 
 _STOP = {'flag': False}
+_LOCK = {'fh': None}      # 进程生命周期内一直持有，退出时由 OS 释放
+
+
+def _acquire_lock():
+    """拿单实例锁。拿不到返回 None（已有循环在跑）。
+
+    pid 文件挡不住**同时启动**（两者都先读到空文件、都决定开跑），launchd 重载、
+    计划任务重叠、mode 自动拉起都可能撞上。文件锁由 OS 保证原子，进程意外死掉
+    也会自动释放。
+    """
+    paths.ensure_dir(paths.data_root())
+    path = os.path.join(paths.data_root(), 'watch.lock')
+    try:
+        fh = open(path, 'a+b')
+    except OSError:
+        return None
+    try:
+        if os.name == 'nt':
+            import msvcrt
+            fh.seek(0)
+            if fh.read(1) == b'':
+                fh.write(b'0')
+                fh.flush()
+            fh.seek(0)
+            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return fh
+    except (OSError, IOError):
+        try:
+            fh.close()
+        except OSError:
+            pass
+        return None
 
 
 def _now():
@@ -100,19 +135,12 @@ def run(interval=None, max_rounds=None):
 
     pid_path = os.path.join(paths.data_root(), 'watch.pid')
     paths.ensure_dir(paths.data_root())
-    # 单实例：launchd 重载、用户手滑、计划任务重叠时都可能起出第二个循环。
-    # 两个循环同时杀进程既是双倍动作，也让「谁停了我」无从判断。
-    try:
-        with open(pid_path, encoding='utf-8') as fh:
-            other = int((fh.read().strip() or '0'))
-    except (OSError, ValueError):
-        other = 0
-    if other and other != os.getpid():
-        from .utils import pid_alive
-        if pid_alive(other):
-            log('已有监视循环在跑（pid %d），本进程退出' % other, also_stdout=False)
-            return 0
-        # 陈旧 pid 文件：直接接管
+    # 单实例（文件锁）：两个循环同时杀进程既是双倍动作，也让"谁停了我"无从判断。
+    lock = _acquire_lock()
+    if lock is None:
+        log('已有监视循环在跑（锁被占用），本进程退出', also_stdout=False)
+        return 0
+    _LOCK['fh'] = lock
     try:
         with open(pid_path, 'w', encoding='utf-8') as fh:
             fh.write(str(os.getpid()))
@@ -134,6 +162,17 @@ def run(interval=None, max_rounds=None):
     try:
         while not _STOP['flag']:
             rounds += 1
+            # 被接管就退出：pid 文件里是另一个活着的 pid（老版本没有锁，只能靠这个）
+            try:
+                with open(pid_path, encoding='utf-8') as _pf:
+                    _cur = _pf.read().strip()
+                from .utils import pid_alive as _alive
+                if _cur and _cur != str(os.getpid()) and _alive(int(_cur)):
+                    log('已被另一个循环接管（pid %s），本进程退出' % _cur,
+                        also_stdout=False)
+                    break
+            except (OSError, ValueError):
+                pass
             g = guard_mod.load()          # 每轮重读：用户改了名单下一轮生效
             note = ''
             if g.mode == guard_mod.MODE_OFF:
