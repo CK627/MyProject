@@ -323,6 +323,11 @@ GitHub 生成的 tarball 不套用 `.gitattributes`，而 `update` 正是从那�
   `sys.stdout is None`，`apply_decisions` 必须兜住，否则"杀完进程正要报告"时崩。
 - **Windows 启动项大量是服务（SYSTEM 身份）**：普通令牌结束不了，会报"权限不足"。
   自启任务用 `/rl HIGHEST` 注册；前台 `mode` 仍需从管理员终端运行。
+- **仅仅是管理员还不够**：管理员令牌里 `SeDebugPrivilege` 是 present-but-disabled，
+  `OpenProcess(PROCESS_TERMINATE)` 照样拒绝。`enforce` 执行前用
+  `utils.enable_debug_privilege()` 打开它。ctypes 必须**显式声明 argtypes/restype**——
+  不声明时 `GetCurrentProcess()` 的 HANDLE(-1) 被当 32 位传，x64 上直接
+  `ERROR_INVALID_HANDLE`，而函数还会安静地返回 False（真机排查了很久）。
 - **Windows 没有 `signal.SIGKILL`**：只能 `getattr(signal, 'SIGKILL', 9)`。
   直接引用会在"TERM 没杀掉、转 KILL"的那条路径抛 AttributeError（真机踩到）。
 - **`os.kill(pid, 0)` 在 Windows 上不是探活**：CPython 把它实现成
