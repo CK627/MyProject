@@ -418,7 +418,7 @@ if "!LOCAL_VERSION!"=="!REMOTE_VERSION!" (
     exit /b 0
 )
 
-echo 发现新版本: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
+echo 发现新版本: v!LOCAL_VERSION! → v!REMOTE_VERSION!
 
 set "UPD_TMP=%TEMP%\jtool-update"
 rmdir /s /q "%UPD_TMP%" 2>nul
@@ -469,7 +469,7 @@ move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
 rmdir /s /q "%UPD_TMP%" 2>nul
 
 echo 更新完成！
-echo   版本: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
+echo   版本: v!LOCAL_VERSION! → v!REMOTE_VERSION!
 exit /b 0
 
 REM ============================================
@@ -512,7 +512,7 @@ if "!LOCAL_VERSION!"=="!REMOTE_VERSION!" (
     goto :git_done
 )
 
-echo 发现新版本: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
+echo 发现新版本: v!LOCAL_VERSION! → v!REMOTE_VERSION!
 
 copy /y "!REPO_DIR!\bin\jtool.bat" "%BIN_DIR%\" >nul
 if !errorlevel! neq 0 (
@@ -533,7 +533,7 @@ REM Redirect before echo: the other order appends a trailing space.
 move /y "%CONFIG_FILE%.tmp" "%CONFIG_FILE%" >nul
 
 echo 更新完成！
-echo   版本: v!LOCAL_VERSION! -> v!REMOTE_VERSION!
+echo   版本: v!LOCAL_VERSION! → v!REMOTE_VERSION!
 goto :git_done
 
 :git_fail
