@@ -48,7 +48,7 @@ if exist "%CONFIG_FILE%" (
 REM ============================================
 REM Main dispatch
 REM ============================================
-if "%~1"=="" goto :show_help
+if "%~1"=="" goto :show_state
 
 if "%~1"=="list" goto :list_jdks
 if "%~1"=="help" goto :show_help
@@ -176,17 +176,33 @@ exit /b 0
 REM ============================================
 REM Help
 REM ============================================
+REM ============================================
+REM 当前状态（不带子命令时显示）
+REM ============================================
+:show_state
+echo jtool - Java 版本管理
+if "!JTOOL_DEFAULT_VERSION!"=="" (
+    echo 当前版本: （未设置，用 jtool use 版本号 设置）
+) else (
+    echo 当前版本: !JTOOL_DEFAULT_VERSION!
+)
+echo 基础目录: !JAVA_BASE_DIR!
+echo.
+echo jtool help 看全部命令；jtool list 看已安装版本
+exit /b 0
+
 :show_help
 echo jtool - Windows 下的 Java 版本管理工具
 echo.
 echo 用法:
+echo   jtool                               显示当前状态
 echo   jtool ^<工具^> ^<版本^> [参数...]   运行指定版本的工具
 echo   jtool list                          列出已安装的 JDK
-echo   jtool use ^<版本^>                设置默认版本
+echo   jtool use [版本]                  设置默认版本（不带 = 看当前）
 echo   jtool current                       查看当前默认版本
-echo   jtool home ^<版本^>               输出 JAVA_HOME
-echo   jtool info ^<版本^>               显示详细信息
-echo   jtool tools ^<版本^>              列出可用工具
+echo   jtool home [版本]                 输出 JAVA_HOME（不带 = 当前版本）
+echo   jtool info [版本]                 显示详细信息（不带 = 当前版本）
+echo   jtool tools [版本]                列出可用工具（不带 = 当前版本）
 echo   jtool run ^<版本^> ^<文件.java^>  编译并运行
 echo   jtool scan                          重新扫描 Java 路径
 echo   jtool config                        查看配置信息
@@ -198,7 +214,7 @@ echo   jtool help                          显示帮助
 exit /b 0
 
 :cmd_use
-if "%~2"=="" ( echo Error: specify a version & exit /b 1 )
+if "%~2"=="" goto :cmd_current
 call :resolve_jdk "%~2" use_home
 if not defined use_home ( echo Error: JDK %~2 not found & exit /b 1 )
 
@@ -244,9 +260,11 @@ REM ============================================
 REM home
 REM ============================================
 :cmd_home
-if "%~2"=="" ( echo Error: specify a version & exit /b 1 )
-call :resolve_jdk "%~2" home_path
-if not defined home_path ( echo Error: JDK %~2 not found & exit /b 1 )
+set "home_ver=%~2"
+if "!home_ver!"=="" set "home_ver=!JTOOL_DEFAULT_VERSION!"
+if "!home_ver!"=="" ( echo 错误: 未设置默认版本（先 jtool use 版本号） & exit /b 1 )
+call :resolve_jdk "!home_ver!" home_path
+if not defined home_path ( echo Error: JDK !home_ver! not found & exit /b 1 )
 echo !home_path!
 exit /b 0
 
@@ -254,10 +272,12 @@ REM ============================================
 REM info
 REM ============================================
 :cmd_info
-if "%~2"=="" ( echo Error: specify a version & exit /b 1 )
-call :resolve_jdk "%~2" info_home
-if not defined info_home ( echo Error: JDK %~2 not found & exit /b 1 )
-echo === JDK %~2 ===
+set "info_ver=%~2"
+if "!info_ver!"=="" set "info_ver=!JTOOL_DEFAULT_VERSION!"
+if "!info_ver!"=="" ( echo 错误: 未设置默认版本（先 jtool use 版本号） & exit /b 1 )
+call :resolve_jdk "!info_ver!" info_home
+if not defined info_home ( echo Error: JDK !info_ver! not found & exit /b 1 )
+echo === JDK !info_ver! ===
 echo JAVA_HOME: !info_home!
 echo.
 "!info_home!\bin\java.exe" -version 2>&1
@@ -270,10 +290,12 @@ REM ============================================
 REM tools
 REM ============================================
 :cmd_tools
-if "%~2"=="" ( echo Error: specify a version & exit /b 1 )
-call :resolve_jdk "%~2" tools_home
-if not defined tools_home ( echo Error: JDK %~2 not found & exit /b 1 )
-echo JDK %~2 的可用工具:
+set "tools_ver=%~2"
+if "!tools_ver!"=="" set "tools_ver=!JTOOL_DEFAULT_VERSION!"
+if "!tools_ver!"=="" ( echo 错误: 未设置默认版本（先 jtool use 版本号） & exit /b 1 )
+call :resolve_jdk "!tools_ver!" tools_home
+if not defined tools_home ( echo Error: JDK !tools_ver! not found & exit /b 1 )
+echo JDK !tools_ver! 的可用工具:
 for %%f in ("!tools_home!\bin\*") do echo   %%~nxf
 exit /b 0
 

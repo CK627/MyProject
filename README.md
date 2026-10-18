@@ -130,6 +130,18 @@ jtool home 26           # 输出 JAVA_HOME 路径
 jtool config            # 查看配置信息
 ```
 
+### 看当前状态
+
+不带子命令就是看当前状态——不用先记住 `current` / `home` 这些名字：
+
+```bash
+jtool                   # 当前版本 / JAVA_HOME / 已安装数量
+jtool use               # 不写版本 = 看当前默认版本
+jtool home              # 不写版本 = 当前版本的 JAVA_HOME
+jtool info              # 不写版本 = 当前版本详情
+jtool tools             # 不写版本 = 当前版本可用工具
+```
+
 ### 编译并运行
 
 ```bash
@@ -148,11 +160,12 @@ jtool help
 |------|------|------|
 | `jtool <工具> <版本> [参数]` | 运行指定版本的工具 | `jtool java 26 -version` |
 | `jtool list` | 列出所有已安装的 JDK | `jtool list` |
-| `jtool use <版本>` | 设置默认版本 | `jtool use 21` |
+| `jtool` | 看当前状态（版本 / JAVA_HOME / 已安装数） | `jtool` |
+| `jtool use [版本]` | 设置默认版本；不写版本 = 看当前 | `jtool use 21` |
 | `jtool current` | 查看当前默认版本 | `jtool current` |
-| `jtool home <版本>` | 输出 JAVA_HOME 路径 | `jtool home 26` |
-| `jtool info <版本>` | 显示详细信息 | `jtool info 21` |
-| `jtool tools <版本>` | 列出可用工具 | `jtool tools 26` |
+| `jtool home [版本]` | 输出 JAVA_HOME；不写 = 当前版本 | `jtool home 26` |
+| `jtool info [版本]` | 显示详细信息；不写 = 当前版本 | `jtool info 21` |
+| `jtool tools [版本]` | 列出可用工具；不写 = 当前版本 | `jtool tools 26` |
 | `jtool run <版本> <文件>` | 编译并运行 | `jtool run 26 Hello.java` |
 | `jtool config` | 查看配置信息 | `jtool config` |
 | `jtool scan` | 重新扫描 Java 路径 | `jtool scan` |

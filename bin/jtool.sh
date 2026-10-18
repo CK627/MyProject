@@ -88,6 +88,27 @@ list_jdks() {
 }
 
 # ============================================
+# 当前状态（不带子命令时显示）
+# ============================================
+show_state() {
+    echo "jtool - Java 版本管理"
+    if [ -n "$JTOOL_DEFAULT_VERSION" ]; then
+        echo "当前版本: $JTOOL_DEFAULT_VERSION"
+        echo "JAVA_HOME: $(get_jdk_home "$JTOOL_DEFAULT_VERSION")"
+    else
+        echo "当前版本: （未设置，用 jtool use <版本号> 设置）"
+    fi
+    echo "基础目录: $JAVA_BASE_DIR"
+    local n=0 _v _h _f
+    while IFS=$'\t' read -r _v _h _f; do
+        [ -n "$_v" ] && n=$((n + 1))
+    done < <(do_list_jdk_dirs)
+    echo "已安装:   $n 个（jtool list 看明细）"
+    echo ""
+    echo "jtool help 看全部命令"
+}
+
+# ============================================
 # 显示帮助
 # ============================================
 show_help() {
@@ -95,13 +116,14 @@ show_help() {
 jtool - 统一 Java 版本管理工具
 
 用法:
+  jtool                               显示当前状态（当前版本 / JAVA_HOME / 已安装数）
   jtool <工具名> <版本号> [参数...]   运行指定版本的 Java 工具
   jtool list                          列出所有已安装的 JDK
-  jtool use <版本号>                  设置默认版本
+  jtool use [版本号]                  设置默认版本（不带 = 看当前）
   jtool current                       显示当前默认版本
-  jtool home <版本号>                 输出 JAVA_HOME
-  jtool info <版本号>                 显示详细信息
-  jtool tools <版本号>                列出可用工具
+  jtool home [版本号]                 输出 JAVA_HOME（不带 = 当前版本）
+  jtool info [版本号]                 显示详细信息（不带 = 当前版本）
+  jtool tools [版本号]                列出可用工具（不带 = 当前版本）
   jtool run <版本号> <java文件>       编译并运行
   jtool scan                          扫描 Java 路径，更新配置
   jtool config                        显示配置
@@ -239,16 +261,16 @@ cmd_run() {
 # ============================================
 load_config
 
-[ $# -lt 1 ] && { show_help; exit 0; }
+[ $# -lt 1 ] && { show_state; exit 0; }
 
 case "$1" in
     list)     list_jdks; exit 0 ;;
     help|-h|--help) show_help; exit 0 ;;
-    use)      [ $# -lt 2 ] && { echo "错误: 请指定版本号"; exit 1; }; cmd_use "$2"; exit $? ;;
+    use)      [ $# -lt 2 ] && { cmd_current; exit $?; }; cmd_use "$2"; exit $? ;;
     current)  cmd_current; exit $? ;;
-    home)     [ $# -lt 2 ] && { echo "错误: 请指定版本号"; exit 1; }; cmd_home "$2"; exit $? ;;
-    info)     [ $# -lt 2 ] && { echo "错误: 请指定版本号"; exit 1; }; cmd_info "$2"; exit $? ;;
-    tools)    [ $# -lt 2 ] && { echo "错误: 请指定版本号"; exit 1; }; cmd_tools "$2"; exit $? ;;
+    home)     [ $# -lt 2 ] && { [ -n "$JTOOL_DEFAULT_VERSION" ] || { echo "错误: 未设置默认版本（先 jtool use <版本号>）" >&2; exit 1; }; cmd_home "$JTOOL_DEFAULT_VERSION"; exit $?; }; cmd_home "$2"; exit $? ;;
+    info)     [ $# -lt 2 ] && { [ -n "$JTOOL_DEFAULT_VERSION" ] || { echo "错误: 未设置默认版本（先 jtool use <版本号>）" >&2; exit 1; }; cmd_info "$JTOOL_DEFAULT_VERSION"; exit $?; }; cmd_info "$2"; exit $? ;;
+    tools)    [ $# -lt 2 ] && { [ -n "$JTOOL_DEFAULT_VERSION" ] || { echo "错误: 未设置默认版本（先 jtool use <版本号>）" >&2; exit 1; }; cmd_tools "$JTOOL_DEFAULT_VERSION"; exit $?; }; cmd_tools "$2"; exit $? ;;
     run)
         [ $# -lt 3 ] && { echo "错误: 请指定版本号和文件"; exit 1; }
         # 版本与文件之后的参数透传给脚本本身：jtool run 21 Hello.java arg1 arg2
