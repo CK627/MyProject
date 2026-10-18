@@ -107,6 +107,37 @@ def _check_images(tk):
     }
 
 
+# 常见厂商的显示名（组头用）。键是反域名里的第二段，小写。
+_VENDOR_NAMES = {
+    'adobe': 'Adobe', 'google': 'Google', 'microsoft': 'Microsoft',
+    'vmware': 'VMware', 'docker': 'Docker', 'homebrew': 'Homebrew',
+    'apple': 'Apple', 'tencent': 'Tencent', 'alibaba': 'Alibaba',
+    'netease': 'NetEase', 'oray': 'Oray', 'vivo': 'vivo',
+    'better365': 'Better365', 'valvesoftware': 'Valve', 'oracle': 'Oracle',
+    'proxyman': 'Proxyman', 'netease': 'NetEase', 'jetbrains': 'JetBrains',
+}
+
+
+def group_title(name):
+    """组头的显示名：`com.adobe` → `Adobe`，`homebrew.mxcl` → `Homebrew`。
+
+    用户反馈「有一些还是 com.xxx」——分组标题就是最后残留的包名前缀。
+    反域名去掉 TLD 段；不是反域名的取第一段。
+    """
+    g = (name or '').strip()
+    if not g:
+        return g
+    parts = g.split('.')
+    if len(parts) >= 2 and parts[0].lower() in (
+            'com', 'cn', 'org', 'io', 'net', 'me', 'dev', 'co', 'app'):
+        seg = parts[1]
+    else:
+        seg = parts[0]
+    if not seg:
+        return g
+    return _VENDOR_NAMES.get(seg.lower(), seg[:1].upper() + seg[1:])
+
+
 def _tree(parent, tk, ttk, cols, widths=None):
     wrap = ttk.Frame(parent)
     wrap.pack(fill='both', expand=True, padx=10, pady=(10, 6))
@@ -197,6 +228,7 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
     bot.pack(fill='x', padx=10, pady=(0, 10))
     status_var = tk.StringVar()
     result = {'value': None}
+    CLICK = {'id': None}
     IMGS = _check_images(tk)
     _MARK_IMG = {'☑': IMGS['on'], '☐': IMGS['off'],
                  '⊘': IMGS['none'], '▣': IMGS['lock']}
@@ -293,7 +325,7 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
                     iid = 'g:' + gname
                     tree.insert('', 'end', iid=iid, open=EXPAND_BY_DEFAULT,
                                 image=group_img(kids), text='', tags=('grp',),
-                                values=('%s（%d）' % (gname, len(kids)),))
+                                values=('%s（%d）' % (group_title(gname), len(kids)),))
                     for gi in kids:
                         r = rows[gi]
                         tree.insert(iid, 'end', iid='r:%d' % gi,
@@ -345,8 +377,35 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
         if tree.identify_column(e.x) not in ('#0', '#1'):
             return
         iid = tree.identify_row(e.y)
-        if iid:
-            tree.after_idle(lambda: toggle_iid(tree, iid))
+        if not iid:
+            return
+        # ★ 单击延迟 240ms 再切换：双击时第二下会先取消它。
+        #   否则双击 = 切换两次（净效果不变）+ 双击动作，用户看到的就是"乱跳"。
+        if CLICK['id'] is not None:
+            try:
+                tree.after_cancel(CLICK['id'])
+            except Exception:
+                pass
+            CLICK['id'] = None
+            return
+
+        def _fire():
+            CLICK['id'] = None
+            toggle_iid(tree, iid)
+        CLICK['id'] = tree.after(240, _fire)
+
+    def on_double(e, tree):
+        """双击：分组行 = 展开/折叠；子行不响应（避免和单击混淆）。"""
+        if CLICK['id'] is not None:
+            try:
+                tree.after_cancel(CLICK['id'])
+            except Exception:
+                pass
+            CLICK['id'] = None
+        iid = tree.identify_row(e.y)
+        if iid and iid.startswith('g:'):
+            tree.item(iid, open=not bool(tree.item(iid, 'open')))
+        return 'break'
 
     def select_all():
         for r in rows:
@@ -383,8 +442,7 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
         tree.bind('<Button-1>', lambda e, t=tree: on_click(e, t))
         tree.bind('<space>', lambda e, t=tree: (
             t.selection() and toggle_iid(t, t.selection()[0]), 'break')[1])
-        tree.bind('<Double-1>', lambda e, t=tree: (
-            t.identify_row(e.y) and toggle_iid(t, t.identify_row(e.y)), None)[1])
+        tree.bind('<Double-1>', lambda e, t=tree: on_double(e, t))
 
     ttk.Button(bot, text='全选可选', command=select_all).pack(side='left')
     ttk.Button(bot, text='全不选', command=select_none).pack(side='left', padx=(6, 0))
