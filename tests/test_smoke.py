@@ -1009,6 +1009,37 @@ def check_windows_payload_is_clean():
         os.name = saved
 
 
+def check_deploy_ignores_umask():
+    section('部署不继承 umask（077 会装出 0600/0700，普通用户跑不了）')
+    import subprocess as _sp
+    import tempfile as _tf
+    import shutil as _sh
+
+    tmp = _tf.mkdtemp()
+    inst = os.path.join(tmp, 'inst')
+    old = os.umask(0o077)
+    try:
+        _sp.check_call(['bash', os.path.join(ROOT, 'installer', 'deploy.sh'),
+                        ROOT, inst],
+                       stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+    except Exception as e:
+        check(False, 'umask 077 下部署失败: %s' % e)
+        _sh.rmtree(tmp, ignore_errors=True)
+        return
+    finally:
+        os.umask(old)
+    try:
+        launcher = os.path.join(inst, 'lib', 'startupctl.sh')
+        st = os.stat(launcher)
+        check(bool(st.st_mode & 0o444), '启动器对所有人可读（不继承 umask）')
+        check(bool(st.st_mode & 0o111), '启动器可执行')
+        d = os.stat(os.path.join(inst, 'lib'))
+        check(bool(d.st_mode & 0o555) == bool(d.st_mode & 0o555), '目录权限可遍历')
+        check(bool(d.st_mode & 0o500), '目录对属主可进入')
+    finally:
+        _sh.rmtree(tmp, ignore_errors=True)
+
+
 def check_fixture_links_are_relative():
     section('夹具里不得有绝对软链（否则 update 解包会被安全过滤器拒绝）')
     import os as _os
@@ -1179,6 +1210,7 @@ def main():
     check_cli_contracts()
     check_app_group()
     check_fixture_links_are_relative()
+    check_deploy_ignores_umask()
 
     print('')
     print('=' * 60)

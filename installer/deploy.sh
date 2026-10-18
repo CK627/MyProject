@@ -92,4 +92,12 @@ ln -sf ../lib/startupctl.sh "$DEST/bin/startupctl"
 # 清理旧布局残留，否则它仍在 PATH 上、仍会出现在补全里
 rm -f "$DEST/bin/startupctl.sh"
 
+# ---- 权限归一（不能继承 umask）----
+# ★ cp 跟着**调用方的 umask** 走。`sudo` 会把 umask 透传给子进程，所以只要
+#   调用者的 shell 里设过 umask 077（实测踩到），装出来的就是 0600/0700：
+#   普通用户连 bin/startupctl 都执行不了（permission denied）。
+#   安装/更新必须显式摆正权限，不能指望调用环境。
+chmod -R a+rX "$DEST"
+chmod 755 "$DEST/lib/startupctl.sh" "$DEST/uninstall" 2>/dev/null || true
+
 echo "已部署: $DEST/bin/startupctl（→ ../lib/startupctl.sh；lib / models / config / completions 就位）"

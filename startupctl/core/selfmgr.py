@@ -553,7 +553,7 @@ def _shell_setup(action, root):
 
 
 def cmd_update(argv):
-    """startupctl update [--check]：拉取最新源码快照并重装（白名单与备份保留）。"""
+    """startupctl update [--check]：拉取最新源码快照并重装（名单与模式保留）。"""
     check_only = False
     for a in argv:
         if a == '--check':
@@ -649,7 +649,7 @@ def cmd_update(argv):
         # 「要不要重开终端」由 shell-setup.sh 按 rc 是否真被改动自己报（就是上面那行，
         # 升级时通常是「shell 配置未变」）——这里不再复述：一句提示只留一处，别让同一次
         # 更新把同样的话说三遍。命令本体本来也不需要刷新（启动器每次重新执行）。
-        print('  数据目录未受影响（白名单与备份都保留）。')
+        print('  数据目录未受影响（白名单、黑名单与模式都保留）。')
         return 0
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
@@ -703,7 +703,7 @@ def _win_uninstall(argv):
             print('检测到非交互环境，请加 -y 跳过确认: startupctl uninstall -y')
             return 1
         try:
-            ans = input('确定要卸载 startupctl 吗？（白名单与备份会保留）(y/n): ')
+            ans = input('确定要卸载 startupctl 吗？（名单与模式会保留）(y/n): ')
         except EOFError:
             ans = ''
         if ans.strip().lower() not in ('y', 'yes'):
@@ -797,7 +797,7 @@ def cmd_print_install_dir(argv):
 
 
 def cmd_uninstall(argv):
-    """startupctl uninstall [-y]：卸载安装副本并摘除 shell 接线（白名单与备份保留）。"""
+    """startupctl uninstall [-y]：卸载安装副本并摘除 shell 接线（名单与模式保留）。"""
     assume_yes = False
     for a in argv:
         if a in ('-y', '--yes'):
@@ -825,7 +825,7 @@ def cmd_uninstall(argv):
             print('检测到非交互环境，请加 -y 跳过确认: startupctl uninstall -y')
             return 1
         try:
-            ans = input('确定要卸载 startupctl 吗？（白名单与备份会保留）(y/n): ')
+            ans = input('确定要卸载 startupctl 吗？（名单与模式会保留）(y/n): ')
         except EOFError:
             ans = ''
         if ans.strip().lower() not in ('y', 'yes'):
@@ -840,85 +840,6 @@ def cmd_uninstall(argv):
     except RuntimeError as ex:
         print('卸载失败: %s' % ex)
         return 1
-
-
-def cmd_clear(argv):
-    """startupctl clear [-y]：只清**扫描快照**（scans/）。
-
-    ⚠️ 本项目刻意**不**照搬母本（CtfSweep）的 clear 语义。母本的数据根只装扫描缓存，
-    整目录清空无所谓；本项目的数据根住着两样删了就有真实损失的东西：
-
-        whitelist.json   用户逐条确认过的允许清单（安全产物）
-        backups/         唯一的后悔药——remove 之所以敢做，就靠它
-
-    所以这里把删除范围**硬编码为 `<数据根>/scans` 一个目录**，而不是"遍历数据根、
-    跳过一张保留清单"。两者看着等价，但失效模式不同：保留清单漏写一项就会误删，
-    而写死一个目录**不可能**删到别处。这类"删除范围"的代码，白名单不如白名单都不需要。
-
-    快照本身是纯缓存（scan --save 的产物，随时可重建），清了没有损失。
-    白名单与备份各有专属入口：startupctl whitelist remove / backup prune。
-    """
-    assume_yes = False
-    for a in argv:
-        if a in ('-y', '--yes'):
-            assume_yes = True
-        elif a.startswith('-'):
-            print('未知参数: %s（用法: startupctl clear [-y]）' % a)
-            return 2
-        else:
-            print('clear 不接受参数（白名单与备份请用 whitelist remove / backup prune）: %s' % a)
-            return 2
-
-    root = paths.data_root()
-    scans = paths.scans_root()
-    if not os.path.isdir(scans):
-        print('没有扫描快照需要清理（%s 不存在）' % scans)
-        return 0
-
-    try:
-        names = sorted(os.listdir(scans))
-    except OSError as e:
-        print('无法读取 %s: %s' % (scans, e))
-        return 1
-    if not names:
-        print('没有扫描快照需要清理（%s 已是空的）' % scans)
-        return 0
-
-    targets = [os.path.join(scans, n) for n in names]
-    total_files = total_size = 0
-    for p in targets:
-        f, b = _usage(p) if os.path.isdir(p) and not os.path.islink(p) else (1, _filesize(p))
-        total_files += f
-        total_size += b
-
-    print('将清空扫描快照: %s（%d 个快照，共 %d 个文件，%.1f KB）'
-          % (scans, len(targets), total_files, total_size / 1024.0))
-    print('  **不动** 白名单（%s）与备份（%s）'
-          % (paths.WHITELIST_NAME, paths.backups_root()))
-    if not assume_yes:
-        if not sys.stdin.isatty():
-            print('检测到非交互环境，请加 -y 跳过确认: startupctl clear -y')
-            return 1
-        try:
-            ans = input('确定要删除吗？(y/n): ')
-        except EOFError:
-            ans = ''
-        if ans.strip().lower() not in ('y', 'yes'):
-            print('已取消')
-            return 0
-
-    removed = 0
-    for p in targets:
-        try:
-            if os.path.isdir(p) and not os.path.islink(p):
-                shutil.rmtree(p)
-            else:
-                os.remove(p)
-            removed += 1
-        except OSError as ex:
-            print('删除失败: %s (%r)' % (p, ex))
-    print('已清空扫描快照（删除 %d 项）。下次 scan --save 会重新写入。' % removed)
-    return 0
 
 
 def _filesize(path):
