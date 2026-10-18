@@ -181,6 +181,64 @@ def getuid():
         return 0
 
 
+def enable_debug_privilege():
+    """Windows：启用 SeDebugPrivilege（结束 SYSTEM 服务需要）。
+
+    管理员令牌里这个权限默认是 **present but disabled**——"以管理员身份运行"并不
+    自动把它打开，所以 OpenProcess(PROCESS_TERMINATE) 仍会拒绝访问。任务管理器
+    也是显式打开它之后才能结束服务进程。
+
+    非 Windows / 非管理员时返回 False（不抛异常）。
+    """
+    if os.name != 'nt':
+        return False
+    try:
+        import ctypes
+        from ctypes import wintypes
+        advapi = ctypes.windll.advapi32
+        kernel = ctypes.windll.kernel32
+        TOKEN_ADJUST_PRIVILEGES = 0x0020
+        TOKEN_QUERY = 0x0008
+        SE_PRIVILEGE_ENABLED = 0x00000002
+
+        class LUID(ctypes.Structure):
+            _fields_ = [('LowPart', wintypes.DWORD),
+                        ('HighPart', wintypes.LONG)]
+
+        class LUID_AND_ATTRIBUTES(ctypes.Structure):
+            _fields_ = [('Luid', LUID), ('Attributes', wintypes.DWORD)]
+
+        class TOKEN_PRIVILEGES(ctypes.Structure):
+            _fields_ = [('PrivilegeCount', wintypes.DWORD),
+                        ('Privileges', LUID_AND_ATTRIBUTES * 1)]
+
+        token = wintypes.HANDLE()
+        if not advapi.OpenProcessToken(
+                kernel.GetCurrentProcess(),
+                TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
+                ctypes.byref(token)):
+            return False
+        try:
+            luid = LUID()
+            if not advapi.LookupPrivilegeValueW(
+                    None, ctypes.c_wchar_p('SeDebugPrivilege'),
+                    ctypes.byref(luid)):
+                return False
+            tp = TOKEN_PRIVILEGES()
+            tp.PrivilegeCount = 1
+            tp.Privileges[0].Luid = luid
+            tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED
+            if not advapi.AdjustTokenPrivileges(
+                    token, False, ctypes.byref(tp), 0, None, None):
+                return False
+            # AdjustTokenPrivileges 成功也可能没生效：GetLastError 非 0 表示没拿到
+            return kernel.GetLastError() == 0
+        finally:
+            kernel.CloseHandle(token)
+    except Exception:
+        return False
+
+
 def pid_alive(pid):
     """进程是否还活着。**Windows 上绝不能用 `os.kill(pid, 0)`**。
 

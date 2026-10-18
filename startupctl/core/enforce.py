@@ -134,6 +134,10 @@ def apply_decisions(deny, guard, term_first=True, grace=3.0, out=None):
 
     ⚠️ 调用方必须先让用户确认过（见 cli 的 guard arm / guard enforce）。
     """
+    if os.name == 'nt':
+        # 结束 SYSTEM 服务前先把 SeDebugPrivilege 打开（管理员令牌默认不启用它）。
+        from .utils import enable_debug_privilege
+        enable_debug_privilege()
     out = out or sys.stdout
     if out is None:
         # pythonw / 计划任务里没有 stdout：直接 write 会 AttributeError，

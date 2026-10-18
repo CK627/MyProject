@@ -748,6 +748,10 @@ def check_no_posix_only_calls():
         utils_src = fh.read()
     check('CREATE_NO_WINDOW' in utils_src and 'creationflags' in utils_src,
           'utils.run 在 Windows 上用 CREATE_NO_WINDOW（后台不再闪窗）')
+    enf_src = open(os.path.join(ROOT, 'startupctl', 'core', 'enforce.py'),
+                   encoding='utf-8').read()
+    check('enable_debug_privilege' in enf_src,
+          '执行前会启用 SeDebugPrivilege（管理员令牌默认不启用它）')
 
     from startupctl.core import enforce as _E
     check(isinstance(_E._SIGKILL, int) and isinstance(_E._SIGTERM, int),
@@ -759,8 +763,10 @@ def check_no_posix_only_calls():
     try:
         if had:
             del os.getuid
-        from startupctl.core.utils import getuid, pid_alive
+        from startupctl.core.utils import getuid, pid_alive, enable_debug_privilege
         check_eq(getuid(), 0, 'os.getuid 不存在时 utils.getuid() 返回 0')
+        check(enable_debug_privilege() is False,
+              '非 Windows 上 enable_debug_privilege 直接返回 False')
         check(pid_alive(os.getpid()), 'pid_alive 认得出自己还活着')
         check(not pid_alive(999999), 'pid_alive 对不存在的 pid 返回 False')
         check(not pid_alive('not-a-pid'), 'pid_alive 对非数字返回 False')
