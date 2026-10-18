@@ -71,6 +71,39 @@ def _root(title):
     return root, tk, ttk
 
 
+def _check_images(tk):
+    """14x14 的勾选方框（未选 / 选中 / 部分 / 系统 / 锁定）。
+
+    用 PhotoImage 画而不是 ☐☑ 字符：字符大小跟着**字体**走，和系统自带的
+    展开三角放在一起时高矮不齐（用户反馈"折叠标记比选择框大"）。
+    固定像素就与字体无关，观感也和原生复选框一致。
+    """
+    def box(mark=None, color='#5f6368', fill='#ffffff'):
+        img = tk.PhotoImage(width=14, height=14)
+        img.put(fill, to=(0, 0, 14, 14))
+        for i in range(14):
+            img.put(color, (i, 0))
+            img.put(color, (i, 13))
+            img.put(color, (0, i))
+            img.put(color, (13, i))
+        if mark == 'check':
+            for (x, y) in ((3, 7), (4, 8), (5, 9), (6, 8), (7, 7), (8, 6), (9, 5), (10, 4)):
+                img.put('#1a73e8', (x, y))
+                img.put('#1a73e8', (x, y + 1))
+        elif mark == 'dash':
+            for x in range(4, 10):
+                img.put(color, (x, 7))
+        return img
+
+    return {
+        'off': box(),
+        'on': box('check'),
+        'part': box('dash'),
+        'none': box('dash', '#b8b8b8', '#f2f2f2'),
+        'lock': box('dash', '#b08a00', '#fff8e1'),
+    }
+
+
 def _tree(parent, tk, ttk, cols, widths=None):
     wrap = ttk.Frame(parent)
     wrap.pack(fill='both', expand=True, padx=10, pady=(10, 6))
@@ -92,31 +125,16 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
          widths=(70, 340, 480), tabs=None):
     """勾选式选择器。rows 是对象列表，需有 label / detail / frozen / selected。
 
-    **用原生 ttk.Checkbutton**，不是 Treeview 里画的字符或图标：
-    用户明确要"原生的"。每行一个 Checkbutton，分组用可折叠的标题行，
-    `ttk.Checkbutton` 的 `alternate` 状态表达"部分选中"。
+    `tabs` 为 [(页签名, [行下标])] 或 [(页签名, [行下标], 分组函数)]。
+    给了分组函数时按它的返回值分组成可折叠的树：组行可整组勾选，子行各自勾选。
 
-    `tabs` 为 [(页签名, [行下标]) 或 (页签名, [行下标], 分组函数)]。
     返回**选中行的下标列表**（只含可选项）；用户取消返回 None。
+    系统基础进程与已锁定条目（frozen=True）在点击处理里就直接忽略，
+    不只是画成灰的——UI 只是提示，真正的防线仍在 guard/enforce 里。
     """
     if not rows:
         return []
-    columns = columns or ('选择', '名称', '说明')
     root, tk, ttk = _root(title)
-
-    # ★ 颜色写死，不用 macOS 的动态色。
-    #   aqua 主题里 TCheckbutton/TLabel 的前景是 systemLabelColor —— 窗口不是
-    #   活动窗口时系统把它渲染成灰色，整屏看起来像"全禁用了"（用户实测反馈）。
-    #   列表底色同理：用纯白，和之前的表格观感一致。
-    style = ttk.Style()
-    style.configure('Pick.TCheckbutton', background='#ffffff', foreground='#1d1d1f')
-    style.map('Pick.TCheckbutton',
-              foreground=[('disabled', '#9a9a9a')],
-              background=[('active', '#f2f2f2')])
-    style.configure('Pick.TFrame', background='#ffffff')
-    style.configure('Pick.TLabel', background='#ffffff', foreground='#3a3a3a')
-    style.configure('PickHead.TLabel', background='#ffffff', foreground='#111111',
-                    font=('TkDefaultFont', 11, 'bold'))
 
     head = ttk.Frame(root)
     head.pack(fill='x', padx=10, pady=(10, 0))
@@ -132,70 +150,123 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
     if not tabs:
         tabs = [('全部', list(range(len(rows))), None)]
 
-    result = {'value': None}
-    status_var = tk.StringVar()
-    CB_VARS = {}      # 行下标 → BooleanVar（Checkbutton 的状态源）
-    pages = []      # [(canvas, inner, idxs, group_by)]
-
-    def make_page(name, idxs, group_by):
+    trees = []          # [(tree, [全局下标], 分组函数)]
+    for spec in tabs:
+        name, idxs = spec[0], list(spec[1])
+        group_by = spec[2] if len(spec) > 2 else None
         frame = ttk.Frame(nb)
         nb.add(frame, text='%s（%d）' % (name, len(idxs)))
-        canvas = tk.Canvas(frame, highlightthickness=0, borderwidth=0,
-                           background='#ffffff')
-        vs = ttk.Scrollbar(frame, orient='vertical', command=canvas.yview)
-        canvas.configure(yscrollcommand=vs.set)
-        vs.pack(side='right', fill='y')
-        canvas.pack(side='left', fill='both', expand=True)
-        inner = ttk.Frame(canvas, style='Pick.TFrame')
-        win = canvas.create_window((0, 0), window=inner, anchor='nw')
-        canvas.bind('<Configure>',
-                    lambda e, c=canvas, w=win: c.itemconfigure(w, width=e.width))
-        inner.bind('<Configure>',
-                   lambda e, c=canvas: c.configure(scrollregion=c.bbox('all')))
-        # 滚轮（macOS 是 MouseWheel，X11 是 Button-4/5）
-        def wheel(e, c=canvas):
-            delta = -1 if getattr(e, 'num', None) == 5 or getattr(e, 'delta', 0) < 0 else 1
-            c.yview_scroll(delta, 'units')
-            return 'break'
-        canvas.bind('<MouseWheel>', wheel)
-        canvas.bind('<Button-4>', wheel)
-        canvas.bind('<Button-5>', wheel)
-        pages.append((canvas, inner, list(idxs), group_by))
-        return inner
+        if group_by:
+            # 分组用树形：#0 是「选择」列（带缩进与展开箭头），勾选仍单独成列。
+            # 数据列 = 调用方给的 columns[1:]（启动项是 名称|类型|说明，
+            # 进程是 名称|说明）。
+            gcols = tuple(columns[1:]) if columns and len(columns) > 1 else ('名称', '说明')
+            gws = tuple(widths[1:]) if widths and len(widths) > 1 else \
+                tuple(560 // max(1, len(gcols)) for _ in gcols)
+            tree = ttk.Treeview(frame, columns=gcols,
+                                show='tree headings', selectmode='browse')
+            tree.heading('#0', text=(columns[0] if columns else '选择'))
+            tree.column('#0', width=(widths[0] if widths else 80),
+                        stretch=False, anchor='w')
+            for c, w in zip(gcols, gws):
+                tree.heading(c, text=c)
+                tree.column(c, width=w, stretch=True, anchor='w')
+        else:
+            tree = ttk.Treeview(frame, columns=columns, show='headings',
+                                selectmode='browse')
+            ws = widths if len(widths) == len(columns) else \
+                tuple(560 // max(1, len(columns)) for _ in columns)
+            for c, w in zip(columns, ws):
+                tree.heading(c, text=c)
+                tree.column(c, width=w, anchor='w', stretch=True)
+        vs = ttk.Scrollbar(frame, orient='vertical', command=tree.yview)
+        tree.configure(yscrollcommand=vs.set)
+        tree.pack(side='left', fill='both', expand=True, padx=(10, 0), pady=(10, 6))
+        vs.pack(side='right', fill='y', pady=(10, 6))
+        trees.append((tree, idxs, group_by))
 
-    for spec in tabs:
-        make_page(spec[0], list(spec[1]), spec[2] if len(spec) > 2 else None)
+    bot = ttk.Frame(root)
+    bot.pack(fill='x', padx=10, pady=(0, 10))
+    status_var = tk.StringVar()
+    result = {'value': None}
+    IMGS = _check_images(tk)
+    _MARK_IMG = {'☑': IMGS['on'], '☐': IMGS['off'],
+                 '⊘': IMGS['none'], '▣': IMGS['lock']}
+
+    def img_of(r):
+        return _MARK_IMG.get(getattr(r, 'mark', ''), IMGS['off'])
+
+    def group_img(kids):
+        live = [rows[gi] for gi in kids if not getattr(rows[gi], 'frozen', False)]
+        if not live:
+            return IMGS['none']
+        n = sum(1 for r in live if r.selected)
+        if n == 0:
+            return IMGS['off']
+        if n == len(live):
+            return IMGS['on']
+        return IMGS['part']
+
+    def detail_of(r):
+        tag = getattr(r, 'tag', '') or ''
+        detail = getattr(r, 'detail', '') or ''
+        return (tag + '  ' + detail) if tag else detail
+
+    def row_values(r):
+        # 勾选**单独一列**：用户反馈并进名称里看不明显。
+        tag = getattr(r, 'tag', '') or ''
+        cells = list(getattr(r, 'cells', None)
+                     or [getattr(r, 'label', ''), getattr(r, 'detail', '')])
+        if tag:
+            cells[-1] = tag + '  ' + cells[-1]
+        return tuple([getattr(r, 'mark', '')] + cells)
+
+    def _group_values(r, group, flat=False):
+        """分组树里的数据列：短名 + 其余字段。
+
+        启动项有 cells = [名称, 类型, 说明]；进程是 [名称, 说明]。
+        `flat=True` 是"只有一个成员的组摊平"，此时没有组前缀可去，用原名。
+        """
+        cells = list(getattr(r, 'cells', None)
+                     or [getattr(r, 'label', ''), getattr(r, 'detail', '')])
+        if not flat and hasattr(r, 'short_name'):
+            cells[0] = r.short_name(group)
+        else:
+            cells[0] = getattr(r, 'label', '')
+        tag = getattr(r, 'tag', '') or ''
+        if tag:
+            cells[-1] = tag + '  ' + cells[-1]
+        return tuple(cells)
 
     def match(r, f):
         if not f:
             return True
         return f in (getattr(r, 'label', '') or '').lower() \
-            or f in (getattr(r, 'detail', '') or '').lower() \
-            or f in (getattr(r, 'display_name', '') or '').lower()
+            or f in (getattr(r, 'detail', '') or '').lower()
 
-    def refresh_status():
-        n = sum(1 for r in rows if r.selected and not getattr(r, 'frozen', False))
-        status_var.set('已选 %d 项' % n)
+    def group_mark(kids):
+        live = [rows[gi] for gi in kids if not getattr(rows[gi], 'frozen', False)]
+        if not live:
+            return '⊘'
+        n = sum(1 for r in live if r.selected)
+        if n == 0:
+            return '☐'
+        if n == len(live):
+            return '☑'
+        return '◩'                 # 部分选中
 
-    def rebuild():
+    def fill():
         f = filter_var.get().strip().lower()
-        for canvas, inner, idxs, group_by in pages:
-            for w in inner.winfo_children():
-                w.destroy()
-            inner.grid_columnconfigure(0, minsize=18)
-            inner.grid_columnconfigure(1, weight=1)
-            row = 0
-            # 表头：没有它，一列列勾选框看起来不像表格
-            ttk.Label(inner, text='', style='PickHead.TLabel').grid(row=row, column=0)
-            for j, name in enumerate(columns[1:], start=1):
-                ttk.Label(inner, text=name, style='PickHead.TLabel').grid(
-                    row=row, column=j, sticky='w', padx=(0, 10), pady=(0, 4))
-            row += 1
-            vis = [gi for gi in idxs if match(rows[gi], f)]
+        for tree, idxs, group_by in trees:
+            for iid in tree.get_children(''):
+                tree.delete(iid)
             if group_by:
                 groups, order = {}, []
-                for gi in vis:
-                    g = group_by(rows[gi]) or '其他'
+                for gi in idxs:
+                    r = rows[gi]
+                    if not match(r, f):
+                        continue
+                    g = group_by(r) or '其他'
                     if g not in groups:
                         groups[g] = []
                         order.append(g)
@@ -203,139 +274,89 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
                 for gname in sorted(order, key=lambda x: (x == '其他', x.lower())):
                     kids = groups[gname]
                     if len(kids) == 1:
-                        row = add_row(inner, row, rows[kids[0]], kids[0], None)
+                        # 只有一个成员的组不值得多一层缩进，直接平铺，
+                        # 否则界面会被一堆"组+单个子项"撑成两倍长。
+                        gi = kids[0]
+                        r = rows[gi]
+                        tree.insert('', 'end', iid='r:%d' % gi,
+                                    image=img_of(r), text='',
+                                    values=_group_values(r, '', flat=True))
                         continue
-                    row = add_group(inner, row, gname, kids)
+                    iid = 'g:' + gname
+                    tree.insert('', 'end', iid=iid, open=EXPAND_BY_DEFAULT,
+                                image=group_img(kids), text='',
+                                values=('%s（%d）' % (gname, len(kids)),))
+                    for gi in kids:
+                        r = rows[gi]
+                        tree.insert(iid, 'end', iid='r:%d' % gi,
+                                    image=img_of(r), text='',
+                                    values=_group_values(r, gname))
             else:
-                for gi in vis:
-                    row = add_row(inner, row, rows[gi], gi, None)
+                for gi in idxs:
+                    r = rows[gi]
+                    if not match(r, f):
+                        continue
+                    tree.insert('', 'end', iid='r:%d' % gi, image=img_of(r),
+                                values=row_values(r)[1:])
         refresh_status()
 
-    def add_row(parent, row, r, gi, group_ctx):
-        live = not getattr(r, 'frozen', False)
-        var = tk.BooleanVar(value=r.selected)
-        texts = columns[1:] if len(columns) > 1 else ()
-        cb = ttk.Checkbutton(parent, style='Pick.TCheckbutton',
-                             text=getattr(r, 'display_name', None)
-                             or getattr(r, 'label', ''), variable=var)
-        if live:
-            def _toggle(_r=r, _v=var):
-                _r.selected = bool(_v.get())
-                refresh_status()
-                resync_groups()
-            cb.configure(command=_toggle)
+    def refresh_status():
+        n = sum(1 for r in rows if r.selected and not getattr(r, 'frozen', False))
+        status_var.set('已选 %d 项' % n)
+
+    def toggle_iid(tree, iid):
+        if iid.startswith('g:'):
+            kids = [int(x[2:]) for x in tree.get_children(iid)]
+            live = [rows[gi] for gi in kids if not getattr(rows[gi], 'frozen', False)]
+            if not live:
+                return
+            want = not all(r.selected for r in live)
+            for r in live:
+                r.selected = want
         else:
-            cb.state(['disabled'])
-        cb.grid(row=row, column=1, sticky='w', padx=(0, 8), pady=1)
-
-        cells = list(getattr(r, 'cells', None) or
-                     [getattr(r, 'label', ''), getattr(r, 'detail', '')])
-        for j, val in enumerate(cells[1:], start=2):
-            ttk.Label(parent, text=str(val), style='Pick.TLabel').grid(
-                row=row, column=j, sticky='w', padx=(0, 10))
-        CB_VARS[gi] = var
-        return row + 1
-
-    def add_group(parent, row, gname, kids):
-        live = [rows[gi] for gi in kids if not getattr(rows[gi], 'frozen', False)]
-        holder = {'open': EXPAND_BY_DEFAULT, 'rows': [], 'kids': kids}
-        var = tk.BooleanVar(value=False)
-        cb = ttk.Checkbutton(parent, style='Pick.TCheckbutton',
-                             text='%s（%d）' % (gname, len(kids)), variable=var)
-        if live:
-            def _toggle_group(_v=var, _live=live):
-                want = bool(_v.get())
-                for gi in holder['kids']:
-                    r = rows[gi]
-                    if getattr(r, 'frozen', False):
-                        continue
-                    r.selected = want
-                    v = CB_VARS.get(gi)
-                    if v is not None:
-                        v.set(want)
-                refresh_status()
-                resync_groups()
-            cb.configure(command=_toggle_group)
-        else:
-            cb.state(['disabled'])
-        cb.grid(row=row, column=1, sticky='w', pady=(6, 1))
-
-        arrow = ttk.Label(parent, text=('▾' if holder['open'] else '▸'),
-                          cursor='hand2', width=2, style='Pick.TLabel')
-        arrow.grid(row=row, column=0, sticky='w')
-        arrow.bind('<Button-1>', lambda e, h=holder, a=arrow: toggle_open(h, a))
-        holder['cb'], holder['var'], holder['live'] = cb, var, live
-        GROUPS.append(holder)
-        row += 1
-        start = row
-        for gi in kids:
-            row = add_row(parent, row, rows[gi], gi, holder)
-        holder['rows'] = list(range(start, row))
-        if not holder['open']:
-            for rr in holder['rows']:
-                parent.grid_rowconfigure(rr, weight=0)
-            # 折叠：把子行从布局里摘掉
-            for w in parent.grid_slaves():
-                try:
-                    info = w.grid_info()
-                except Exception:
-                    continue
-                if info and int(info.get('row', -1)) in holder['rows']:
-                    w.grid_remove()
-        return row
-
-    def toggle_open(h, arrow):
-        h['open'] = not h['open']
-        arrow.configure(text='▾' if h['open'] else '▸')
-        parent = arrow.master
-        for w in parent.grid_slaves():
             try:
-                info = w.grid_info()
-            except Exception:
-                continue
-            if info and int(info.get('row', -1)) in h['rows']:
-                if h['open']:
-                    w.grid()
-                else:
-                    w.grid_remove()
+                gi = int(iid[2:])
+            except ValueError:
+                return
+            r = rows[gi]
+            if getattr(r, 'frozen', False):
+                return
+            r.selected = not r.selected
+        fill()
 
-    def resync_groups():
-        for h in list(GROUPS):
-            if not h['live']:
-                continue
-            n = sum(1 for r in h['live'] if r.selected)
-            cb = h['cb']
-            if n == 0:
-                cb.state(['!alternate'])
-                h['var'].set(False)
-            elif n == len(h['live']):
-                cb.state(['!alternate'])
-                h['var'].set(True)
-            else:
-                cb.state(['alternate'])
-                h['var'].set(False)
-            # 组标题上的计数随筛选/选择保持可读
-            cb.configure(text=cb.cget('text').split('（')[0] + '（%d）' % len(h['kids']))
-
-    GROUPS = []
+    def on_click(e, tree):
+        # 点展开箭头只折叠，不改变勾选
+        try:
+            if tree.identify_element(e.x, e.y) == 'Treeitem.indicator':
+                return
+        except Exception:
+            pass
+        if tree.identify_region(e.x, e.y) not in ('cell', 'tree'):
+            return
+        # 只有「选择」列（分组时是 #0，平铺时是 #1）响应点击
+        if tree.identify_column(e.x) not in ('#0', '#1'):
+            return
+        iid = tree.identify_row(e.y)
+        if iid:
+            tree.after_idle(lambda: toggle_iid(tree, iid))
 
     def select_all():
         for r in rows:
             if not getattr(r, 'frozen', False):
                 r.selected = True
-        rebuild()
+        fill()
 
     def select_none():
         for r in rows:
             if not getattr(r, 'frozen', False):
                 r.selected = False
-        rebuild()
+        fill()
 
     def invert():
         for r in rows:
             if not getattr(r, 'frozen', False):
                 r.selected = not r.selected
-        rebuild()
+        fill()
 
     def on_ok():
         result['value'] = [i for i, r in enumerate(rows)
@@ -346,8 +367,13 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
         result['value'] = None
         root.destroy()
 
-    bot = ttk.Frame(root)
-    bot.pack(fill='x', padx=10, pady=(0, 10))
+    for tree, _idxs, _gb in trees:
+        tree.bind('<Button-1>', lambda e, t=tree: on_click(e, t))
+        tree.bind('<space>', lambda e, t=tree: (
+            t.selection() and toggle_iid(t, t.selection()[0]), 'break')[1])
+        tree.bind('<Double-1>', lambda e, t=tree: (
+            t.identify_row(e.y) and toggle_iid(t, t.identify_row(e.y)), None)[1])
+
     ttk.Button(bot, text='全选可选', command=select_all).pack(side='left')
     ttk.Button(bot, text='全不选', command=select_none).pack(side='left', padx=(6, 0))
     ttk.Button(bot, text='反选', command=invert).pack(side='left', padx=(6, 0))
@@ -355,17 +381,9 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
     ttk.Button(bot, text='取消', command=on_cancel).pack(side='right')
     ttk.Button(bot, text='确定', command=on_ok).pack(side='right', padx=(0, 6))
 
-    filter_var.trace_add('write', lambda *a: (rebuild(), None)[1])
-    rebuild()
+    filter_var.trace_add('write', lambda *a: (fill(), None)[1])
+    fill()
     entry.focus_set()
-    # 让窗口真的成为活动窗口：否则 macOS 把控件按"非活动"的灰色画
-    try:
-        root.lift()
-        root.attributes('-topmost', True)
-        root.focus_force()
-        root.after(300, lambda: root.attributes('-topmost', False))
-    except Exception:
-        pass
     try:
         root.bind('<Escape>', lambda e: on_cancel())
         root.bind('<Return>', lambda e: on_ok())
@@ -388,6 +406,7 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
                     break
                 r.selected = True
                 cnt += 1
+            refresh_status()
             on_ok()
         root.after(250, _auto)
 
