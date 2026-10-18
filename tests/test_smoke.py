@@ -1009,6 +1009,34 @@ def check_windows_payload_is_clean():
         os.name = saved
 
 
+def check_app_group():
+    section('进程按应用分组')
+    sys.path.insert(0, ROOT)
+    from startupctl.core import picker
+    from startupctl.core import proc as proc_mod
+
+    def P(comm, program):
+        return proc_mod.ProcRecord(pid=1, ppid=0, uid=501, user='jj',
+                                   program=program, comm=comm, args_str='')
+
+    # 应用包路径优先：主进程与各 Helper 归到同一个应用名
+    a = P('抖音', '/Applications/抖音.app/Contents/MacOS/抖音')
+    b = P('抖音 Helper (GPU)',
+          '/Applications/抖音.app/Contents/Frameworks/X.framework/抖音 Helper (GPU)')
+    check_eq(picker.app_group(a), '抖音', '主进程按 .app 包名归组')
+    check_eq(picker.app_group(b), '抖音', 'Helper 按同一个 .app 包归组')
+
+    # ★ 选择器传进来的是 Row，不是 ProcRecord —— 不拆这一层就会全部落进「其他」。
+    check_eq(picker.app_group(picker.Row(a, False, '')), '抖音',
+             'Row 也能正确归组（曾经就是这里退化成「其他」）')
+
+    # 非应用包路径：退回名字前缀
+    c = P('Google Chrome Helper', '/opt/google/chrome/chrome')
+    check_eq(picker.app_group(c), 'Google Chrome', '非 .app 路径按名字前缀归组')
+    d = P('mysqld', '/usr/local/bin/mysqld')
+    check_eq(picker.app_group(d), 'mysqld', '没有 Helper 后缀时用完整进程名')
+
+
 def check_cli_contracts():
     section('CLI 契约：HELP 行数 / 对齐 / 退出码')
     sys.path.insert(0, ROOT)
@@ -1128,6 +1156,7 @@ def main():
     check_self_info_layouts()
     check_gui_picker()
     check_cli_contracts()
+    check_app_group()
 
     print('')
     print('=' * 60)

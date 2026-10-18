@@ -192,6 +192,15 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
                     groups[g].append(gi)
                 for gname in sorted(order, key=lambda x: (x == '其他', x.lower())):
                     kids = groups[gname]
+                    if len(kids) == 1:
+                        # 只有一个成员的组不值得多一层缩进，直接平铺，
+                        # 否则界面会被一堆"组+单个子项"撑成两倍长。
+                        gi = kids[0]
+                        r = rows[gi]
+                        tree.insert('', 'end', iid='r:%d' % gi,
+                                    text=getattr(r, 'mark', ''),
+                                    values=(getattr(r, 'label', ''), detail_of(r)))
+                        continue
                     iid = 'g:' + gname
                     tree.insert('', 'end', iid=iid, open=True,
                                 text=group_mark(kids),

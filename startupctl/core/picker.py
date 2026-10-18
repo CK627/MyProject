@@ -268,6 +268,10 @@ def app_group(proc):
     主进程与各 Helper 全部归到「抖音」。其他平台退回名字前缀
     （`Google Chrome Helper` → `Google Chrome`）。
     """
+    # ★ 选择器传进来的是 Row（它包着 proc），不是 ProcRecord。
+    #   不拆这一层的话 program/comm 全都取不到，所有进程都会落进「其他」——
+    #   用户实测看到的就是"只有一个大折叠'其他'"。
+    proc = getattr(proc, 'proc', proc)
     prog = getattr(proc, 'program', '') or ''
     for marker in ('.app/Contents/', '.app\\Contents\\'):
         i = prog.find(marker)
