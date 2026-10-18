@@ -372,6 +372,12 @@ def _fetch_snapshot(mirror, workdir):
             tf.extractall(dest, filter='data')   # Python >= 3.11.4 支持 filter 参数
         except TypeError:
             tf.extractall(dest)
+        except tarfile.TarError as ex:
+            # 3.12+ 的 data 过滤器会拒绝绝对软链 / 路径穿越。快照是我们自己打的，
+            # 出现这个说明**打包里有问题**，给一句能看懂的话，别甩 traceback。
+            print('  快照解包失败（%s）：%s' % (type(ex).__name__, ex))
+            print('  这通常说明发布包里带了不安全的链接，请反馈。')
+            return None
     for name in sorted(os.listdir(dest)):
         cand = os.path.join(dest, name)
         if os.path.isfile(os.path.join(cand, 'installer', 'install-from-source.sh')):

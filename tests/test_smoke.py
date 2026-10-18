@@ -1009,6 +1009,27 @@ def check_windows_payload_is_clean():
         os.name = saved
 
 
+def check_fixture_links_are_relative():
+    section('夹具里不得有绝对软链（否则 update 解包会被安全过滤器拒绝）')
+    import os as _os
+    root = _os.path.join(ROOT, 'tests', 'fixtures')
+    bad = []
+    for dp, dn, fn in _os.walk(root):
+        for name in list(dn) + list(fn):
+            p = _os.path.join(dp, name)
+            if _os.path.islink(p):
+                tgt = _os.readlink(p)
+                if _os.path.isabs(tgt):
+                    bad.append('%s -> %s' % (p, tgt))
+    check(not bad,
+          '夹具中没有绝对软链%s' % ('（发现: %s）' % '; '.join(bad) if bad else ''))
+    # 顺带确认那个 dbus.service 软链是「指向发行版真单元」的相对链接
+    dbus = _os.path.join(root, 'roots', 'linux_systemd_etc', 'dbus.service')
+    if _os.path.islink(dbus):
+        check(not _os.path.isabs(_os.readlink(dbus)),
+              'dbus.service 用相对链接（Python 3.12+ 的 data 过滤器拒绝绝对链接）')
+
+
 def check_app_group():
     section('进程按应用分组')
     sys.path.insert(0, ROOT)
@@ -1157,6 +1178,7 @@ def main():
     check_gui_picker()
     check_cli_contracts()
     check_app_group()
+    check_fixture_links_are_relative()
 
     print('')
     print('=' * 60)

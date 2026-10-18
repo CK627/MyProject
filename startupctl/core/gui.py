@@ -19,6 +19,9 @@ import sys
 
 _SELFTEST_ENV = 'STARTUPCTL_GUI_SELFTEST'
 
+# 分组默认**折叠**：用户要求一打开是收起来的状态，先看应用列表再展开。
+EXPAND_BY_DEFAULT = False
+
 
 class GuiUnavailable(Exception):
     """窗口起不来（没有 tkinter / 没有显示）。调用方据此回退。"""
@@ -202,7 +205,7 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
                                     values=(getattr(r, 'label', ''), detail_of(r)))
                         continue
                     iid = 'g:' + gname
-                    tree.insert('', 'end', iid=iid, open=True,
+                    tree.insert('', 'end', iid=iid, open=EXPAND_BY_DEFAULT,
                                 text=group_mark(kids),
                                 values=('%s（%d）' % (gname, len(kids)), ''))
                     for gi in kids:
