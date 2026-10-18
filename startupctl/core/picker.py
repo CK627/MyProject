@@ -41,11 +41,21 @@ class Row(object):
 
     @property
     def mark(self):
+        """勾选样式。用户反馈 `[x]` 看不出选没选，改成方框勾选的字形。"""
+        if self.protected:
+            return '⊘'
+        if self.locked:
+            return '▣'
+        return '☑' if self.selected else '☐'
+
+    @property
+    def tag(self):
+        """右侧的文字标签（系统 / 锁定）。勾选字形本身表达不了这个。"""
         if self.protected:
             return '[系统]'
         if self.locked:
             return '[锁定]'
-        return '[x]' if self.selected else '[ ]'
+        return ''
 
     @property
     def label(self):
@@ -70,7 +80,9 @@ class StartupRow(object):
 
     @property
     def mark(self):
-        return '[x]' if self.selected else '[ ]'
+        return '☑' if self.selected else '☐'
+
+    tag = ''
 
     @property
     def label(self):
@@ -161,7 +173,7 @@ def _pick_plain(rows, title, note=''):
         print('  %s' % note)
     print('')
     for i, r in enumerate(rows, 1):
-        print('  %3d. %s %s' % (i, r.mark, r.label))
+        print('  %3d. %s %s %s' % (i, r.mark, r.label, getattr(r, 'tag', '')))
     print('')
     print('  输入编号（如 1,3,5-8；直接回车 = 取消）')
     try:
@@ -213,7 +225,8 @@ def _pick_tui(rows, title, note=''):
             top = max(0, cur - (h - 5))
             for n, r in enumerate(rows[top:top + h - 5]):
                 y = n + 3
-                line = '%s %s  %s' % (r.mark, r.label, getattr(r, 'detail', ''))
+                tag = getattr(r, 'tag', '')
+                line = '%s %s %s  %s' % (r.mark, r.label, tag, getattr(r, 'detail', ''))
                 attr = curses.A_DIM if getattr(r, 'frozen', False) else 0
                 if top + n == cur:
                     attr |= curses.A_REVERSE
@@ -248,10 +261,10 @@ def _pick_tui(rows, title, note=''):
     return curses.wrapper(_run)
 
 
-def _run_picker(rows, title, note='', allow_gui=True):
+def _run_picker(rows, title, note='', allow_gui=True, tabs=None):
     if allow_gui and gui_mod.available():
         try:
-            idx = gui_mod.pick(rows, title=title, subtitle=note)
+            idx = gui_mod.pick(rows, title=title, subtitle=note, tabs=tabs)
             if idx is None:
                 return None
             return [rows[i] for i in idx if not getattr(rows[i], 'frozen', False)]
@@ -270,9 +283,14 @@ def pick_processes(procs, platform='', own_pids=(), preselect=None,
                    locked_matcher=None, allow_gui=True):
     """选进程。返回 [(proc, locked)]；取消返回 None。"""
     state = Rows(procs, platform, own_pids, preselect, locked_matcher)
+    # 用户要求分两个子页面：系统必要进程（只能看）与其他进程（可选）。
+    # 页面只是**视图分组**，可选性仍由 Rows 决定——系统行在哪个页面都选不动。
+    sys_rows = [i for i, r in enumerate(state.rows) if r.protected]
+    other_rows = [i for i, r in enumerate(state.rows) if not r.protected]
+    tabs = [('系统进程（必要，不可选）', sys_rows), ('其他进程', other_rows)]
     picked = _run_picker(state.rows, '选择进程',
                          '系统基础进程与锁定项不可选；空格切换',
-                         allow_gui=allow_gui)
+                         allow_gui=allow_gui, tabs=tabs)
     if picked is None:
         return None
     return [(r.proc, r.locked) for r in picked]

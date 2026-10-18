@@ -77,8 +77,11 @@ def _tree(parent, tk, ttk, cols):
 
 
 # ------------------------------------------------------------------ 选择器
-def pick(rows, title='选择', subtitle='', columns=('名称', '详情')):
+def pick(rows, title='选择', subtitle='', columns=('名称', '详情'), tabs=None):
     """勾选式选择器。rows 是对象列表，需有 label / detail / frozen / selected。
+
+    `tabs` 为 [(页签名, [行下标...])]；不给就单页。用户要求进程选择器分成
+    「系统进程（必要）」与「其他进程」两页，点页签切换。
 
     返回**选中行的下标列表**（只含可选项）；用户取消返回 None。
     系统基础进程与已锁定条目（frozen=True）在点击处理里就直接忽略，
@@ -97,55 +100,66 @@ def pick(rows, title='选择', subtitle='', columns=('名称', '详情')):
     entry.pack(side='right')
     ttk.Label(head, text='筛选:').pack(side='right', padx=(0, 6))
 
-    tree = _tree(root, tk, ttk, columns)
+    nb = ttk.Notebook(root)
+    nb.pack(fill='both', expand=True, padx=10, pady=(8, 6))
+    if not tabs:
+        tabs = [('全部', list(range(len(rows))))]
+
+    trees = []                     # [(tree, [全局下标...])]
+    for name, idxs in tabs:
+        frame = ttk.Frame(nb)
+        nb.add(frame, text='%s（%d）' % (name, len(idxs)))
+        trees.append((_tree(frame, tk, ttk, columns), list(idxs)))
+
     bot = ttk.Frame(root)
     bot.pack(fill='x', padx=10, pady=(0, 10))
     status_var = tk.StringVar()
-
-    view = []          # tree iid -> rows 下标
     result = {'value': None}
 
-    def look(r):
-        return getattr(r, 'label', '') or ''
+    def left_of(r):
+        tag = getattr(r, 'tag', '') or ''
+        text = '%s %s' % (getattr(r, 'mark', ''), getattr(r, 'label', ''))
+        return (text + '  ' + tag) if tag else text
 
-    def visible_idx():
-        f = filter_var.get().strip().lower()
+    def detail_of(r):
+        return getattr(r, 'detail', '')
+
+    def match(r, f):
         if not f:
-            return list(range(len(rows)))
-        return [i for i, r in enumerate(rows) if f in look(r).lower()
-                or f in (getattr(r, 'detail', '') or '').lower()]
-
-    def mark(r):
-        if getattr(r, 'frozen', False):
-            return '[系统]' if getattr(r, 'protected', False) else '[锁定]'
-        return '[x]' if r.selected else '[ ]'
+            return True
+        return f in (getattr(r, 'label', '') or '').lower() \
+            or f in (getattr(r, 'detail', '') or '').lower()
 
     def fill():
-        for iid in tree.get_children():
-            tree.delete(iid)
-        view[:] = visible_idx()
-        for n, idx in enumerate(view):
-            r = rows[idx]
-            tree.insert('', 'end', iid=str(n), values=(mark(r) + ' ' + look(r),
-                                                       getattr(r, 'detail', '')))
+        f = filter_var.get().strip().lower()
+        for tree, idxs in trees:
+            for iid in tree.get_children():
+                tree.delete(iid)
+            for gi in idxs:
+                r = rows[gi]
+                if not match(r, f):
+                    continue
+                tree.insert('', 'end', iid=str(gi), values=(left_of(r), detail_of(r)))
         refresh_status()
 
     def refresh_status():
         n = sum(1 for r in rows if r.selected and not getattr(r, 'frozen', False))
         status_var.set('已选 %d 项' % n)
 
-    def toggle_selected():
+    def toggle_gi(gi):
+        r = rows[gi]
+        if getattr(r, 'frozen', False):
+            return                     # 在点击处理里就忽略，不只是画灰
+        r.selected = not r.selected
+
+    def toggle_tree(tree):
         for iid in tree.selection():
-            n = int(iid)
-            if n >= len(view):
+            try:
+                gi = int(iid)
+            except ValueError:
                 continue
-            r = rows[view[n]]
-            if getattr(r, 'frozen', False):
-                continue                     # 在点击处理里就忽略，不只是画灰
-            r.selected = not r.selected
-            tree.item(iid, values=(mark(r) + ' ' + look(r),
-                                   getattr(r, 'detail', '')))
-        refresh_status()
+            toggle_gi(gi)
+        fill()
 
     def select_all():
         for r in rows:
@@ -174,9 +188,10 @@ def pick(rows, title='选择', subtitle='', columns=('名称', '详情')):
         result['value'] = None
         root.destroy()
 
-    tree.bind('<Button-1>', lambda e: (tree.after_idle(toggle_selected), None)[1])
-    tree.bind('<space>', lambda e: (toggle_selected(), 'break')[1])
-    tree.bind('<Double-1>', lambda e: (toggle_selected(), None)[1])
+    for tree, _idxs in trees:
+        tree.bind('<Button-1>', lambda e, t=tree: (t.after_idle(lambda: toggle_tree(t)), None)[1])
+        tree.bind('<space>', lambda e, t=tree: (toggle_tree(t), 'break')[1])
+        tree.bind('<Double-1>', lambda e, t=tree: (toggle_tree(t), None)[1])
 
     ttk.Button(bot, text='全选可选', command=select_all).pack(side='left')
     ttk.Button(bot, text='全不选', command=select_none).pack(side='left', padx=(6, 0))

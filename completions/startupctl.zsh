@@ -64,4 +64,10 @@ _startupctl() {
   esac
 }
 
-_startupctl "$@"
+# 注册。直接 source 时 `#compdef` 只是注释，必须显式 compdef 才会生效——
+# 上一版重写时把这句漏了，于是新开终端后 Tab 完全没反应。
+# compinit 未初始化时先初始化，否则 compdef 不存在。
+if (( ! $+functions[compdef] )); then
+  autoload -Uz compinit && compinit
+fi
+compdef _startupctl startupctl

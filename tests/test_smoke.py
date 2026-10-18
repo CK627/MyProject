@@ -534,7 +534,8 @@ def check_guard_locked_entries():
     i_db = [i for i, r in enumerate(rows.rows) if r.proc.pid == 200][0]
     i_tool = [i for i, r in enumerate(rows.rows) if r.proc.pid == 201][0]
     check(rows.rows[i_db].locked, '已锁定条目在选择器里被标为 locked')
-    check_eq(rows.rows[i_db].mark, '[锁定]', '锁定行显示为 [锁定]')
+    check_eq(rows.rows[i_db].mark, '▣', '锁定行用 ▣ 标记（勾选字形）')
+    check_eq(rows.rows[i_db].tag, '[锁定]', '锁定行的文字标签是 [锁定]')
     ok, why = rows.toggle(i_db)
     check(not ok, '锁定行选不动（空格被拒绝）')
     check('解锁' in why, '拒绝时提示了解锁办法')
@@ -577,7 +578,12 @@ def check_gui_picker():
     i_sys = [i for i, r in enumerate(rows.rows) if r.proc.pid == 100][0]
     i_ok = [i for i, r in enumerate(rows.rows) if r.proc.pid == 200][0]
     check(rows.rows[i_sys].protected, '系统行标记为 protected（窗口里置灰不可点）')
-    check_eq(rows.rows[i_sys].mark, '[系统]', '系统行显示标记为 [系统]')
+    check_eq(rows.rows[i_sys].mark, '⊘', '系统行用 ⊘ 标记（不可选）')
+    check_eq(rows.rows[i_sys].tag, '[系统]', '系统行的文字标签是 [系统]')
+    check_eq(rows.rows[i_ok].mark, '☐', '未选中行显示为空框 ☐')
+    rows.rows[i_ok].selected = True
+    check_eq(rows.rows[i_ok].mark, '☑', '选中后显示为勾选 ☑（用户反馈 [x] 看不出来）')
+    rows.rows[i_ok].selected = False
     check(rows.rows[i_sys].frozen, '系统行 frozen（各 UI 都据此禁掉点击）')
     check(not rows.rows[i_ok].frozen, '普通行不 frozen（可点）')
 
