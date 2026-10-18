@@ -80,12 +80,13 @@ def _scan_once(ctx, guard):
                                           items_by_uid=by_uid)
     if not deny:
         return 0
+    # 只说「命中」不说「结束」：权限不足时结束不了（SYSTEM 服务、别的用户的进程），
+    # 预先写「结束」就是在日志里谎报。成没成由下面这行汇总。
     for d in deny[:20]:
-        log('结束 %s (pid=%s) — %s' % (d.proc.comm or '?', d.proc.pid, d.reason))
+        log('命中 %s (pid=%s) — %s' % (d.proc.comm or '?', d.proc.pid, d.reason))
     ok, fail, refused = enforce.apply_decisions(deny, guard, term_first=True)
-    if fail or refused:
-        log('本轮：结束 %d · 失败 %d · 跳过（受保护）%d' % (ok, fail, refused),
-            also_stdout=False)
+    log('本轮：结束 %d · 权限不足/失败 %d · 跳过（受保护）%d' % (ok, fail, refused),
+        also_stdout=False)
     return ok
 
 
@@ -148,9 +149,7 @@ def run(interval=None, max_rounds=None):
             else:
                 last_note = ''
                 try:
-                    n = _scan_once(ctx, g)
-                    if n:
-                        log('本轮结束 %d 个进程' % n)
+                    _scan_once(ctx, g)
                 except Exception as e:
                     log('本轮出错: %s: %s' % (type(e).__name__, e), also_stdout=False)
             if max_rounds is not None and rounds >= max_rounds:
