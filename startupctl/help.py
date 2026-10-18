@@ -73,6 +73,10 @@ def hint_text(path):
     key = tuple(w.lower() for w in path)
     entry = HINTS.get(key)
     if entry is None:
+        # 已经是末级（如 mode blacklist、whitelist startup selector）：
+        # 不是"未知位置"，而是"后面没参数了"——给一句明确的收尾话。
+        if len(key) > 1 and key[:-1] in HINTS:
+            return '该位置后面没有更多参数了（%s 已经完整）。\n' % ' '.join(key)
         return None
     title, rows = entry
     return '\n'.join([title + ':'] + _rows(rows)) + '\n'

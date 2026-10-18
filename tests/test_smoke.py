@@ -1283,6 +1283,19 @@ def check_cli_contracts():
     # 旗标一律拒收：这是「只用子命令」的硬约束，不是建议。
     rc, out = run_cli(['--version'])
     check_eq(rc, 2, '`--version` 这种旗标写法退出 2（本工具只用子命令）')
+    # 名单为空时切模式：**不扫描**就该拒绝（否则 Windows 上几秒没输出）
+    import tempfile as _tf, shutil as _sh, time as _time
+    _d = _tf.mkdtemp()
+    try:
+        _t0 = _time.time()
+        rc, out = run_cli(['mode', 'blacklist'], env_extra={'STARTUPCTL_DATA_DIR': _d})
+        _dt = _time.time() - _t0
+        check_eq(rc, 3, '空名单切模式退出 3（安全拒绝）')
+        check('拒绝' in out, '空名单切模式打出「拒绝」')
+        check(_dt < 5.0, '空名单拒绝不扫描（%.2fs）' % _dt)
+    finally:
+        _sh.rmtree(_d, ignore_errors=True)
+
     rc, out = run_cli(['help'])
     check_eq(rc, 0, 'help 退出 0')
     rc, out = run_cli(['help', 'list'])
@@ -1306,6 +1319,17 @@ def check_cli_contracts():
     check_eq(rc, 0, '`whitelist help` 等价于 `whitelist ?`')
     rc, out = run_cli(['nosuch', '?'])
     check_eq(rc, 2, '不认识的位置退出 2')
+    # 末级位置：不是"未知"，而是"没有更多参数"
+    rc, out = run_cli(['mode', 'blacklist', '?'])
+    check_eq(rc, 0, '末级位置的 ? 退出 0')
+    check('已经完整' in out, '末级位置明确说"后面没有更多参数"')
+    # 自管理子命令不再静默吞参数（原来 update bad 会当成 update 跑）
+    for argv, cmd in ((['update', 'bad'], 'update'),
+                      (['uninstall', 'bad'], 'uninstall'),
+                      (['install', 'bad'], 'install')):
+        rc, out = run_cli(argv)
+        check_eq(rc, 2, '`%s` 多余的参数退出 2' % ' '.join(argv))
+        check(cmd + ' 不接受参数' in out, '`%s` 明说是多余参数' % ' '.join(argv))
     rc, out = run_cli(['nosuchcmd'])
     check_eq(rc, 2, '未知子命令退出 2（用法错）')
 

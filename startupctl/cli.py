@@ -186,6 +186,16 @@ def _mode_status(ctx, g, procs, items):
 
 
 def cmd_mode(ctx, args):
+    # 先在**不扫描**的情况下判能不能执行：名单为空时直接拒绝。
+    # 扫描在 Windows 上要几秒，先扫再拒会让用户以为"没反应"（用户实测反馈）。
+    if args and args[0].lower() in MODE_ALIASES and args[0].lower() != 'off':
+        from .core import guard as guard_mod
+        early = guard_mod.load()
+        early.mode = MODE_ALIASES[args[0].lower()]
+        ok, why = early.ready_to_enforce()
+        if not ok:
+            sys.stderr.write('拒绝: %s\n' % why)
+            return EXIT_REFUSED
     g, procs, items, _errs = _guard_ctx(ctx)
     if not args:
         return _mode_status(ctx, g, procs, items)
@@ -515,12 +525,26 @@ def main(argv=None):
         return EXIT_OK
 
     # 自管理子命令（不建 Ctx：update 时数据目录可能还不存在）
-    if sub == 'update':
-        return _selfmgr().cmd_update(['--check'] if rest[:1] == ['check'] else [])
-    if sub == 'install':
-        return _selfmgr().cmd_install([])
-    if sub == 'uninstall':
-        return _selfmgr().cmd_uninstall(['-y'] if rest[:1] == ['confirm'] else [])
+    # ★ 先把参数校验完再转交：原来 `rest` 里多出来的词会被**静默丢弃**
+    #   （`startupctl update bad` 会当成 `update` 跑），用户敲错了也看不出来。
+    _ARITY = {
+        'update': ((), ('check',)),
+        'uninstall': ((), ('confirm',)),
+        'install': ((), ()),
+    }
+    if sub in _ARITY:
+        plain, words = _ARITY[sub]
+        if rest and not (len(rest) == 1 and rest[0].lower() in words):
+            allowed = ' / '.join(list(plain) + list(words)) or '（无参数）'
+            sys.stderr.write('错误: %s 不接受参数 %s\n' % (sub, ' '.join(rest)))
+            sys.stderr.write('      可用: %s\n' % allowed)
+            return EXIT_USAGE
+        if sub == 'update':
+            return _selfmgr().cmd_update(['--check'] if rest else [])
+        if sub == 'install':
+            return _selfmgr().cmd_install([])
+        if sub == 'uninstall':
+            return _selfmgr().cmd_uninstall(['-y'] if rest else [])
     if sub == 'print-install-dir':
         return _selfmgr().cmd_print_install_dir([])
 
@@ -550,6 +574,12 @@ def main(argv=None):
         return EXIT_USAGE
     except KeyboardInterrupt:
         print('')
+        return EXIT_FAIL
+    except Exception as e:                     # 兜底：不把 traceback 甩给用户
+        if os.environ.get('STARTUPCTL_DEBUG'):
+            raise
+        sys.stderr.write('内部错误: %s: %s\n' % (type(e).__name__, e))
+        sys.stderr.write('  （设 STARTUPCTL_DEBUG=1 可看完整堆栈）\n')
         return EXIT_FAIL
 
     return EXIT_USAGE
