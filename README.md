@@ -83,6 +83,22 @@ irm http://101.132.165.98/dist/startupctl/install.ps1 | iex
 装到 `C:\Program Files\devtools\startupctl`，并把 `<安装根>\bin` 追加进**机器级** PATH。
 **需要管理员**——与 ptool / jtool 同规（Program Files + HKLM），安装时会弹 UAC。
 
+> ⚠️ **装完必须刷新环境**。系统 PATH 已经改好了，但**已经开着的进程不会自动拿到**
+> ——连之后从同一个 Explorer 里新开的 cmd 也一样（它们继承的是 Explorer 登录时的
+> 环境块）。现象就是 `startupctl` 报「不是内部或外部命令」。
+>
+> 三种办法，任选其一：
+>
+> 1. **重启资源管理器**（最快）：任务管理器 → 找到「Windows 资源管理器」→ 右键「重新启动」
+> 2. **注销后重新登录**（最稳）
+> 3. **只在当前窗口临时用**（不改系统）：
+>    ```cmd
+>    set PATH=%PATH%;C:\Program Files\devtools\startupctl\bin
+>    startupctl version
+>    ```
+>
+> 核对是否生效：`where startupctl` 应指向 `C:\Program Files\devtools\startupctl\bin\startupctl.bat`。
+
 ### 安装后的目录布局
 
 仓库布局与**安装后**布局不同（与 jtool / ptool 同规）：
