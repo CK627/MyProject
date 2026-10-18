@@ -244,14 +244,20 @@ def _missing_artifacts(root):
     return missing
 
 
-def _verify_deploy(srcdir, root):
+def _verify_deploy(srcdir, root, table=None):
     """部署后逐文件比对源与落盘结果，返回不一致的键（软链不参与）。
 
     这是 R1（半安装残骸）的兜底：deploy.sh 已把 preflight 放在删除之前，
     这里再确认拷贝真的落全了。
+
+    ★ 必须按**本平台**的载荷表核对：Windows 上 deploy_nt 只装
+    lib/ · VERSION · config/，拿 POSIX 表去比会把 deploy.sh / completions
+    全报成"未落全"——明明成功却报失败，是同一类谎报（Windows 真机踩过）。
     """
+    if table is None:
+        table = _PAYLOAD_WIN if os.name == 'nt' else _PAYLOAD_REPO
     bad = []
-    for key, src in sorted(_payload_items(srcdir, _PAYLOAD_REPO).items()):
+    for key, src in sorted(_payload_items(srcdir, table).items()):
         dst = os.path.join(root, key)
         try:
             if not os.path.isfile(dst) or _file_md5(src) != _file_md5(dst):

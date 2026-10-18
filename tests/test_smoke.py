@@ -1285,6 +1285,45 @@ def check_watch_and_starting():
         _sh.rmtree(d, ignore_errors=True)
 
 
+def check_windows_verify_payload():
+    section('Windows 更新后的核对只比 Windows 载荷')
+    sys.path.insert(0, ROOT)
+    from startupctl.core import selfmgr as SM
+
+    import shutil as _sh
+    import tempfile as _tf
+    d = _tf.mkdtemp()
+    try:
+        snap = os.path.join(d, 'snap')
+        root = os.path.join(d, 'root')
+        # 快照里包在 startupctl/，安装空间里是 lib/startupctl/（映射表的左/右两列）
+        os.makedirs(os.path.join(snap, 'startupctl'))
+        os.makedirs(os.path.join(root, 'lib', 'startupctl'))
+        for base in (snap, root):
+            os.makedirs(os.path.join(base, 'config'))
+            with open(os.path.join(base, 'VERSION'), 'w', encoding='utf-8') as fh:
+                fh.write('9.9.9\n')
+            with open(os.path.join(base, 'config', 'startupctl.conf'),
+                      'w', encoding='utf-8') as fh:
+                fh.write('A=1\n')
+        with open(os.path.join(snap, 'startupctl', '__init__.py'),
+                  'w', encoding='utf-8') as fh:
+            fh.write('x = 1\n')
+        with open(os.path.join(root, 'lib', 'startupctl', '__init__.py'),
+                  'w', encoding='utf-8') as fh:
+            fh.write('x = 1\n')
+
+        bad = SM._verify_deploy(snap, root, SM._PAYLOAD_WIN)
+        check_eq(bad, [],
+                 'Windows 载荷齐全时不报缺失（deploy.sh / completions 不该参与）')
+
+        os.remove(os.path.join(root, 'lib', 'startupctl', '__init__.py'))
+        bad = SM._verify_deploy(snap, root, SM._PAYLOAD_WIN)
+        check('lib/startupctl/__init__.py' in bad, '真缺文件仍然被报出来')
+    finally:
+        _sh.rmtree(d, ignore_errors=True)
+
+
 def check_cli_contracts():
     section('CLI 契约：HELP 行数 / 对齐 / 退出码')
     sys.path.insert(0, ROOT)
@@ -1445,6 +1484,7 @@ def main():
     check_self_info_layouts()
     check_gui_picker()
     check_watch_and_starting()
+    check_windows_verify_payload()
     check_cli_contracts()
     check_app_group()
     check_gui_columns()
