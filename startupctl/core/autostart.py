@@ -18,7 +18,7 @@ import subprocess
 import sys
 
 from . import paths
-from .utils import getuid
+from .utils import getuid, pid_alive
 
 LABEL = 'cn.ck627.startupctl.watch'
 PLIST_NAME = LABEL + '.plist'
@@ -44,11 +44,7 @@ def running():
     pid = _read_pid()
     if not pid:
         return None
-    try:
-        os.kill(pid, 0)          # Windows 上 Python 也支持 os.kill(pid, 0)
-        return pid
-    except OSError:
-        return None
+    return pid if pid_alive(pid) else None
 
 
 def stop_running(timeout=5.0):
@@ -61,8 +57,8 @@ def stop_running(timeout=5.0):
             pass
         return False, '监视循环没有在运行'
     try:
-        os.kill(pid, 15)
-    except OSError as e:
+        os.kill(pid, 15)         # POSIX: SIGTERM；Windows: TerminateProcess
+    except (OSError, SystemError) as e:
         return False, '结束进程失败: %s' % e
     import time
     end = time.time() + timeout

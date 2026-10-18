@@ -317,6 +317,10 @@ GitHub 生成的 tarball 不套用 `.gitattributes`，而 `update` 正是从那�
   必须从 `/proc/mounts` 检出并明说降级。
 
 **Windows**
+- **`os.kill(pid, 0)` 在 Windows 上不是探活**：CPython 把它实现成
+  `TerminateProcess(pid, 0)`——会**以退出码 0 真的结束那个进程**（随后还可能抛
+  `SystemError`）。存活检查一律走 `utils.pid_alive()`；静态断言禁止别处再写。
+  `starting true` 曾因此在拉起监视循环后立刻把它杀掉（Windows 真机踩到）。
 - **绝不解析本地化输出**（`tasklist`/`sc query`/`schtasks /fo CSV` 在中文系统上列名与
   偏移都不同）→ 读注册表 `Services\<name>` 的 `Start` DWORD、读 `System32\Tasks` 的 XML。
 - **WOW64 只影响 HKLM**：`HKCU\...\Run` 在共享列表上**不被重定向**，对它枚举双视图

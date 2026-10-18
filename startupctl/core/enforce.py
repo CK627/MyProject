@@ -174,15 +174,9 @@ def _platform_for(guard):
 
 
 def _alive(pid):
-    try:
-        os.kill(pid, 0)
-        return True
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True                      # 存在但没权限，对我们来说仍算活着
-    except OSError:
-        return False
+    # ★ 不能直接 os.kill(pid, 0)：Windows 上那是 TerminateProcess(0)，会真的杀掉进程。
+    from .utils import pid_alive
+    return pid_alive(pid)
 
 
 def enforce_once(ctx, guard, out=None, term_first=None):

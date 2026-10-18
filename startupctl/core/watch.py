@@ -107,12 +107,11 @@ def run(interval=None, max_rounds=None):
     except (OSError, ValueError):
         other = 0
     if other and other != os.getpid():
-        try:
-            os.kill(other, 0)
+        from .utils import pid_alive
+        if pid_alive(other):
             log('已有监视循环在跑（pid %d），本进程退出' % other, also_stdout=False)
             return 0
-        except OSError:
-            pass                                  # 陈旧 pid 文件，接管
+        # 陈旧 pid 文件：直接接管
     try:
         with open(pid_path, 'w', encoding='utf-8') as fh:
             fh.write(str(os.getpid()))

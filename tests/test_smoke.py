@@ -706,14 +706,36 @@ def check_no_posix_only_calls():
     check(not offenders,
           '没有直接调用 os.getuid/os.geteuid（越界的: %s）' % (offenders[:3] or '无'))
 
+    # 1b) ★ Windows 上 os.kill(pid, 0) = TerminateProcess(pid, 0)，不是探活。
+    #     utils.pid_alive 是**唯一**允许出现它的地方（Windows 分支也不会走到）。
+    kill_offenders = []
+    for dirpath, _dirs, files in os.walk(os.path.join(ROOT, 'startupctl')):
+        for f in files:
+            if not f.endswith('.py'):
+                continue
+            pth = os.path.join(dirpath, f)
+            if pth.endswith('utils.py'):
+                continue
+            with open(pth, encoding='utf-8') as fh:
+                for n, line in enumerate(fh, 1):
+                    code = line.split('#')[0]
+                    if 'os.kill(' in code and ', 0)' in code:
+                        kill_offenders.append('%s:%d' % (os.path.relpath(pth, ROOT), n))
+    check(not kill_offenders,
+          '没有拿 os.kill(pid, 0) 当存活检查（越界的: %s）'
+          % (kill_offenders[:3] or '无'))
+
     # 2) 动态检查：把 os.getuid 拿掉（模拟 Windows），darwin 后端仍要能跑
     saved = getattr(os, 'getuid', None)
     had = hasattr(os, 'getuid')
     try:
         if had:
             del os.getuid
-        from startupctl.core.utils import getuid
+        from startupctl.core.utils import getuid, pid_alive
         check_eq(getuid(), 0, 'os.getuid 不存在时 utils.getuid() 返回 0')
+        check(pid_alive(os.getpid()), 'pid_alive 认得出自己还活着')
+        check(not pid_alive(999999), 'pid_alive 对不存在的 pid 返回 False')
+        check(not pid_alive('not-a-pid'), 'pid_alive 对非数字返回 False')
 
         saved_env = {k: os.environ.get(k) for k in ('STARTUPCTL_ROOTS', 'STARTUPCTL_PLATFORM')}
         os.environ['STARTUPCTL_ROOTS'] = FIXTURES

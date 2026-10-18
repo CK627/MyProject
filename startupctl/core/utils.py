@@ -176,6 +176,43 @@ def getuid():
         return 0
 
 
+def pid_alive(pid):
+    """进程是否还活着。**Windows 上绝不能用 `os.kill(pid, 0)`**。
+
+    CPython 在 Windows 上把 `os.kill(pid, sig)` 实现成 TerminateProcess：sig=0
+    不是"探活"，而是**以退出码 0 结束那个进程**。本工具曾用它做存活检查，
+    结果 `starting true` 刚把监视循环拉起来，下一秒就把它自己杀了（真机踩到，
+    随后 OpenProcess 失败还会抛 SystemError）。
+
+    POSIX 上 os.kill(pid, 0) 才是探活；PermissionError 说明进程存在（属于别人）。
+    """
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    if os.name == 'nt':
+        try:
+            import ctypes
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            k32 = ctypes.windll.kernel32
+            handle = k32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+            if handle:
+                k32.CloseHandle(handle)
+                return True
+            return k32.GetLastError() == 5       # ERROR_ACCESS_DENIED = 存在但无权
+        except Exception:
+            return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+
+
 def home_dir():
     return os.path.expanduser('~')
 
