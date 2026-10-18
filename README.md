@@ -243,6 +243,31 @@ startupctl mode whitelist   # 按白名单执行（先打印计划、问确认�
 startupctl mode off         # 关闭干预
 ```
 
+### 持续监视与开机自启
+
+`mode` 是一次性的：切过去时处理当前进程，之后新起来的不管。要让工具**一直盯着**，
+用 `starting`：
+
+```bash
+startupctl starting           # 看状态：是否注册、循环是否在跑、当前模式、间隔
+startupctl starting true      # 注册为登录时自启，并立刻开始监视
+startupctl starting false     # 停止监视，并摘除自启
+```
+
+监视循环按 `WATCH_INTERVAL`（默认 5 秒）**每轮重读 `guard.json`**——改名单不用重启，
+下一轮就生效。黑名单模式下，进程一出现就会被结束；启动项拉起的进程同样走这条路径
+（本工具不改启动项文件，只结束它的进程）。
+
+**`starting` 与 `mode` 是两件独立的事**：
+
+- 换模式**不会**关掉开机自启，也不会摘除自启项；
+- `mode off` 时循环照常跑，但只记日志、不动手——模式设成 off 也不会把自启弄丢；
+- 只有 `startupctl starting false` 会停止循环并摘除自启。
+
+三个平台都只做**用户级**注册，不需要管理员：macOS `~/Library/LaunchAgents`、
+Linux `~/.config/systemd/user`、Windows 计划任务（登录时触发，用 `wscript` 隐藏窗口）。
+循环是**单实例**的：服务管理器或用户手滑多起一个，第二个会看到 `watch.pid` 直接退出。
+
 ### 记不住参数？在命令后面加 `?`
 
 ```bash
@@ -273,6 +298,9 @@ cmd.exe 和 Windows PowerShell 5.1 都能用。zsh 里 `?` 是通配符，写成
 | `startupctl whitelist startup selector` | 选启动项加入白名单 |
 | `startupctl whitelist process selector` | 选进程加入白名单 |
 | `startupctl blacklist ...` | 同上，作用于黑名单 |
+| `startupctl starting` | 看开机自启与监视循环状态 |
+| `startupctl starting true` | 登录时自启，并立即开始监视 |
+| `startupctl starting false` | 停止监视并摘除自启 |
 | `startupctl config` | 显示配置、数据目录与模式 |
 | `startupctl version` | 显示版本 |
 | `startupctl help [子命令]` | 帮助 |
@@ -311,6 +339,7 @@ source completions/startupctl.bash    # bash
 | `DRY_RUN` | `false` | 全局只读（等价于永远不执行） |
 | `NO_GUI` | `false` | 禁用图形窗口，强制回退到编号清单 |
 | `EXTRA_VENDORS` | 空 | 追加的厂商前缀 |
+| `WATCH_INTERVAL` | `5` | 监视循环的检查间隔（秒） |
 
 环境变量：`STARTUPCTL_DATA_DIR`、`STARTUPCTL_CONFIG`、`STARTUPCTL_DRY_RUN`、
 `STARTUPCTL_ROOTS`（测试接缝）、`STARTUPCTL_PLATFORM`、`STARTUPCTL_MIRROR`、
@@ -322,7 +351,9 @@ source completions/startupctl.bash    # bash
 
 ```
 <安装根>/data/
-└── guard.json      白/黑名单（各分 startup / process 两个维度）+ 当前模式
+├── guard.json      白/黑名单（各分 startup / process 两个维度）+ 当前模式
+├── watch.pid       监视循环的 pid（单实例用；退出时自己删）
+└── watch.log       监视循环日志（追加写，不自动清理）
 ```
 
 - macOS 系统级：`/Library/devtools/startupctl/data/guard.json`

@@ -8,6 +8,7 @@
 #   startupctl mode <TAB>                → off / deny_all / blacklist / whitelist
 #   startupctl whitelist <TAB>           → startup / process
 #   startupctl whitelist startup <TAB>   → selector
+#   startupctl starting <TAB>            → true / false
 #   startupctl update <TAB>              → check
 #   startupctl uninstall <TAB>           → confirm
 #   startupctl help <TAB>                → 子命令
@@ -17,7 +18,7 @@ _startupctl() {
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
 
-    local subcmds="list mode whitelist blacklist config version help update install uninstall"
+    local subcmds="list mode whitelist blacklist starting config version help update install uninstall"
 
     if [ "$COMP_CWORD" -eq 1 ]; then
         COMPREPLY=( $(compgen -W "$subcmds" -- "$cur") )
@@ -37,6 +38,9 @@ _startupctl() {
             elif [ "$COMP_CWORD" -eq 3 ]; then
                 COMPREPLY=( $(compgen -W "selector" -- "$cur") )
             fi
+            ;;
+        starting)
+            [ "$COMP_CWORD" -eq 2 ] && COMPREPLY=( $(compgen -W "true false" -- "$cur") )
             ;;
         update)
             [ "$COMP_CWORD" -eq 2 ] && COMPREPLY=( $(compgen -W "check" -- "$cur") )

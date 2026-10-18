@@ -1224,6 +1224,67 @@ def check_app_group():
     check_eq(picker.app_group(d), 'mysqld', '没有 Helper 后缀时用完整进程名')
 
 
+def check_watch_and_starting():
+    section('监视循环与开机自启')
+    sys.path.insert(0, ROOT)
+    from startupctl import help as H
+    from startupctl.core import autostart, watch
+
+    txt = H.hint_text(['starting']) or ''
+    check('true' in txt and 'false' in txt, 'starting ? 列出 true / false')
+    check(callable(getattr(watch, 'start_detached', None)),
+          'watch.start_detached 存在（mode 切换时用它起后台循环）')
+    check(callable(getattr(autostart, 'wait_running', None)),
+          'autostart.wait_running 存在（服务管理器异步启动后要等）')
+
+    import shutil as _sh
+    import signal as _signal
+    import tempfile as _tf
+    d = _tf.mkdtemp()
+    old_env = dict(os.environ)
+    old_handlers = {}
+    for _s in (getattr(_signal, 'SIGTERM', None), getattr(_signal, 'SIGINT', None)):
+        if _s is not None:
+            old_handlers[_s] = _signal.getsignal(_s)
+    try:
+        os.environ['STARTUPCTL_DATA_DIR'] = d
+        os.environ['STARTUPCTL_ROOTS'] = os.path.join(ROOT, 'tests', 'fixtures', 'roots')
+        os.environ['STARTUPCTL_CONFIG'] = os.path.join(d, 'none.conf')
+        os.environ.pop('STARTUPCTL_PLATFORM', None)
+        os.environ.pop('STARTUPCTL_DRY_RUN', None)
+
+        # 单实例：pid 文件里是活着的父进程 → 本进程什么都不做就退出
+        pid_path = os.path.join(d, 'watch.pid')
+        with open(pid_path, 'w', encoding='utf-8') as fh:
+            fh.write(str(os.getppid()))
+        rc = watch.run(interval=1, max_rounds=1)
+        check_eq(rc, 0, '已有循环时第二个进程退出 0（单实例）')
+        with open(os.path.join(d, 'watch.log'), encoding='utf-8') as fh:
+            first = fh.read()
+        check('已有监视循环在跑' in first, '日志说明第二个进程为什么退出')
+        with open(pid_path, encoding='utf-8') as fh:
+            check_eq(fh.read().strip(), str(os.getppid()),
+                     '单实例退出时不动别人的 pid 文件')
+
+        # 不干预模式：跑一轮就退出，不结束任何进程
+        os.remove(pid_path)
+        rc = watch.run(interval=1, max_rounds=1)
+        check_eq(rc, 0, '不干预模式跑一轮退出 0')
+        with open(os.path.join(d, 'watch.log'), encoding='utf-8') as fh:
+            second = fh.read()
+        check('模式为不干预' in second, '不干预模式下明说跳过（不是静默空转）')
+        check(not os.path.exists(pid_path), '退出时清掉自己的 pid 文件')
+    finally:
+        os.environ.clear()
+        os.environ.update(old_env)
+        for _s, _h in old_handlers.items():
+            try:
+                _signal.signal(_s, _h)
+            except Exception:
+                pass
+        _sh.rmtree(d, ignore_errors=True)
+
+
 def check_cli_contracts():
     section('CLI 契约：HELP 行数 / 对齐 / 退出码')
     sys.path.insert(0, ROOT)
@@ -1263,14 +1324,15 @@ def check_cli_contracts():
     outer = [h.split()[1] for h in heads if len(h.split()) > 1]
     check(all(len(h.split()) == 2 for h in heads),
           '用法每行只有 `startupctl <命令>` 两个词（子命令交给 Tab）')
-    check(set(outer) == {'list', 'mode', 'whitelist', 'blacklist', 'config',
-                         'version', 'help', 'update', 'install', 'uninstall'},
-          '用法恰好列出 10 个最外层命令')
+    check(set(outer) == {'list', 'mode', 'whitelist', 'blacklist', 'starting',
+                         'config', 'version', 'help', 'update', 'install',
+                         'uninstall'},
+          '用法恰好列出 11 个最外层命令')
     probs = H.align_report()
     check(not probs, 'HELP 各节描述列对齐一致（问题: %s）' % (probs[:2] or '无'))
     check(max(__import__('startupctl.core.output', fromlist=['dw']).dw(l)
               for l in H.HELP.splitlines()) <= 100, 'HELP 最宽行 <= 100 列')
-    for sub in ('list', 'mode', 'whitelist', 'blacklist', 'config'):
+    for sub in ('list', 'mode', 'whitelist', 'blacklist', 'starting', 'config'):
         check(H.sub_help(sub) is not None, '子命令 %s 有专属帮助' % sub)
 
     rc, out = run_cli(['version'])
@@ -1382,6 +1444,7 @@ def main():
     check_windows_payload_is_clean()
     check_self_info_layouts()
     check_gui_picker()
+    check_watch_and_starting()
     check_cli_contracts()
     check_app_group()
     check_gui_columns()

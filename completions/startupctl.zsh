@@ -5,11 +5,12 @@
 #
 # **本工具没有选项**，所以 `-` 之后不补任何东西。补全是纯位置驱动的，而且
 # **每一层都给描述**（和 `startupctl <TAB>` 第一层一样）：
-#   startupctl <TAB>                     → 10 个外层命令
+#   startupctl <TAB>                     → 11 个外层命令
 #   startupctl list <TAB>                → all / system
 #   startupctl mode <TAB>                → off / deny_all / blacklist / whitelist
 #   startupctl whitelist <TAB>           → startup / process
 #   startupctl whitelist startup <TAB>   → selector
+#   startupctl starting <TAB>            → true / false
 #   startupctl update <TAB>              → check
 #   startupctl uninstall <TAB>           → confirm
 #   startupctl help <TAB>                → 子命令
@@ -19,6 +20,7 @@ _startupctl_subcmds=(
   'mode:看/设模式（off · deny_all · blacklist · whitelist）'
   'whitelist:白名单：启动项 / 进程两个维度'
   'blacklist:黑名单：启动项 / 进程两个维度'
+  'starting:开机自启：看状态 / true 开 / false 关'
   'config:显示配置、数据目录与模式'
   'version:显示版本'
   'help:帮助'
@@ -43,6 +45,10 @@ _startupctl_dims=(
 _startupctl_selector=(
   'selector:开窗口挑条目加入名单'
 )
+_startupctl_starting_acts=(
+  'true:开启开机自启（并立即开始监视）'
+  'false:关闭开机自启（并停止监视）'
+)
 _startupctl_update_acts=(
   'check:只比对版本，不落盘'
 )
@@ -51,12 +57,13 @@ _startupctl_uninstall_acts=(
 )
 
 _startupctl() {
-  local -a subcmds scopes modes dims selector update_acts uninstall_acts
+  local -a subcmds scopes modes dims selector starting_acts update_acts uninstall_acts
   subcmds=("${_startupctl_subcmds[@]}")
   scopes=("${_startupctl_scopes[@]}")
   modes=("${_startupctl_modes[@]}")
   dims=("${_startupctl_dims[@]}")
   selector=("${_startupctl_selector[@]}")
+  starting_acts=("${_startupctl_starting_acts[@]}")
   update_acts=("${_startupctl_update_acts[@]}")
   uninstall_acts=("${_startupctl_uninstall_acts[@]}")
 
@@ -80,6 +87,9 @@ _startupctl() {
         _describe -t actions '动作' selector
         return
       fi
+      ;;
+    starting)
+      (( CURRENT == 3 )) && _describe -t actions '开关' starting_acts && return
       ;;
     update)
       (( CURRENT == 3 )) && _describe -t actions '动作' update_acts && return

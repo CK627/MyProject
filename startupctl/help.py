@@ -20,6 +20,7 @@ COMMANDS = [
     ('startupctl mode', '三种模式：off · deny_all · blacklist · whitelist'),
     ('startupctl whitelist', '白名单（启动项 / 进程）'),
     ('startupctl blacklist', '黑名单（启动项 / 进程）'),
+    ('startupctl starting', '开机自启：看状态 / true 开 / false 关'),
     ('startupctl config', '显示配置、数据目录与模式'),
     ('startupctl version', '显示版本'),
     ('startupctl help', '帮助（给子命令名看详情）'),
@@ -64,6 +65,8 @@ HINTS = {
     ('blacklist', 'startup'): ('再下一层', [('selector', '开窗口挑启动项加入黑名单')]),
     ('blacklist', 'process'): ('再下一层', [('selector', '开窗口挑进程加入黑名单')]),
     ('update',): ('update 后面可以跟', [('check', '只比对版本，不落盘')]),
+    ('starting',): ('starting 后面可以跟', [('true', '开启开机自启（并立即开始监视）'),
+                                          ('false', '关闭开机自启（并停止监视）')]),
     ('uninstall',): ('uninstall 后面可以跟', [('confirm', '跳过确认，直接卸载')]),
 }
 
@@ -106,6 +109,18 @@ SUB_HELP = {
 
 切到 deny_all / blacklist / whitelist 时会先打印计划、问一次确认，然后执行一次；
 模式随之保存。名单为空时直接拒绝（退出 3）——空名单的白名单模式等于「除系统外全杀」。
+""",
+    'starting': """
+用法: startupctl starting [true|false]
+
+开机自启开关。**与模式相互独立**：换模式不会关掉它，关掉它也不会改模式。
+
+  startupctl starting          看状态（是否注册、循环是否在跑、当前模式、间隔）
+  startupctl starting true     注册为登录时自启，并**立刻**开始监视
+  startupctl starting false    停止监视，并摘除自启
+
+监视循环按 WATCH_INTERVAL（默认 5 秒）重读 guard.json；规则改了下一轮就生效。
+模式为 off 时循环照常跑，但一行日志、不动手——这样换模式不会丢掉自启。
 """,
     'whitelist': """
 用法: startupctl whitelist [startup|process] [selector]

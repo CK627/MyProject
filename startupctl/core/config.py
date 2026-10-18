@@ -28,6 +28,7 @@ DEFAULTS = {
     'BACKUP_KEEP': 20,
     'BACKUP_MIN_DAYS': 7,
     'TERM_FIRST': True,
+    'WATCH_INTERVAL': 5,
 }
 
 _BOOL_TRUE = ('1', 'true', 'yes', 'on', 'y', '是', '真')

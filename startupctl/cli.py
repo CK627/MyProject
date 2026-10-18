@@ -186,10 +186,10 @@ def _mode_status(ctx, g, procs, items):
 
 
 def cmd_mode(ctx, args):
+    from .core import guard as guard_mod
     # 先在**不扫描**的情况下判能不能执行：名单为空时直接拒绝。
     # 扫描在 Windows 上要几秒，先扫再拒会让用户以为"没反应"（用户实测反馈）。
     if args and args[0].lower() in MODE_ALIASES and args[0].lower() != 'off':
-        from .core import guard as guard_mod
         early = guard_mod.load()
         early.mode = MODE_ALIASES[args[0].lower()]
         ok, why = early.ready_to_enforce()
@@ -218,6 +218,10 @@ def cmd_mode(ctx, args):
         g.set_mode(guard_mod.MODE_OFF)
         g.save()
         print('模式已设为「不干预」：不再结束任何进程。')
+        # ★ 不碰监视循环：开机自启是**独立属性**，换模式不该把它关掉。
+        from .core import autostart
+        if autostart.running():
+            print('监视循环: 仍在运行（空转，不会动手）。要停掉请用 startupctl starting false')
         return EXIT_OK
 
     # 先在**旧状态**上换上新模式判断能不能执行——名单空着就不许动。
@@ -258,11 +262,16 @@ def cmd_mode(ctx, args):
         print('已取消，模式未改变。')
         return EXIT_FAIL
 
-    ended = enforce.apply_decisions(deny, g, term_first=True)
+    ok_n, fail_n, refused_n = enforce.apply_decisions(deny, g, term_first=True)
     g.set_mode(want)
     g.save()
     print('')
-    print('模式已设为 %s；本次结束 %d 个进程。' % (want, ended))
+    print('模式已设为 %s；本次结束 %d 个进程%s。'
+          % (want, ok_n,
+             ('（失败 %d · 跳过 %d）' % (fail_n, refused_n))
+             if (fail_n or refused_n) else ''))
+    # 用户要的是「开了模式就自动盯着」——不必再记得去敲 starting true。
+    _ensure_watcher()
     return EXIT_OK
 
 
@@ -425,6 +434,72 @@ def cmd_policy(ctx, which, args):
     return _policy_manage(g, name, dims)
 
 
+# ---------------------------------------------------------------- 自启 / 监视
+def _ensure_watcher():
+    """模式从 off 切到别的之后，若循环没在跑就在后台起一个。"""
+    from .core import autostart, watch
+    pid = autostart.running()
+    if pid:
+        print('监视循环: 已在运行（pid %d）' % pid)
+        return
+    _ok, msg = watch.start_detached()
+    print('监视循环: %s' % msg)
+    print(c('（要开机也自动运行，再执行: startupctl starting true）', 'dim'))
+
+
+def cmd_starting(args):
+    """startupctl starting [true|false] —— 开机自启开关。
+
+    不带参数 = 看状态（与 mode / config 同一套习惯：**问就是显示当前状态**）。
+    """
+    from .core import autostart, watch
+    from .core import guard as guard_mod
+    from .core import config as config_mod
+
+    if len(args) > 1:
+        sys.stderr.write('错误: starting 只接受一个取值（true / false）\n')
+        return EXIT_USAGE
+    arg = args[0].lower() if args else None
+
+    if arg is None:
+        st = autostart.status()
+        g = guard_mod.load()
+        conf = config_mod.load()
+        print('开机自启: %s' % ('已启用' if st['enabled'] else '未启用'))
+        print('监视循环: %s' % (('运行中（pid %d）' % st['pid']) if st['pid'] else '未运行'))
+        print('当前模式: %s' % guard_mod.MODE_CN.get(g.mode, g.mode))
+        print('检查间隔: %d 秒' % (conf.getint('WATCH_INTERVAL') or 5))
+        print('策略文件: %s' % g.path)
+        print('运行日志: %s' % os.path.join(os.path.dirname(g.path), 'watch.log'))
+        if g.mode == guard_mod.MODE_OFF:
+            print('')
+            print(c('（不干预模式下循环会空转——先 startupctl mode blacklist）', 'dim'))
+        return EXIT_OK
+
+    if arg in ('true', 'on', '1', 'yes'):
+        ok, msg = autostart.install()
+        print(msg)
+        if not ok:
+            return EXIT_FAIL
+        # launchd / systemd / 计划任务都会**自己**把循环拉起来，别再另起一个
+        # （否则会有两个循环同时杀进程）。
+        pid = autostart.wait_running()
+        print('开机自启已开启。监视循环: %s'
+              % (('运行中（pid %d）' % pid) if pid else '还没起来（看 watch.log）'))
+        return EXIT_OK
+
+    if arg in ('false', 'off', '0', 'no'):
+        stopped, msg = autostart.stop_running()
+        print(msg)
+        ok, msg2 = autostart.remove()
+        print(msg2)
+        print('开机自启已关闭。')
+        return EXIT_OK if ok else EXIT_FAIL
+
+    sys.stderr.write('错误: starting 只接受 true 或 false\n')
+    return EXIT_USAGE
+
+
 # ---------------------------------------------------------------- config
 def cmd_config(ctx):
     from . import __version__
@@ -469,7 +544,8 @@ def _selfmgr():
     return selfmgr
 
 
-SUBCOMMANDS = ('list', 'mode', 'whitelist', 'blacklist', 'config', 'version',
+SUBCOMMANDS = ('list', 'mode', 'whitelist', 'blacklist', 'starting', 'watch',
+               'config', 'version',
                'help', 'update', 'install', 'uninstall', 'print-install-dir')
 
 
@@ -547,6 +623,11 @@ def main(argv=None):
             return _selfmgr().cmd_uninstall(['-y'] if rest else [])
     if sub == 'print-install-dir':
         return _selfmgr().cmd_print_install_dir([])
+    if sub == 'starting':
+        return cmd_starting(rest)
+    if sub == 'watch':
+        from .core import watch
+        return watch.run()
 
     if sub not in SUBCOMMANDS:
         sys.stderr.write('错误: 未知子命令 %s（可用: startupctl help）\n' % sub)

@@ -103,6 +103,12 @@ GitHub 生成的 tarball 不套用 `.gitattributes`，而 `update` 正是从那�
    `is_protected()`——预览到执行之间进程表会变，而且 `guard.json` 是可以手改的。
 
 退出码：`0` 成功 · `1` 失败 · `2` 用法错 · `3` **因安全理由被拒绝**。
+
+- **函数里任何位置出现 `from .core import guard as guard_mod`，整个函数里这个名字
+  就是局部变量**。`cmd_mode` 曾把导入写在 `if arg != 'off'` 里，于是 `mode off`
+  走不到那条分支 → `UnboundLocalError`。导入放函数顶部。
+- `enforce.apply_decisions()` 返回 `(成功, 失败, 跳过)` **三元组**，别把返回值直接
+  `%d` 格式化（会 `TypeError`）；要显式解包。
 **别把 3 合并进 1**：脚本靠它区分"安全拒绝"和"执行失败"。
 
 ## 进程守护：三种模式 × 两套名单 × 两个维度
@@ -225,6 +231,26 @@ GitHub 生成的 tarball 不套用 `.gitattributes`，而 `update` 正是从那�
 于是扫描跑在错误的后端上、退 2，看起来像"解析失败"，实际是环境串味。
 
 ---
+
+## 持续监视与开机自启（`watch` / `starting`）
+
+`core/watch.py`（循环）· `core/autostart.py`（用户级自启注册）。用户要的是
+「开了黑名单模式就自动盯着，进程一出现就清理」。
+
+- 循环**只结束进程**，复用 `guard.verdict()`（唯一决策入口）。启动项文件仍然一律不改。
+- **每轮重读 `guard.json`**：改名单不用重启，下一轮生效。模式 `off` 时空转。
+- **`starting` 与 `mode` 是两件独立的事**：mode 变化绝不注册/摘除自启，也绝不停止
+  循环。只有 `starting false` 才停止并摘除。`mode off` 时循环照常跑（空转）——
+  否则"把模式设成 off"就等于顺手把自启弄丢了，用户明确要求不能这样。
+- **单实例**靠 `data/watch.pid`：第二个进程看到活着的 pid 直接退出（launchd 重载、
+  计划任务重叠、用户手滑都可能起出第二个）。两个循环同时杀进程是事故。
+- 服务管理器是**异步**启动的：`starting true` 之后要用 `autostart.wait_running()`
+  等 pid 出现，不能立刻读。Windows 的计划任务还要显式 `schtasks /run`。
+- 服务进程拿到的是最小环境 → plist / unit 里必须显式写 `PYTHONPATH` 与
+  `STARTUPCTL_DATA_DIR`，否则 pid/日志会落到与 CLI 不同的目录（踩过一次）。
+- **不要用 `subprocess` 另起一个循环去"帮"服务管理器启动**：那会变成两个循环。
+- `watch.log` 同时是 stdout（launchd 重定向到同一文件）→ 日志函数只在交互终端才
+  同时 print，否则每行出现两次。
 
 ## CLI / 帮助文本
 
