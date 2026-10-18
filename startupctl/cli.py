@@ -270,6 +270,9 @@ def cmd_mode(ctx, args):
           % (want, ok_n,
              ('（失败 %d · 跳过 %d）' % (fail_n, refused_n))
              if (fail_n or refused_n) else ''))
+    if fail_n:
+        print(c('有 %d 个进程权限不足（属于其他用户 / root）。前台请用管理员权限重跑；'
+                '后台监视任务在 Windows 上已按最高权限注册。' % fail_n, 'yellow'))
     # 用户要的是「开了模式就自动盯着」——不必再记得去敲 starting true。
     _ensure_watcher()
     return EXIT_OK
