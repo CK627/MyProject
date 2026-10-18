@@ -48,7 +48,7 @@ if exist "%CONFIG_FILE%" (
 REM ============================================
 REM Main dispatch
 REM ============================================
-if "%~1"=="" goto :show_help
+if "%~1"=="" goto :show_state
 
 if "%~1"=="list" goto :list_pythons
 if "%~1"=="help" goto :show_help
@@ -169,17 +169,33 @@ exit /b 0
 REM ============================================
 REM Help
 REM ============================================
+REM ============================================
+REM 当前状态（不带子命令时显示）
+REM ============================================
+:show_state
+echo ptool - Python 版本管理
+if "!PTOOL_DEFAULT_VERSION!"=="" (
+    echo 当前版本: （未设置，用 ptool use 版本号 设置）
+) else (
+    echo 当前版本: !PTOOL_DEFAULT_VERSION!
+)
+echo 基础目录: !PYTHON_BASE_DIR!
+echo.
+echo ptool help 看全部命令；ptool list 看已安装版本
+exit /b 0
+
 :show_help
 echo ptool - Windows 下的 Python 版本管理工具
 echo.
 echo 用法:
+echo   ptool                               显示当前状态
 echo   ptool ^<工具^> ^<版本^> [参数...]   运行指定版本的工具
 echo   ptool list                          列出已安装的 Python
-echo   ptool use ^<版本^>                设置默认版本
+echo   ptool use [版本]                  设置默认版本（不带 = 看当前）
 echo   ptool current                       查看当前默认版本
-echo   ptool home ^<版本^>               输出安装路径
-echo   ptool info ^<版本^>               显示详细信息
-echo   ptool tools ^<版本^>              列出可用工具
+echo   ptool home [版本]                 输出安装路径（不带 = 当前版本）
+echo   ptool info [版本]                 显示详细信息（不带 = 当前版本）
+echo   ptool tools [版本]                列出可用工具（不带 = 当前版本）
 echo   ptool run ^<版本^> ^<文件.py^>    运行 Python 文件
 echo   ptool scan                          重新扫描 Python 路径
 echo   ptool config                        查看配置信息
@@ -193,7 +209,7 @@ REM "Error: specify a version" and exits 1 for `ptool help` (and bare `ptool`).
 exit /b 0
 
 :cmd_use
-if "%~2"=="" ( echo Error: specify a version & exit /b 1 )
+if "%~2"=="" goto :cmd_current
 call :resolve_py "%~2" use_exe
 if not defined use_exe ( echo Error: Python %~2 not found & exit /b 1 )
 
@@ -234,9 +250,11 @@ REM ============================================
 REM home
 REM ============================================
 :cmd_home
-if "%~2"=="" ( echo Error: specify a version & exit /b 1 )
-call :resolve_py "%~2" home_exe
-if not defined home_exe ( echo Error: Python %~2 not found >&2 & exit /b 1 )
+set "home_ver=%~2"
+if "!home_ver!"=="" set "home_ver=!PTOOL_DEFAULT_VERSION!"
+if "!home_ver!"=="" ( echo 错误: 未设置默认版本（先 ptool use 版本号） & exit /b 1 )
+call :resolve_py "!home_ver!" home_exe
+if not defined home_exe ( echo Error: Python !home_ver! not found >&2 & exit /b 1 )
 for %%f in ("!home_exe!") do set "home_dir=%%~dpf"
 set "home_dir=!home_dir:~0,-1!"
 echo !home_dir!
@@ -246,12 +264,14 @@ REM ============================================
 REM info
 REM ============================================
 :cmd_info
-if "%~2"=="" ( echo Error: specify a version & exit /b 1 )
-call :resolve_py "%~2" info_exe
-if not defined info_exe ( echo Error: Python %~2 not found & exit /b 1 )
+set "info_ver=%~2"
+if "!info_ver!"=="" set "info_ver=!PTOOL_DEFAULT_VERSION!"
+if "!info_ver!"=="" ( echo 错误: 未设置默认版本（先 ptool use 版本号） & exit /b 1 )
+call :resolve_py "!info_ver!" info_exe
+if not defined info_exe ( echo Error: Python !info_ver! not found & exit /b 1 )
 for %%f in ("!info_exe!") do set "info_dir=%%~dpf"
 set "info_dir=!info_dir:~0,-1!"
-echo === Python %~2 ===
+echo === Python !info_ver! ===
 echo 路径: !info_exe!
 echo.
 "!info_exe!" --version 2>&1
@@ -264,12 +284,14 @@ REM ============================================
 REM tools
 REM ============================================
 :cmd_tools
-if "%~2"=="" ( echo Error: specify a version & exit /b 1 )
-call :resolve_py "%~2" tools_exe
-if not defined tools_exe ( echo Error: Python %~2 not found & exit /b 1 )
+set "tools_ver=%~2"
+if "!tools_ver!"=="" set "tools_ver=!PTOOL_DEFAULT_VERSION!"
+if "!tools_ver!"=="" ( echo 错误: 未设置默认版本（先 ptool use 版本号） & exit /b 1 )
+call :resolve_py "!tools_ver!" tools_exe
+if not defined tools_exe ( echo Error: Python !tools_ver! not found & exit /b 1 )
 for %%f in ("!tools_exe!") do set "tools_dir=%%~dpf"
 set "tools_dir=!tools_dir:~0,-1!"
-echo Python %~2 的可用工具:
+echo Python !tools_ver! 的可用工具:
 for %%f in ("!tools_dir!\python*.exe" "!tools_dir!\pip*.exe") do echo   %%~nxf
 exit /b 0
 

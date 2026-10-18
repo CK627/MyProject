@@ -99,6 +99,34 @@ list_pythons() {
 }
 
 # ============================================
+# 当前状态（不带子命令时显示）
+# ============================================
+show_state() {
+    echo "ptool - Python 版本管理"
+    if [ -n "$PTOOL_DEFAULT_VERSION" ]; then
+        echo "当前版本: $PTOOL_DEFAULT_VERSION"
+        echo "路径:     $(get_python_path "$PTOOL_DEFAULT_VERSION")"
+    else
+        echo "当前版本: （未设置，用 ptool use <版本号> 设置）"
+    fi
+    echo "基础目录: $PYTHON_BASE_DIR"
+    local n=0 seen="" bin version
+    for bin in "$PYTHON_BASE_DIR"/python[0-9]*.[0-9]* "$PYTHON_BASE_DIR"/python[0-9]*; do
+        [ -f "$bin" ] && [ -x "$bin" ] || continue
+        case "$(basename "$bin")" in *-*) continue ;; esac
+        version=$(basename "$bin" | sed -n 's/^python\([0-9]*\.[0-9]*\).*/\1/p')
+        [ -z "$version" ] && version=$(basename "$bin" | sed -n 's/^python\([0-9]*\)$/\1/p')
+        [ -z "$version" ] && continue
+        case " $seen " in *" $version "*) continue ;; esac
+        seen="$seen $version"
+        n=$((n + 1))
+    done
+    echo "已安装:   $n 个（ptool list 看明细）"
+    echo ""
+    echo "ptool help 看全部命令"
+}
+
+# ============================================
 # 显示帮助
 # ============================================
 show_help() {
@@ -106,13 +134,14 @@ show_help() {
 ptool - 统一 Python 版本管理工具
 
 用法:
+  ptool                               显示当前状态（当前版本 / 路径 / 已安装数）
   ptool <工具名> <版本号> [参数...]   运行指定版本的 Python 工具
   ptool list                          列出所有已安装的 Python
-  ptool use <版本号>                  设置默认版本
+  ptool use [版本号]                  设置默认版本（不带 = 看当前）
   ptool current                       显示当前默认版本
-  ptool home <版本号>                 输出安装路径
-  ptool info <版本号>                 显示详细信息
-  ptool tools <版本号>                列出可用工具
+  ptool home [版本号]                 输出安装路径（不带 = 当前版本）
+  ptool info [版本号]                 显示详细信息（不带 = 当前版本）
+  ptool tools [版本号]                列出可用工具（不带 = 当前版本）
   ptool run <版本号> <python文件>     运行 Python 文件
   ptool scan                          扫描 Python 路径，更新配置
   ptool config                        显示配置
@@ -243,16 +272,16 @@ cmd_run() {
 # ============================================
 load_config
 
-[ $# -lt 1 ] && { show_help; exit 0; }
+[ $# -lt 1 ] && { show_state; exit 0; }
 
 case "$1" in
     list)     list_pythons; exit 0 ;;
     help|-h|--help) show_help; exit 0 ;;
-    use)      [ $# -lt 2 ] && { echo "错误: 请指定版本号"; exit 1; }; cmd_use "$2"; exit $? ;;
+    use)      [ $# -lt 2 ] && { cmd_current; exit $?; }; cmd_use "$2"; exit $? ;;
     current)  cmd_current; exit $? ;;
-    home)     [ $# -lt 2 ] && { echo "错误: 请指定版本号"; exit 1; }; cmd_home "$2"; exit $? ;;
-    info)     [ $# -lt 2 ] && { echo "错误: 请指定版本号"; exit 1; }; cmd_info "$2"; exit $? ;;
-    tools)    [ $# -lt 2 ] && { echo "错误: 请指定版本号"; exit 1; }; cmd_tools "$2"; exit $? ;;
+    home)     [ $# -lt 2 ] && { [ -n "$PTOOL_DEFAULT_VERSION" ] || { echo "错误: 未设置默认版本（先 ptool use <版本号>）" >&2; exit 1; }; cmd_home "$PTOOL_DEFAULT_VERSION"; exit $?; }; cmd_home "$2"; exit $? ;;
+    info)     [ $# -lt 2 ] && { [ -n "$PTOOL_DEFAULT_VERSION" ] || { echo "错误: 未设置默认版本（先 ptool use <版本号>）" >&2; exit 1; }; cmd_info "$PTOOL_DEFAULT_VERSION"; exit $?; }; cmd_info "$2"; exit $? ;;
+    tools)    [ $# -lt 2 ] && { [ -n "$PTOOL_DEFAULT_VERSION" ] || { echo "错误: 未设置默认版本（先 ptool use <版本号>）" >&2; exit 1; }; cmd_tools "$PTOOL_DEFAULT_VERSION"; exit $?; }; cmd_tools "$2"; exit $? ;;
     run)
         [ $# -lt 3 ] && { echo "错误: 请指定版本号和文件"; exit 1; }
         # $3 之后的参数透传给脚本本身：ptool run 3.11 f.py --flag

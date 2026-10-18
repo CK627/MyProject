@@ -128,6 +128,18 @@ ptool home 3.11         # 输出安装路径
 ptool config            # 查看配置信息
 ```
 
+### 看当前状态
+
+不带子命令就是看当前状态——不用先记住 `current` / `home` 这些名字：
+
+```bash
+ptool                   # 当前版本 / 路径 / 已安装数量
+ptool use               # 不写版本 = 看当前默认版本
+ptool home              # 不写版本 = 当前版本的安装路径
+ptool info              # 不写版本 = 当前版本详情
+ptool tools             # 不写版本 = 当前版本可用工具
+```
+
 ### 运行 Python 文件
 
 ```bash
@@ -146,11 +158,12 @@ ptool help
 |------|------|------|
 | `ptool <工具> <版本> [参数]` | 运行指定版本的工具 | `ptool python 3.11 --version` |
 | `ptool list` | 列出所有已安装的 Python | `ptool list` |
-| `ptool use <版本>` | 设置默认版本 | `ptool use 3.11` |
+| `ptool` | 看当前状态（版本 / 路径 / 已安装数） | `ptool` |
+| `ptool use [版本]` | 设置默认版本；不写版本 = 看当前 | `ptool use 3.11` |
 | `ptool current` | 查看当前默认版本 | `ptool current` |
-| `ptool home <版本>` | 输出安装路径 | `ptool home 3.11` |
-| `ptool info <版本>` | 显示详细信息 | `ptool info 3.11` |
-| `ptool tools <版本>` | 列出可用工具 | `ptool tools 3.11` |
+| `ptool home [版本]` | 输出安装路径；不写 = 当前版本 | `ptool home 3.11` |
+| `ptool info [版本]` | 显示详细信息；不写 = 当前版本 | `ptool info 3.11` |
+| `ptool tools [版本]` | 列出可用工具；不写 = 当前版本 | `ptool tools 3.11` |
 | `ptool run <版本> <文件>` | 运行 Python 文件 | `ptool run 3.11 hello.py` |
 | `ptool config` | 查看配置信息 | `ptool config` |
 | `ptool scan` | 重新扫描 Python 路径 | `ptool scan` |
