@@ -57,16 +57,24 @@ def _root(title):
     except Exception as e:                      # pragma: no cover - 无显示
         raise GuiUnavailable(str(e))
     root.title(title)
-    root.geometry('900x560')
-    root.minsize(620, 380)
+    # 居中：用户要求窗口开在屏幕中间。先 withdraw，摆好位置再显示，
+    # 否则会先在左上角闪一下再跳过去。
+    root.withdraw()
+    w, h = 900, 560
+    sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
+    root.geometry('%dx%d+%d+%d' % (w, h, max(0, (sw - w) // 2), max(0, (sh - h) // 2)))
+    root.minsize(720, 420)
+    root.deiconify()
     return root, tk, ttk
 
 
-def _tree(parent, tk, ttk, cols):
+def _tree(parent, tk, ttk, cols, widths=None):
     wrap = ttk.Frame(parent)
     wrap.pack(fill='both', expand=True, padx=10, pady=(10, 6))
     tree = ttk.Treeview(wrap, columns=cols, show='headings', selectmode='browse')
-    for c, w in zip(cols, (260, 560)):
+    if not widths or len(widths) != len(cols):
+        widths = tuple(560 // max(1, len(cols)) for _ in cols)
+    for c, w in zip(cols, widths):
         tree.heading(c, text=c)
         tree.column(c, width=w, anchor='w', stretch=True)
     vs = ttk.Scrollbar(wrap, orient='vertical', command=tree.yview)
@@ -77,7 +85,8 @@ def _tree(parent, tk, ttk, cols):
 
 
 # ------------------------------------------------------------------ 选择器
-def pick(rows, title='选择', subtitle='', columns=('名称', '详情'), tabs=None):
+def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明'),
+         widths=(70, 340, 480), tabs=None):
     """勾选式选择器。rows 是对象列表，需有 label / detail / frozen / selected。
 
     `tabs` 为 [(页签名, [行下标...])]；不给就单页。用户要求进程选择器分成
@@ -109,20 +118,20 @@ def pick(rows, title='选择', subtitle='', columns=('名称', '详情'), tabs=N
     for name, idxs in tabs:
         frame = ttk.Frame(nb)
         nb.add(frame, text='%s（%d）' % (name, len(idxs)))
-        trees.append((_tree(frame, tk, ttk, columns), list(idxs)))
+        trees.append((_tree(frame, tk, ttk, columns, widths), list(idxs)))
 
     bot = ttk.Frame(root)
     bot.pack(fill='x', padx=10, pady=(0, 10))
     status_var = tk.StringVar()
     result = {'value': None}
 
-    def left_of(r):
+    def row_values(r):
+        # 勾选**单独一列**：用户反馈并进名称里看不明显。
         tag = getattr(r, 'tag', '') or ''
-        text = '%s %s' % (getattr(r, 'mark', ''), getattr(r, 'label', ''))
-        return (text + '  ' + tag) if tag else text
-
-    def detail_of(r):
-        return getattr(r, 'detail', '')
+        detail = getattr(r, 'detail', '') or ''
+        return (getattr(r, 'mark', ''),
+                getattr(r, 'label', ''),
+                (tag + '  ' + detail) if tag else detail)
 
     def match(r, f):
         if not f:
@@ -139,7 +148,7 @@ def pick(rows, title='选择', subtitle='', columns=('名称', '详情'), tabs=N
                 r = rows[gi]
                 if not match(r, f):
                     continue
-                tree.insert('', 'end', iid=str(gi), values=(left_of(r), detail_of(r)))
+                tree.insert('', 'end', iid=str(gi), values=row_values(r))
         refresh_status()
 
     def refresh_status():
@@ -249,7 +258,7 @@ def manage(tabs, title='名单管理'):
     def build_tab(spec):
         frame = ttk.Frame(nb)
         nb.add(frame, text='%s（%d）' % (spec['name'], len(spec['provider']())))
-        tree = _tree(frame, tk, ttk, ('条目', '说明'))
+        tree = _tree(frame, tk, ttk, ('条目', '说明'), (360, 500))
         state.append([spec, tree])
         refill(len(state) - 1)
         return tree
