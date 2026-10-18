@@ -7,9 +7,9 @@
 # China mirror (no VPN needed, same script, different download host):
 #   irm http://101.132.165.98/dist/startupctl/install.ps1 | iex
 #
-# Same shape as ptool / jtool: download the source snapshot, then hand it to the
-# snapshot's own "startupctl install" (user-level %USERPROFILE%\.devtools\startupctl,
-# no administrator rights needed). Switch source with $env:STARTUPCTL_MIRROR='<url>'
+# Same shape as ptool / jtool: machine-level install under
+# C:\Program Files\devtools\startupctl with the PATH in HKLM -- which means
+# this script must run elevated. Switch source with $env:STARTUPCTL_MIRROR='<url>'
 # ('none' = GitHub only).
 #
 # ASCII only, and deliberately NO BOM:
@@ -65,14 +65,21 @@ try {
     $src = Get-ChildItem -Path $work -Directory | Select-Object -First 1
     if (-not $src) { Die (T '5b+r54Wn57uT5p6E5byC5bi477yI6Kej5Y6L5ZCO5rKh5pyJ55uu5b2V77yJ') }
 
-    Info ((T '5q2j5Zyo5a6J6KOF5Yiw') + " $env:USERPROFILE\.devtools\startupctl")
+    $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $admin = (New-Object Security.Principal.WindowsPrincipal $id).IsInRole(
+        [Security.Principal.WindowsBuiltInRole]::Administrator)
+    if (-not $admin) { Die (T '6ZyA6KaB566h55CG5ZGY5p2D6ZmQ44CC6K+35Y+z6ZSu44CM5Lul566h55CG5ZGY6Lqr5Lu96L+Q6KGM44CNUG93ZXJTaGVsbO+8jOaIluaUueeUqCAuZXhlIOWuieijheWMheOAgg==') }
+    Info (T '5q2j5Zyo5a6J6KOF5YiwIEM6XFByb2dyYW0gRmlsZXNcZGV2dG9vbHNcc3RhcnR1cGN0bO+8iOS8muW8uSBVQUPvvIk=')
     $env:PYTHONPATH = $src.FullName
     & $py.Source -B -m startupctl install
     if ($LASTEXITCODE -ne 0) { Die ((T '5a6J6KOF5aSx6LSl77yI6YCA5Ye656CB') + " $LASTEXITCODE)") }
 
     # make it usable in this very session (new shells read the registry PATH)
-    $bindir = Join-Path $env:USERPROFILE '.devtools\startupctl\bin'
-    if ($env:Path -notlike "*$bindir*") { $env:Path = "$bindir;$env:Path" }
+    $bindir = Join-Path ${env:ProgramFiles} 'devtools\startupctl\bin'
+    if ($env:Path -notlike "*$bindir*") {
+        $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' +
+                    [Environment]::GetEnvironmentVariable('Path','User')
+    }
     Info (T '5a6M5oiQ44CC5Zyo5pys56qX5Y+j6K+V6K+VIHN0YXJ0dXBjdGwgLS1oZWxw')
 } finally {
     Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue

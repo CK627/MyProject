@@ -122,11 +122,9 @@ def _github_tarball():
 def _system_root():
     """默认（系统级）安装根。
 
-    ⚠️ **Windows 上没有系统级安装**：没有 sudo / rc 的概念，装法是纯用户级拷贝 +
-    HKCU 里的 PATH。所以这里必须先判 Windows 并返回用户级路径——原来直接落到
-    `/usr/local/devtools/startupctl`，于是 `print-install-dir` 在一台 Windows 机器上
-    打印出一个根本不存在的 POSIX 路径，而 `install` 实际装到了 `%USERPROFILE%`。
-    两者说的不是一回事，脚本据此判断就会错。
+    Windows 是机器级安装（`C:\\Program Files\\devtools\\startupctl`，与 ptool/jtool 同规），
+    PATH 在 HKLM。这里必须返回 Windows 的真实路径——原来直接落到
+    `/usr/local/devtools/startupctl`，`print-install-dir` 会打印一个不存在的 POSIX 路径。
     """
     if sys.platform == 'win32' or os.name == 'nt':
         return _win_install_root()
@@ -404,12 +402,40 @@ def _deploy(srcdir, root):
 
 
 # ============================================================================
-# Windows（nt）：没有 bash、也没有 rc 文件，安装形态换成
-#   安装根 = %USERPROFILE%\\.devtools\\startupctl（与数据目录同址，和 macOS/Linux
-#            用户级安装一致），PATH 上挂 <根>\\bin\\startupctl.bat。
-# PATH 走 HKCU\Environment（用户级，不需要管理员）——不用 setx：它会把超过 1024
-# 字符的 PATH 截断，是老牌事故。
+# Windows（nt）：机器级安装，与 ptool / jtool 同规
+#   安装根 = C:\\Program Files\\devtools\\startupctl，PATH 上挂 <根>\\bin\\startupctl.bat。
+# PATH 走 HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment
+# （机器级，装/卸都**需要管理员**）——不用 setx：它会把超过 1024 字符的 PATH 截断。
+#
+# 为什么不是 Project 级的用户目录：四个 devtool 要长得一样。ptool/jtool 装在
+# Program Files 且 PATH 是机器级的，CtfSweep/startupctl 早先是用户级，于是同一台
+# 机器上两个工具「装在哪、PATH 在哪一层」各不相同——用户实测指出来的就是这个。
+#
+# data/ 住在安装根下（数据跟着项目走），但 Program Files 默认只有管理员可写；
+# 安装时用 icacls 给 BUILTIN\\Users 授 Modify（用 SID 而不是本地化组名）。
 # ============================================================================
+
+# 机器级 PATH 所在的注册表键（写它需要管理员）
+_WIN_ENV_KEY = r'SYSTEM\CurrentControlSet\Control\Session Manager\Environment'
+
+
+def _is_admin():
+    if os.name != 'nt':
+        return False
+    try:
+        import ctypes
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+
+def _need_admin(what):
+    """Windows 上写 Program Files / HKLM 必须有管理员权限。"""
+    if os.name == 'nt' and not _is_admin():
+        print('错误: %s 需要管理员权限。' % what)
+        print('      请右键「以管理员身份运行」，或改用安装包（会自动弹 UAC）。')
+        return False
+    return True
 # ⚠️ 纯 ASCII：无 BOM 的 UTF-8 .bat 会被 cmd 按 ANSI 代码页（简中是 GBK）解析，
 #    中文会被从中间劈开、cmd 转头去执行文本碎片（ptool 的 build-remote.bat 踩过）。
 #    所有面向用户的文案都在 Python 侧，那里有 _console_utf8() 兜底。
@@ -424,7 +450,10 @@ _WIN_LAUNCHER = (
 
 
 def _win_install_root():
-    return os.path.join(os.path.expanduser('~'), '.devtools', 'startupctl')
+    """Windows 安装根：C:\\Program Files\\devtools\\startupctl（与 ptool / jtool 同规）。"""
+    base = (os.environ.get('ProgramW6432') or os.environ.get('ProgramFiles')
+            or r'C:\Program Files')
+    return os.path.join(base, 'devtools', 'startupctl')
 
 
 def win_path_join(cur, entry):
@@ -451,7 +480,7 @@ def win_path_drop(cur, entry):
 def _win_path_read():
     import winreg
     try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, 'Environment') as k:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, _WIN_ENV_KEY) as k:
             v, _t = winreg.QueryValueEx(k, 'Path')
             return v or ''
     except OSError:
@@ -460,7 +489,7 @@ def _win_path_read():
 
 def _win_path_write(value):
     import winreg
-    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, 'Environment', 0,
+    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, _WIN_ENV_KEY, 0,
                         winreg.KEY_SET_VALUE) as k:
         # REG_EXPAND_SZ：PATH 里常有 %USERPROFILE% 这类变量，写成 REG_SZ 就不再展开
         winreg.SetValueEx(k, 'Path', 0, winreg.REG_EXPAND_SZ, value)
@@ -492,6 +521,8 @@ def deploy_nt(srcdir, root):
 
     只删功能项，数据（whitelist.json · backups/ · scans/）永不动——与 deploy.sh 的契约一致。
     """
+    if os.name == 'nt' and not _is_admin():
+        raise PermissionError('写入 %s 需要管理员权限' % root)
     os.makedirs(root, exist_ok=True)
     for rel in _WIN_FUNC_ITEMS:
         p = os.path.join(root, rel)
@@ -519,7 +550,26 @@ def deploy_nt(srcdir, root):
     os.makedirs(bindir, exist_ok=True)
     with open(os.path.join(bindir, 'startupctl.bat'), 'w', encoding='utf-8', newline='') as fh:
         fh.write(_WIN_LAUNCHER)
+    _win_prepare_data(root)
     return 0
+
+
+def _win_prepare_data(root):
+    """建 data/ 并让普通用户可写。
+
+    Program Files 默认只有管理员能写，而存名单是**普通用户**的日常动作。
+    用 **SID** 授 Modify 而不是 "Users"：组名随系统语言变，中文 Windows 上
+    传 "Users" 会失败（icacls 认的是本地化名称）。
+    """
+    data = os.path.join(root, 'data')
+    os.makedirs(data, exist_ok=True)
+    try:
+        subprocess.call(['icacls', data, '/grant',
+                         '*S-1-5-32-545:(OI)(CI)M'],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+    return data
 
 
 def _shell_setup(action, root):
@@ -645,6 +695,8 @@ def _win_install(mode, src):
     与 macOS/Linux 用户级的形态逐条对齐：安装根就是数据目录（cache/ 等住在同一层），
     所以只删/写功能项；PATH 走注册表（不需要管理员），不用 setx（会截断长 PATH）。
     """
+    if not _need_admin('安装到 Program Files'):
+        return 1
     dest = _win_install_root()
     if mode == 'installed' and os.path.normcase(os.path.abspath(src)) == os.path.normcase(os.path.abspath(dest)):
         print('startupctl 已安装: %s（v%s）' % (dest, _read_version(dest) or '?'))
@@ -653,7 +705,7 @@ def _win_install(mode, src):
     if mode not in ('repo', 'installed'):
         print('无法识别当前布局，找不到要安装的源码（在源码目录里运行 install.bat）。')
         return 1
-    print('startupctl 安装（Windows · 用户级）')
+    print('startupctl 安装（Windows · 机器级）')
     print('  源码: %s' % src)
     print('  目标: %s' % dest)
     try:
@@ -663,7 +715,7 @@ def _win_install(mode, src):
         return 1
     changed = _win_path_ensure(os.path.join(dest, 'bin'))
     print('已安装: %s（v%s）' % (dest, _read_version(dest) or '?'))
-    print('  PATH: %s' % ('已加入用户 PATH' if changed else '用户 PATH 里已有'))
+    print('  PATH: %s' % ('已加入机器级 PATH' if changed else '机器级 PATH 里已有'))
     print('  数据目录: %s（名单与模式；随安装根一起删除）' % paths.data_root())
     print('  重开一个终端后可直接敲 startupctl（当前终端的 PATH 还是旧的）。')
     return 0
@@ -678,6 +730,8 @@ def _win_uninstall(argv):
         else:
             print('未知参数: %s（用法: startupctl uninstall [-y]）' % a)
             return 2
+    if not _need_admin('从 Program Files 卸载'):
+        return 1
     dest = _win_install_root()
     if not os.path.isdir(dest):
         print('未安装: %s（无需卸载）' % dest)
@@ -697,9 +751,9 @@ def _win_uninstall(argv):
     print('startupctl 卸载程序（Windows）')
     print('安装目录: %s' % dest)
     if _win_path_remove(os.path.join(dest, 'bin')):
-        print('已从用户 PATH 摘除: %s' % os.path.join(dest, 'bin'))
+        print('已从机器级 PATH 摘除: %s' % os.path.join(dest, 'bin'))
     else:
-        print('用户 PATH 里没有这一项（可能已摘除）')
+        print('机器级 PATH 里没有这一项（可能已摘除）')
     removed = []
     for rel in _WIN_FUNC_ITEMS:
         p = os.path.join(dest, rel)

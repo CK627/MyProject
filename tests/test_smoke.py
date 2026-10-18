@@ -1088,6 +1088,36 @@ def check_fixture_links_are_relative():
               'dbus.service 用相对链接（Python 3.12+ 的 data 过滤器拒绝绝对链接）')
 
 
+def check_windows_machine_level():
+    section('Windows 与 ptool / jtool 同规：Program Files + HKLM')
+    sys.path.insert(0, ROOT)
+    from startupctl.core import selfmgr as S
+
+    root = S._win_install_root()
+    check(root.replace('/', '\\').lower().endswith('devtools\\startupctl'),
+          '安装根是 ...\\devtools\\startupctl（得到 %s）' % root)
+    check('program files' in root.lower() or 'programw6432' in os.environ,
+          '安装根在 Program Files 下（不是用户主目录）')
+
+    iss = open(os.path.join(ROOT, 'installer', 'windows', 'startupctl.iss.in'),
+               encoding='utf-8').read()
+    check('DefaultDirName={autopf}\\devtools\\@TOOL@' in iss,
+          '.iss 装到 {autopf}\\devtools\\<tool>')
+    check('PrivilegesRequired=admin' in iss, '.iss 要求管理员')
+    check('ArchitecturesInstallIn64BitMode=x64compatible' in iss,
+          '.iss 声明 64 位（否则 autopf 落到 Program Files (x86)）')
+    check('Root: HKLM;' in iss and 'Session Manager\\Environment' in iss,
+          '.iss 写机器级 PATH（HKLM）')
+    check('HKCU' not in iss, '.iss 不再出现 HKCU')
+    check('Permissions: users-modify' in iss,
+          '{app}\\data 授了 users-modify（普通用户要能存名单）')
+
+    ps1 = open(os.path.join(ROOT, 'installer', 'install.ps1'), encoding='utf-8').read()
+    check('USERPROFILE' not in ps1,
+          'install.ps1 不再往用户主目录装')
+    check('ProgramFiles' in ps1, 'install.ps1 认 Program Files')
+
+
 def check_app_group():
     section('进程按应用分组')
     sys.path.insert(0, ROOT)
@@ -1236,6 +1266,7 @@ def main():
     check_gui_picker()
     check_cli_contracts()
     check_app_group()
+    check_windows_machine_level()
     check_fixture_links_are_relative()
     check_deploy_ignores_umask()
     check_broken_file_is_never_overwritten()
