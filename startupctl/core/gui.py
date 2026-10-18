@@ -162,6 +162,17 @@ def _tree(parent, tk, ttk, cols, widths=None):
 
 
 # ------------------------------------------------------------------ 选择器
+def norm_columns(columns, widths):
+    """列定义兜底。调用方可能显式传 None（`_run_picker` 转发进程选择器时就是），
+    少了这一步 `len(widths)` 会直接 TypeError —— 用户开进程选择器时踩到过。
+    单独成函数是为了能在无显示环境下单测。
+    """
+    columns = columns or ('选择', '名称', '说明')
+    if not widths or len(widths) != len(columns):
+        widths = tuple(560 // max(1, len(columns)) for _ in columns)
+    return tuple(columns), tuple(widths)
+
+
 def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明'),
          widths=(70, 340, 480), tabs=None):
     """勾选式选择器。rows 是对象列表，需有 label / detail / frozen / selected。
@@ -175,6 +186,7 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
     """
     if not rows:
         return []
+    columns, widths = norm_columns(columns, widths)
     root, tk, ttk = _root(title)
 
     head = ttk.Frame(root)

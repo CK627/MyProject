@@ -1161,6 +1161,20 @@ def check_startup_grouping():
     check_eq(plain.display_name, 'vmnetd', 'com.docker.vmnetd → vmnetd')
 
 
+def check_gui_columns():
+    section('选择器列定义兜底（None 会 TypeError）')
+    sys.path.insert(0, ROOT)
+    from startupctl.core.gui import norm_columns
+
+    c, w = norm_columns(None, None)
+    check_eq(c, ('选择', '名称', '说明'), 'columns=None → 默认三列')
+    check_eq(len(w), 3, 'widths=None → 与列数一致')
+    c, w = norm_columns(('选择', '名称', '类型', '说明'), None)
+    check_eq(len(w), 4, '四列时 widths 自动补齐到 4')
+    c, w = norm_columns(('选择', '名称', '说明'), (70, 340, 480))
+    check_eq(w, (70, 340, 480), '显式传入且数量匹配时原样保留')
+
+
 def check_app_group():
     section('进程按应用分组')
     sys.path.insert(0, ROOT)
@@ -1309,6 +1323,7 @@ def main():
     check_gui_picker()
     check_cli_contracts()
     check_app_group()
+    check_gui_columns()
     check_startup_grouping()
     check_windows_machine_level()
     check_fixture_links_are_relative()
