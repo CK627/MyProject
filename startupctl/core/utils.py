@@ -212,6 +212,22 @@ def enable_debug_privilege():
             _fields_ = [('PrivilegeCount', wintypes.DWORD),
                         ('Privileges', LUID_AND_ATTRIBUTES * 1)]
 
+        # ★ 必须显式声明签名。不声明时 ctypes 把 GetCurrentProcess() 的
+        #   HANDLE(-1) 当 32 位 int 传，x64 上高 32 位丢失 → OpenProcessToken
+        #   报 ERROR_INVALID_HANDLE，于是"提权成功"永远返回 False（真机踩到）。
+        kernel.GetCurrentProcess.restype = wintypes.HANDLE
+        advapi.OpenProcessToken.argtypes = [
+            wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)]
+        advapi.OpenProcessToken.restype = wintypes.BOOL
+        advapi.LookupPrivilegeValueW.argtypes = [
+            wintypes.LPCWSTR, wintypes.LPCWSTR, ctypes.POINTER(LUID)]
+        advapi.LookupPrivilegeValueW.restype = wintypes.BOOL
+        advapi.AdjustTokenPrivileges.argtypes = [
+            wintypes.HANDLE, wintypes.BOOL, ctypes.POINTER(TOKEN_PRIVILEGES),
+            wintypes.DWORD, ctypes.c_void_p, ctypes.c_void_p]
+        advapi.AdjustTokenPrivileges.restype = wintypes.BOOL
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+
         token = wintypes.HANDLE()
         if not advapi.OpenProcessToken(
                 kernel.GetCurrentProcess(),

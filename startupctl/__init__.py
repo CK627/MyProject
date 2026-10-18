@@ -5,4 +5,4 @@
    pyproject.toml 走 dynamic version（读这里的 __version__），所以本文件是唯一权威。
 """
 
-__version__ = '2.1.22'
+__version__ = '2.1.23'

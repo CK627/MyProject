@@ -155,7 +155,14 @@ def run(interval=None, max_rounds=None):
             except Exception:
                 pass
 
-    log('监视循环启动 pid=%d 间隔=%ds' % (os.getpid(), interval))
+    if os.name == 'nt':
+        from .utils import enable_debug_privilege
+        _dbg = enable_debug_privilege()
+        log('监视循环启动 pid=%d 间隔=%ds（SeDebugPrivilege: %s）'
+            % (os.getpid(), interval, '已启用' if _dbg else '未启用'),
+            also_stdout=False)
+    else:
+        log('监视循环启动 pid=%d 间隔=%ds' % (os.getpid(), interval))
     ctx = context.Ctx(conf=conf)
     rounds = 0
     last_note = ''
