@@ -725,6 +725,34 @@ def check_no_posix_only_calls():
           '没有拿 os.kill(pid, 0) 当存活检查（越界的: %s）'
           % (kill_offenders[:3] or '无'))
 
+    # 1c) Windows 没有 signal.SIGKILL；只能 getattr 兜底。
+    sig_offenders = []
+    shr = os.path.join(ROOT, 'startupctl')
+    for dirpath, _dirs, files in os.walk(shr):
+        for f in files:
+            if not f.endswith('.py'):
+                continue
+            pth = os.path.join(dirpath, f)
+            with open(pth, encoding='utf-8') as fh:
+                for n, line in enumerate(fh, 1):
+                    code = line.split('#')[0]
+                    if 'signal.SIGKILL' in code:
+                        sig_offenders.append('%s:%d' % (os.path.relpath(pth, ROOT), n))
+    check(not sig_offenders,
+          '没有直接引用 signal.SIGKILL（Windows 上没有这个常量: %s）'
+          % (sig_offenders[:3] or '无'))
+
+    # 1d) 子进程必须静默：监视循环由 pythonw 启动时，powershell 子进程会弹窗。
+    with open(os.path.join(ROOT, 'startupctl', 'core', 'utils.py'),
+              encoding='utf-8') as fh:
+        utils_src = fh.read()
+    check('CREATE_NO_WINDOW' in utils_src and 'creationflags' in utils_src,
+          'utils.run 在 Windows 上用 CREATE_NO_WINDOW（后台不再闪窗）')
+
+    from startupctl.core import enforce as _E
+    check(isinstance(_E._SIGKILL, int) and isinstance(_E._SIGTERM, int),
+          'SIGTERM/SIGKILL 走 getattr 兜底（Windows 可用）')
+
     # 2) 动态检查：把 os.getuid 拿掉（模拟 Windows），darwin 后端仍要能跑
     saved = getattr(os, 'getuid', None)
     had = hasattr(os, 'getuid')

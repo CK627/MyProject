@@ -91,6 +91,11 @@ def run(argv, timeout=10, input_text=None, env=None):
     kwargs = {}
     if sys.version_info[0] == 3:
         kwargs['stdin'] = subprocess.PIPE if input_text is not None else subprocess.DEVNULL
+    if os.name == 'nt':
+        # ★ CREATE_NO_WINDOW：监视循环通常由 pythonw / 计划任务启动（没有控制台）。
+        #   这时再 spawn powershell.exe（枚举进程）会**弹出一个控制台窗口**，
+        #   每 5 秒闪一次——用户实测反馈。这个 flag 只影响控制台，不影响输出管道。
+        kwargs['creationflags'] = 0x08000000  # CREATE_NO_WINDOW
     try:
         p = subprocess.Popen(
             argv,

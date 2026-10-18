@@ -122,12 +122,24 @@ def format_plan(deny, protect, allow, guard, platform='', limit=25):
     return lines
 
 
+# ★ Windows 没有 signal.SIGKILL。直接引用会让"TERM 没杀掉"的那条路径
+#   抛 AttributeError（用户真机踩到）。Windows 上任意信号号都会走 TerminateProcess，
+#   所以 9 就是硬杀。
+_SIGTERM = getattr(signal, 'SIGTERM', 15)
+_SIGKILL = getattr(signal, 'SIGKILL', 9)
+
+
 def apply_decisions(deny, guard, term_first=True, grace=3.0, out=None):
     """真的结束进程。返回 (成功数, 失败数, 跳过的受保护数)。
 
     ⚠️ 调用方必须先让用户确认过（见 cli 的 guard arm / guard enforce）。
     """
     out = out or sys.stdout
+    if out is None:
+        # pythonw / 计划任务里没有 stdout：直接 write 会 AttributeError，
+        # 而这恰好发生在"已经杀了进程、正要报告"的时刻。
+        import io as _io
+        out = _io.StringIO()
     ok = fail = refused = 0
     platform = _platform_for(guard)
     for d in deny:
@@ -140,20 +152,20 @@ def apply_decisions(deny, guard, term_first=True, grace=3.0, out=None):
             continue
         try:
             if term_first:
-                os.kill(p.pid, signal.SIGTERM)
+                os.kill(p.pid, _SIGTERM)
                 deadline = time.time() + grace
                 while time.time() < deadline:
                     if not _alive(p.pid):
                         break
                     time.sleep(0.15)
                 if _alive(p.pid):
-                    os.kill(p.pid, signal.SIGKILL)
+                    os.kill(p.pid, _SIGKILL)
                     out.write('  已结束 pid=%-7s %s（先 TERM 未退出，已 KILL）\n'
                               % (p.pid, p.comm))
                 else:
                     out.write('  已结束 pid=%-7s %s（TERM）\n' % (p.pid, p.comm))
             else:
-                os.kill(p.pid, signal.SIGKILL)
+                os.kill(p.pid, _SIGKILL)
                 out.write('  已结束 pid=%-7s %s（KILL）\n' % (p.pid, p.comm))
             ok += 1
         except ProcessLookupError:

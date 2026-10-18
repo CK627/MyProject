@@ -208,8 +208,10 @@ def install():
         with open(vbs, 'w', encoding='utf-8', newline='') as fh:
             fh.write(body)
         tr = 'wscript.exe "%s"' % vbs
+        # /RL HIGHEST：以最高权限运行。Windows 上大量启动项是服务（SYSTEM 身份），
+        # 普通令牌结束不了它们——用户实测「明明不是系统项也动不了」就是这个原因。
         rc, out = _run(['schtasks', '/create', '/tn', TASK_NAME, '/tr', tr,
-                        '/sc', 'onlogon', '/f'])
+                        '/sc', 'onlogon', '/rl', 'HIGHEST', '/f'])
         if rc == 0:
             _run(['schtasks', '/run', '/tn', TASK_NAME])   # 立即起一次
         return (rc == 0), (out.strip() or '已注册计划任务: %s' % TASK_NAME)

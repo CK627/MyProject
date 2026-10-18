@@ -317,6 +317,14 @@ GitHub 生成的 tarball 不套用 `.gitattributes`，而 `update` 正是从那�
   必须从 `/proc/mounts` 检出并明说降级。
 
 **Windows**
+- **后台循环必须完全静默**：计划任务用 `pythonw.exe` 起监视循环（没有控制台），
+  此时再 spawn `powershell.exe`（枚举进程）会**每轮弹出一个控制台窗口**。
+  `utils.run` 在 Windows 上统一带 `CREATE_NO_WINDOW`。另：`pythonw` 下
+  `sys.stdout is None`，`apply_decisions` 必须兜住，否则"杀完进程正要报告"时崩。
+- **Windows 启动项大量是服务（SYSTEM 身份）**：普通令牌结束不了，会报"权限不足"。
+  自启任务用 `/rl HIGHEST` 注册；前台 `mode` 仍需从管理员终端运行。
+- **Windows 没有 `signal.SIGKILL`**：只能 `getattr(signal, 'SIGKILL', 9)`。
+  直接引用会在"TERM 没杀掉、转 KILL"的那条路径抛 AttributeError（真机踩到）。
 - **`os.kill(pid, 0)` 在 Windows 上不是探活**：CPython 把它实现成
   `TerminateProcess(pid, 0)`——会**以退出码 0 真的结束那个进程**（随后还可能抛
   `SystemError`）。存活检查一律走 `utils.pid_alive()`；静态断言禁止别处再写。
