@@ -29,3 +29,6 @@ shims/
 .cache/
 .*-win-src.tar.gz
 .build-remote.bat.crlf
+
+# 运行期数据（名单与模式，跟着项目走，不进版本库）
+data/

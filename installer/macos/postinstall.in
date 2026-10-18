@@ -13,6 +13,12 @@ VERSION="@VERSION@"
 STAGE="/Library/devtools/$TOOL-$VERSION"
 DEST="/Library/devtools/$TOOL"
 
+# 登录用户：rc 文件与 data/ 都归他。必须**先算**，部署时的目录属主要用到。
+TARGET="$(/usr/bin/stat -f%Su /dev/console 2>/dev/null)"
+case "$TARGET" in
+    ""|root|loginwindow) TARGET="" ;;   # 登录窗口 / FileVault / 无人登录
+esac
+
 # ---------------------------------------------------------------
 # 1) 部署成 devtools 布局
 #    复用 installer/deploy.sh —— 布局的唯一实现。这里**不要**自己拼一份目录：
@@ -20,7 +26,8 @@ DEST="/Library/devtools/$TOOL"
 # ---------------------------------------------------------------
 DEPLOY_OK=0
 if [ -f "$STAGE/installer/deploy.sh" ]; then
-    if /bin/bash "$STAGE/installer/deploy.sh" "$STAGE" "$DEST"; then
+    # 把登录用户传下去：data/ 要归他所有，否则普通用户存名单会被拒
+    if STARTUPCTL_DATA_OWNER="${TARGET:-}" /bin/bash "$STAGE/installer/deploy.sh" "$STAGE" "$DEST"; then
         DEPLOY_OK=1
     else
         /bin/echo "$TOOL: 部署失败，见上方输出"
@@ -35,11 +42,6 @@ fi
 #    这一步和上一步必须分开：一个要 root，一个要登录用户。
 # ---------------------------------------------------------------
 if [ "$DEPLOY_OK" -eq 1 ]; then
-    TARGET="$(/usr/bin/stat -f%Su /dev/console 2>/dev/null)"
-    case "$TARGET" in
-        ""|root|loginwindow) TARGET="" ;;   # 登录窗口 / FileVault / 无人登录
-    esac
-
     if [ -n "$TARGET" ] && /usr/bin/id -u "$TARGET" >/dev/null 2>&1; then
         if ! /usr/bin/sudo -u "$TARGET" -H /bin/bash "$DEST/shell-setup.sh" install "$DEST"; then
             /bin/echo "$TOOL: 写入 shell 配置失败，请手动执行:"

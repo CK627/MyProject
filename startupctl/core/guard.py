@@ -354,7 +354,7 @@ class Guard(object):
         self.whitelist = self._norm(whitelist)
         self.blacklist = self._norm(blacklist)
         self.options = dict(options or {})
-        self.path = path or os.path.join(paths.data_root(), GUARD_NAME)
+        self.path = path or paths.guard_path()
 
     @staticmethod
     def _norm(v):
@@ -646,6 +646,21 @@ class Guard(object):
     def load(self):
         p = self.path
         if not p or not os.path.isfile(p):
+            # 一次性迁移：2.1 之前数据在 ~/.devtools/startupctl/guard.json。
+            # 读到旧文件就按新位置存一份，旧文件**不删**（用户自己决定何时清理）。
+            legacy = paths.legacy_guard_path()
+            if legacy and os.path.isfile(legacy):
+                self.path = legacy
+                try:
+                    self.load()
+                    self.path = p
+                    try:
+                        self.save()
+                    except Exception:
+                        pass
+                    return self
+                finally:
+                    self.path = p
             return self
         try:
             with open(p, 'r', encoding='utf-8') as fh:

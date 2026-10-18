@@ -1,61 +1,81 @@
 # -*- coding: utf-8 -*-
-"""数据目录布局（单点定义，cli / selfmgr / safety / whitelist / 测试共用）。
+"""数据目录布局（单点定义，cli / guard / selfmgr / 测试共用）。
 
-数据根 = $STARTUPCTL_DATA_DIR 或 ~/.devtools/startupctl，**下面有三样东西**：
+**数据跟着项目走**：默认放在**安装根下的 `data/`**，而不是用户主目录。
 
-    <数据根>/whitelist.json        白名单（用户逐条确认过的允许清单）
-    <数据根>/backups/<UTC ts>-<op>/  备份：manifest.json + plan.json + files/ + registry/
-    <数据根>/scans/<UTC ts>.json   扫描快照（scan --save / --diff 用）
+    <安装根>/data/guard.json     白名单 / 黑名单 / 当前模式
 
-⚠️ 三个子项的契约各不相同，不要混为一谈：
+为什么不在 ~/.devtools 下另开一个目录（用户的明确要求）：
 
-  · whitelist.json —— 是**安全产物**，用户必须能审计（cat/grep/diff/git 都要能用，
-    所以是 JSON 不是 SQLite）。永不自动删除。
-  · backups/       —— 是**唯一的后悔药**：remove 之所以敢做，就是因为文件搬到了这里。
-    永不自动删除（只有 `backup prune` 按保留策略清）。
-  · scans/         —— 只是快照缓存，可以清（`clear` 只清这个）。
+  · 装到哪儿、数据就在哪儿——`/Library/devtools/startupctl/data/`、仓库里的
+    `data/`、Windows 的 `%USERPROFILE%\\.devtools\\startupctl\\data\\` 都是同一个规则；
+  · 删掉项目目录 / 卸载，数据跟着一起没，不会在主目录里留一份无主的垃圾；
+  · 升级**不碰** data/：deploy.sh 只删功能项（bin lib config completions VERSION
+    uninstall deploy.sh shell-setup.sh），名单与模式原样保留。
 
-安装根与数据根的关系：
-  · 用户级安装（STARTUPCTL_USER=1）下**安装根就是数据根**，所以 install / update /
-    uninstall 一律**永不 `rm -rf` 数据根**，只删功能项（见 installer/deploy.sh）。
-  · 系统级安装下安装根是 /Library/devtools/startupctl，数据根仍在 ~/.devtools/startupctl。
+`STARTUPCTL_DATA_DIR` 可整体覆盖（测试隔离与多环境用）。语义是**根**，
+`guard.json` 在其下。
 
-⚠️ 布局契约改这里一处即可，不要在别处再拼 'backups' / 'scans' 路径，也不要另写一份
-   数据根解析——测试靠 STARTUPCTL_DATA_DIR 隔离整个环境，多一处拼路径就多一处隔离漏洞。
+⚠️ 布局契约只在这里定义一次。别在别处拼 'data' / 'guard.json'——
+   测试靠 STARTUPCTL_DATA_DIR 隔离整个环境，多一处拼路径就多一处隔离漏洞。
 """
 import os
 
 DATA_DIR_ENV = 'STARTUPCTL_DATA_DIR'
-WHITELIST_NAME = 'whitelist.json'
-BACKUPS_DIR = 'backups'
-SCANS_DIR = 'scans'
+DATA_DIR_NAME = 'data'
+GUARD_NAME = 'guard.json'
+
+# 旧位置（2.1 之前）：数据在 ~/.devtools/<tool> 下。只用于一次性迁移。
+LEGACY_ROOT = os.path.join(os.path.expanduser('~'), '.devtools', 'startupctl')
+
+
+def install_root():
+    """安装根：devtools 安装版是安装目录，仓库版是仓库根。
+
+    用 selfmgr.self_info() 判断（它已经处理了「在 lib/ 下还是仓库根」）。
+    放在函数里 import 是为了避开 paths ↔ selfmgr 的循环导入。
+    """
+    try:
+        from .selfmgr import self_info
+        _mode, root, _devtools = self_info()
+        if root:
+            return root
+    except Exception:
+        pass
+    # 兜底：.../startupctl/core/paths.py → 上溯两级
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def data_root():
-    """用户数据根目录（默认 ~/.devtools/startupctl）。
+    """数据根目录（默认 <安装根>/data）。
 
-    环境变量 STARTUPCTL_DATA_DIR 可覆盖（测试隔离与多环境用）；语义是**根**，
-    下面才分 whitelist.json / backups/ / scans/。
+    STARTUPCTL_DATA_DIR 优先；语义是**根**，guard.json 在其下。
     """
     root = os.environ.get(DATA_DIR_ENV)
     if root:
         return os.path.expanduser(root)
-    return os.path.join(os.path.expanduser('~'), '.devtools', 'startupctl')
+    return os.path.join(install_root(), DATA_DIR_NAME)
 
 
-def whitelist_path():
-    """白名单文件路径（不创建）。"""
-    return os.path.join(data_root(), WHITELIST_NAME)
+def guard_path():
+    """策略文件路径（不创建）。"""
+    return os.path.join(data_root(), GUARD_NAME)
+
+
+def legacy_guard_path():
+    """2.1 之前的策略文件路径（只用于迁移；不存在返回 None）。"""
+    p = os.path.join(LEGACY_ROOT, GUARD_NAME)
+    return p if os.path.isfile(p) else None
 
 
 def backups_root():
-    """备份根目录（不创建；调用方按需 makedirs）。"""
-    return os.path.join(data_root(), BACKUPS_DIR)
+    """（遗留）备份子系统的根目录。
 
-
-def scans_root():
-    """扫描快照根目录（不创建）。"""
-    return os.path.join(data_root(), SCANS_DIR)
+    2.0 起 CLI 不再暴露任何备份/还原命令（用户要求「多余的备份没必要」），
+    这条路径只被 core/safety.py 里**已不可达**的备份函数引用，永远不会被创建。
+    保留它是为了让那批内部函数还能导入；彻底删除它们时一并删掉这个函数。
+    """
+    return os.path.join(data_root(), 'backups')
 
 
 def ensure_dir(path):

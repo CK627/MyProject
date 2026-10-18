@@ -187,14 +187,13 @@ has "$(cat /tmp/startupctl-reinstall.log)" "接线一致" "重复安装报「接
 v="$(PATH="$inst/bin:$PATH" HOME="$TESTHOME" STARTUPCTL_USER=1 "$inst/bin/startupctl" version 2>&1)"
 has "$v" "startupctl" "安装后的命令可执行"
 
-# 卸载：功能项删掉，**白名单与备份保留**
-mkdir -p "$inst/backups/20260101T000000Z-remove"
-echo '{"version":1,"entries":[{"match":"id","value":"abc"}]}' > "$inst/whitelist.json"
-echo '{"op":"remove"}' > "$inst/backups/20260101T000000Z-remove/manifest.json"
+# 卸载：数据跟着项目走 —— 整个安装根（含 data/guard.json）一起消失
+mkdir -p "$inst/data"
+echo '{"version":3,"mode":"off","whitelist":{"startup":[],"process":[]},"blacklist":{"startup":[],"process":[]}}' > "$inst/data/guard.json"
 HOME="$TESTHOME" STARTUPCTL_USER=1 bash installer/uninstall.sh >/tmp/startupctl-uninstall.log 2>&1
 [ -e "$inst/lib" ] && bad "卸载后 lib/ 仍在" || ok "卸载删除了功能项 lib/"
-[ -f "$inst/whitelist.json" ] && ok "卸载**保留**了白名单" || bad "卸载把白名单删了（这是安全产物）"
-[ -f "$inst/backups/20260101T000000Z-remove/manifest.json" ] && ok "卸载**保留**了备份（唯一后悔药）" || bad "卸载把备份删了"
+[ -e "$inst/data/guard.json" ] && bad "卸载后 data/guard.json 仍在（数据应随项目删除）" || ok "卸载删除了 data/guard.json"
+[ -d "$inst" ] && bad "卸载后安装根仍在: $inst" || ok "卸载删除了整个安装根（不留无主目录）"
 c="$(count_of "$rc" '^# >>> startupctl >>>$')"
 c="${c:-0}"
 eq "$c" "0" "卸载摘除了 rc 配置块"

@@ -92,6 +92,23 @@ ln -sf ../lib/startupctl.sh "$DEST/bin/startupctl"
 # 清理旧布局残留，否则它仍在 PATH 上、仍会出现在补全里
 rm -f "$DEST/bin/startupctl.sh"
 
+# ---- 数据目录：名单与模式住在安装根下（数据跟着项目走）----
+# 必须让**普通用户**也能写：系统级安装下 deploy 以 root 跑，交回登录用户；
+# 用户级安装本来就是同一个用户，chown 是个 no-op。
+_data_dir="$DEST/data"
+mkdir -p "$_data_dir"
+_owner="${STARTUPCTL_DATA_OWNER:-${SUDO_USER:-}}"
+if [ -z "$_owner" ] && [ "$(id -u)" = "0" ]; then
+    # pkg 的 postinstall 没有 SUDO_USER，从控制台会话反查登录用户
+    _owner="$(/usr/bin/stat -f%Su /dev/console 2>/dev/null \
+              || stat -c%U /dev/console 2>/dev/null || true)"
+    case "$_owner" in ""|root|loginwindow) _owner="" ;; esac
+fi
+if [ -n "$_owner" ] && [ "$_owner" != "root" ]; then
+    chown "$_owner" "$_data_dir" 2>/dev/null || true
+fi
+chmod 755 "$_data_dir"
+
 # ---- 权限归一（不能继承 umask）----
 # ★ cp 跟着**调用方的 umask** 走。`sudo` 会把 umask 透传给子进程，所以只要
 #   调用者的 shell 里设过 umask 077（实测踩到），装出来的就是 0600/0700：

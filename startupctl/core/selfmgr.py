@@ -56,22 +56,6 @@ _PAYLOAD_REPO = (
     ('installer/deploy.sh', 'deploy.sh'),
     ('installer/shell-setup.sh', 'shell-setup.sh'),
 )
-# clear 时**一律保留**的顶层项。
-#
-# ⚠️ 这里比母本（CtfSweep）更要紧：CtfSweep 的数据根只装扫描缓存，清了无所谓；
-#    本项目的数据根住着两样**删了就有真实损失**的东西：
-#      · whitelist.json —— 用户逐条确认过的允许清单，是安全产物
-#      · backups/       —— 唯一的后悔药：remove 之所以敢做，就靠它
-#    所以 clear **只清 scans/**（快照，纯缓存），并把这两项显式列进保留清单。
-#    它们各自有专属的清除入口（whitelist remove / backup prune），绝不借道 clear。
-_CLEAR_KEEP = (
-    # 功能项：用户级安装下数据根 == 安装根，整目录清空等于把 startupctl 自己删掉
-    'bin', 'lib', 'completions', 'config', 'VERSION',
-    'uninstall', 'deploy.sh', 'shell-setup.sh', 'startupctl.conf',
-    # 用户数据（有真实损失，只能由专属命令清）
-    paths.WHITELIST_NAME, 'backups',
-)
-
 # 安装态应有的组件（键即安装空间相对路径），用于「版本号已最新但装残了」的探测
 _INSTALLED_ITEMS = (
     'lib/startupctl', 'lib/startupctl.sh', 'VERSION',
@@ -105,9 +89,9 @@ _PAYLOAD_WIN = (
 # 但同一份代码在 CtfSweep 上确实这么干过——老用户升级上来时那几样会原封不动留着
 # （实测确认）。列在这里成本为零，且能让"装完干净"这条对所有来路都成立。
 #
-# ⚠️ 这里**绝不能**出现 cache / whitelist.json / backups / scans —— 那是用户数据，
-#    用户的硬契约是"永不自动删除"。
-_WIN_FUNC_ITEMS = ('bin', 'lib', 'config', 'VERSION',
+# `data/` 在**功能项**里：名单与模式跟着项目走（用户要求），卸载一起带走；
+# 升级不会删它（deploy_nt 只按 _PAYLOAD_WIN 覆盖功能文件，不碰 data/）。
+_WIN_FUNC_ITEMS = ('bin', 'lib', 'config', 'VERSION', 'data',
                    # 历史遗留（新版不再装，装上时要顺手清掉）
                    'completions', 'deploy.sh', 'shell-setup.sh', 'uninstall')
 
@@ -680,7 +664,7 @@ def _win_install(mode, src):
     changed = _win_path_ensure(os.path.join(dest, 'bin'))
     print('已安装: %s（v%s）' % (dest, _read_version(dest) or '?'))
     print('  PATH: %s' % ('已加入用户 PATH' if changed else '用户 PATH 里已有'))
-    print('  数据目录: %s（白名单 · 备份 · 快照；卸载不删）' % paths.data_root())
+    print('  数据目录: %s（名单与模式；随安装根一起删除）' % paths.data_root())
     print('  重开一个终端后可直接敲 startupctl（当前终端的 PATH 还是旧的）。')
     return 0
 

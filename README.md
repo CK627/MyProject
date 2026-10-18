@@ -130,10 +130,11 @@ sudo /Library/devtools/startupctl/uninstall -y
 & "$env:USERPROFILE\.devtools\startupctl\unins000.exe" /VERYSILENT
 ```
 
-### 数据一律保留
+### 数据跟着项目一起删
 
-无论哪个平台，卸载都**不动数据目录**：`guard.json`（你逐条确认过的白名单 / 黑名单
-与当前模式）。要清得自己去改那个文件——它是安全产物，工具不替你删。
+名单与模式住在**安装根下**的 `data/guard.json`（例如
+`/Library/devtools/startupctl/data/guard.json`），所以卸载会把它们一起带走，
+不在主目录里留无主文件。升级不在此列：`update` 只替换功能项，`data/` 原样保留。
 
 ## 功能特性
 
@@ -289,10 +290,19 @@ source completions/startupctl.bash    # bash
 
 ### 数据目录
 
+数据**跟着项目走**：放在安装根下的 `data/`，不是用户主目录。
+
 ```
-~/.devtools/startupctl/
+<安装根>/data/
 └── guard.json      白/黑名单（各分 startup / process 两个维度）+ 当前模式
 ```
+
+- macOS 系统级：`/Library/devtools/startupctl/data/guard.json`
+- Windows：`%USERPROFILE%\.devtools\startupctl\data\guard.json`
+- 仓库里直接跑：`<仓库>/data/guard.json`（已在 `.gitignore` 里）
+- 覆盖位置：`STARTUPCTL_DATA_DIR=<目录>`
+
+`data/` 归**登录用户**所有（安装时 chown），所以普通用户存名单不会被拒。
 
 JSON，可直接查看与手改：
 
@@ -308,7 +318,7 @@ JSON，可直接查看与手改：
 }
 ```
 
-**永不自动删除**：安装、更新、卸载都只碰功能文件。
+升级不碰 `data/`；卸载会连同安装根一起删除——删掉项目就不留垃圾。
 
 ## 跨平台支持
 

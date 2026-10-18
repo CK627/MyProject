@@ -63,21 +63,23 @@ UTF-8 无 BOM + CRLF + `chcp 65001` 在直接调用与 `call` 两种方式下都
 CI 的 `contract` job 跑同一个检查器，**并且单独验一遍 `git archive` 导出物**——
 GitHub 生成的 tarball 不套用 `.gitattributes`，而 `update` 正是从那里取文件的。
 
-### 3. 数据目录永不自动删除
+### 3. 数据跟着项目走：`<安装根>/data/`
 
-`<数据根>`（`~/.devtools/startupctl`，用户级安装下**就是安装根**）住着三样：
+名单与模式住在**安装根下的 `data/guard.json`**（用户明确要求，不放在
+`~/.devtools` 里另开目录）：
 
-```
-whitelist.json   白名单（安全产物 · 用户逐条确认过）
-backups/         备份（restore 的唯一来源）
-scans/           扫描快照（纯缓存）
-```
-
-安装、更新、卸载**都不碰**它们。`clear` **只清 `scans/`**，而且代码里把删除范围**写死为
-那一个目录**，不是"遍历数据根再跳过保留清单"——保留清单漏写一项就会误删，写死一个目录
-则不可能删到别处（这类代码，白名单不如不需要白名单）。
-
----
+- 装到哪、数据就在哪——`/Library/devtools/startupctl/data/`、仓库里的 `data/`、
+  Windows 的 `%USERPROFILE%\.devtools\startupctl\data\` 是同一个规则；
+- **卸载连安装根一起删**（`rm -rf`，但先检查 `VERSION` / `lib/startupctl` 标记，
+  不按路径无脑删），删掉项目不留无主文件；
+- **升级不删** `data/`：`deploy.sh` 只删功能项（bin lib config completions VERSION
+  uninstall deploy.sh shell-setup.sh）。
+- `data/` 必须归**登录用户**：系统级安装以 root 部署，deploy.sh 用
+  `STARTUPCTL_DATA_OWNER`（pkg postinstall 传）/ `SUDO_USER` / 控制台用户 依次兜底
+  chown；否则普通用户存名单会被拒。
+- 仓库里的 `data/` 已在 `.gitignore`。
+- 旧位置 `~/.devtools/startupctl/guard.json` 只做**一次性迁移**（读到就按新位置存一份，
+  旧文件不删，由用户自己清）。
 
 ## 安全模型（改这里之前先读完）
 
