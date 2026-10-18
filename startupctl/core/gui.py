@@ -21,47 +21,6 @@ import sys
 _SELFTEST_ENV = 'STARTUPCTL_GUI_SELFTEST'
 
 
-def double_click_ms():
-    """系统设置里的双击间隔（毫秒）。
-
-    单击与双击要分开，靠的就是"单击延迟多久才生效"——这个延迟**必须不小于**
-    系统的双击判定窗口，否则一次稍慢的双击会被拆成两次单击（用户实测踩到：
-    原来写死 240ms，而 macOS 默认是 500ms）。
-
-    macOS 从 NSGlobalDomain 的 com.apple.mouse.doubleClickThreshold 读（秒），
-    Windows 用 GetDoubleClickTime()，Linux 试 gsettings。读不到就按平台默认。
-    """
-    try:
-        if sys.platform == 'darwin':
-            out = subprocess.check_output(
-                ['defaults', 'read', '-g', 'com.apple.mouse.doubleClickThreshold'],
-                stderr=subprocess.DEVNULL, timeout=5).decode().strip()
-            v = float(out)
-            return int(v * 1000) if v <= 10 else int(v)
-        if os.name == 'nt':
-            import ctypes
-            v = ctypes.windll.user32.GetDoubleClickTime()
-            return int(v) if v else 500
-        for cmd in (['gsettings', 'get',
-                     'org.gnome.settings-daemon.peripherals.mouse', 'double-click'],
-                    ['gsettings', 'get',
-                     'org.gnome.desktop.peripherals.mouse', 'double-click']):
-            try:
-                out = subprocess.check_output(
-                    cmd, stderr=subprocess.DEVNULL, timeout=5).decode().strip()
-                if out.isdigit():
-                    return int(out)
-            except Exception:
-                continue
-    except Exception:
-        pass
-    return {'darwin': 500, 'win32': 500}.get(sys.platform, 400)
-
-
-def single_click_delay_ms():
-    """单击生效的延迟 = 系统双击窗口 + 80ms 余量。"""
-    return double_click_ms() + 80
-
 # 分组默认**折叠**：用户要求一打开是收起来的状态，先看应用列表再展开。
 EXPAND_BY_DEFAULT = False
 
@@ -271,7 +230,6 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
     bot.pack(fill='x', padx=10, pady=(0, 10))
     status_var = tk.StringVar()
     result = {'value': None}
-    CLICK = {'id': None}
     IMGS = _check_images(tk)
     _MARK_IMG = {'☑': IMGS['on'], '☐': IMGS['off'],
                  '⊘': IMGS['none'], '▣': IMGS['lock']}
@@ -407,7 +365,7 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
             r.selected = not r.selected
         fill()
 
-    def on_click(e, tree):
+    def on_click(e, tree, cb_col='#1'):
         # 点展开箭头只折叠，不改变勾选
         try:
             if tree.identify_element(e.x, e.y) == 'Treeitem.indicator':
@@ -417,34 +375,25 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
         if tree.identify_region(e.x, e.y) not in ('cell', 'tree'):
             return
         # 只有「选择」列（分组时是 #0，平铺时是 #1）响应点击
-        if tree.identify_column(e.x) not in ('#0', '#1'):
+        if tree.identify_column(e.x) != cb_col:
             return
         iid = tree.identify_row(e.y)
-        if not iid:
-            return
-        # ★ 单击延迟 = 系统双击窗口 + 余量：双击时第二下会先取消它。
-        #   否则双击 = 切换两次（净效果不变）+ 双击动作，用户看到的就是"乱跳"。
-        if CLICK['id'] is not None:
-            try:
-                tree.after_cancel(CLICK['id'])
-            except Exception:
-                pass
-            CLICK['id'] = None
-            return
-
-        def _fire():
-            CLICK['id'] = None
+        if iid:
+            # ★ **立即生效**，不加任何延迟（用户实测"240ms 都太长"）。
+            #   单击与双击靠"点在哪一列"区分：勾选列单击切换；名称/说明列
+            #   双击展开折叠分组。手感不能靠等。
             toggle_iid(tree, iid)
-        CLICK['id'] = tree.after(single_click_delay_ms(), _fire)
 
-    def on_double(e, tree):
-        """双击：分组行 = 展开/折叠；子行不响应（避免和单击混淆）。"""
-        if CLICK['id'] is not None:
-            try:
-                tree.after_cancel(CLICK['id'])
-            except Exception:
-                pass
-            CLICK['id'] = None
+    def on_double(e, tree, cb_col):
+        """双击名称/说明列 = 展开折叠分组；勾选列不处理。
+
+        勾选列上的双击 = 两次切换（净效果不变），不会误改什么。
+        """
+        try:
+            if tree.identify_column(e.x) == cb_col:
+                return 'break'
+        except Exception:
+            pass
         iid = tree.identify_row(e.y)
         if iid and iid.startswith('g:'):
             tree.item(iid, open=not bool(tree.item(iid, 'open')))
@@ -478,14 +427,15 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
         root.destroy()
 
     for tree, _idxs, _gb in trees:
+        cb_col = '#0' if _gb else '#1'      # 勾选列：分组树是 #0，平铺是 #1
         try:
             tree.tag_configure('grp', font=('TkDefaultFont', 11, 'bold'))
         except Exception:
             pass
-        tree.bind('<Button-1>', lambda e, t=tree: on_click(e, t))
+        tree.bind('<Button-1>', lambda e, t=tree, c=cb_col: on_click(e, t, c))
         tree.bind('<space>', lambda e, t=tree: (
             t.selection() and toggle_iid(t, t.selection()[0]), 'break')[1])
-        tree.bind('<Double-1>', lambda e, t=tree: on_double(e, t))
+        tree.bind('<Double-1>', lambda e, t=tree, c=cb_col: on_double(e, t, c))
 
     ttk.Button(bot, text='全选可选', command=select_all).pack(side='left')
     ttk.Button(bot, text='全不选', command=select_none).pack(side='left', padx=(6, 0))

@@ -431,7 +431,7 @@ def pick_processes(procs, platform='', own_pids=(), preselect=None,
     tabs = [('系统进程（必要，不可选）', sys_rows, None),
             ('其他进程', other_rows, app_group)]
     picked = _run_picker(state.rows, '选择进程',
-                         '单击勾选 · 双击分组行展开/折叠 · 系统项与锁定项不可选',
+                         '单击勾选列切换 · 双击名称列展开/折叠 · 系统项与锁定项不可选',
                          allow_gui=allow_gui, tabs=tabs)
     if picked is None:
         return None
@@ -447,7 +447,7 @@ def pick_startup(items, preselect=None, allow_gui=True):
     state = StartupRows(items, preselect)
     tabs = [('启动项', list(range(len(state.rows))), startup_group)]
     picked = _run_picker(state.rows, '选择启动项',
-                         '单击勾选 · 双击分组行展开/折叠 · 已在名单里的项默认勾选',
+                         '单击勾选列切换 · 双击名称列展开/折叠 · 已在名单里的项默认勾选',
                          allow_gui=allow_gui, tabs=tabs,
                          columns=('选择', '名称', '类型', '说明'),
                          widths=(70, 300, 110, 390))
