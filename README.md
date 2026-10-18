@@ -243,6 +243,18 @@ startupctl mode whitelist   # 按白名单执行（先打印计划、问确认�
 startupctl mode off         # 关闭干预
 ```
 
+### 记不住参数？在命令后面加 `?`
+
+```bash
+startupctl ?                  # 有哪些命令
+startupctl whitelist ?        # whitelist 后面能跟什么
+startupctl whitelist startup ?
+```
+
+打印的内容与 Tab 补全的候选完全一致，但**不依赖 shell 的补全机制**——
+cmd.exe 和 Windows PowerShell 5.1 都能用。zsh 里 `?` 是通配符，写成
+`startupctl whitelist '?'` 或直接 `startupctl whitelist help`。
+
 ## 命令速查表
 
 | 命令 | 说明 |

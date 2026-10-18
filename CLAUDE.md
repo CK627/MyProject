@@ -235,6 +235,10 @@ GitHub 生成的 tarball 不套用 `.gitattributes`，而 `update` 正是从那�
   冒烟有一条专门断言"用法里没有 ` ... ` 省略条目"——它防的就是帮助退化成目录摘录。
 - **本工具没有 `--` 旗标**（用户明确要求）。`cli.main()` 第一件事就是把任何 `-` 开头的
   参数判为用法错并退出 2——**不要为了"顺手"加回 `-y` / `--all`**。
+- **`startupctl <命令> ?` 打印该位置的可填值**（`help.HINTS`），层级与
+  Tab 补全一致。cmd / Windows PowerShell 5.1 没有可用的补全，这是它们的替代；
+  zsh 里 `?` 是通配符，所以 `help` 作为最后一个词也同义（`whitelist help`）。
+  改命令层级时**三处同步**：`cli.py`、`help.HINTS`、`completions/*`。
 - 每个子命令的完整说明放 `SUB_HELP`，由 `startupctl help <子命令>` 打印。
   **改 CLI 要同步四处**：`cli.py` 的分发、`help.COMMANDS`/`SUB_HELP`、
   `completions/startupctl.{zsh,bash}`、README 的命令速查表。

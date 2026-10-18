@@ -477,6 +477,23 @@ def main(argv=None):
         print(help_mod.HELP, end='')
         return EXIT_OK
 
+    # 「这个位置能填什么」：`startupctl <命令> ?`。
+    # cmd / Windows PowerShell 5.1 都没有可用的补全，这是给它们的显式替代：
+    # 打印的内容与 Tab 补全的层级完全一致。
+    # `help` 作为最后一个词时同义（zsh 会把未加引号的 `?` 当通配符，用 help 更稳）。
+    if argv[-1] in ('?', '？'):
+        text = help_mod.hint_text(argv[:-1])
+        if text is None:
+            sys.stderr.write('错误: 不知道该位置有哪些取值（试试 startupctl help）\n')
+            return EXIT_USAGE
+        print(text, end='')
+        return EXIT_OK
+    if len(argv) >= 2 and argv[-1].lower() == 'help':
+        text = help_mod.hint_text(argv[:-1])
+        if text is not None:
+            print(text, end='')
+            return EXIT_OK
+
     sub = argv[0].lower()
     rest = argv[1:]
 

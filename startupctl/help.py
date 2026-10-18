@@ -32,7 +32,51 @@ EXAMPLES = [
     ('startupctl list', '看这台机器有哪些第三方启动项'),
     ('startupctl whitelist', '开窗口挑要放行 / 要拦的东西'),
     ('startupctl mode', '先看当前模式会结束哪些进程（不改动）'),
+    ('startupctl whitelist ?', '看这个位置能填什么（等于 Tab 补全）'),
 ]
+
+# 「这个位置能填什么」——`startupctl <命令> ?` 打印它。
+# 与 Tab 补全同一份层级，但**不依赖任何 shell 的补全机制**：cmd/PowerShell/
+# zsh/bash 都能用（cmd 根本没有补全 API）。键是命令路径，值是 (标题, 候选表)。
+HINTS = {
+    (): ('可用命令', COMMANDS),
+    ('help',): ('可用命令', COMMANDS),
+    ('list',): ('list 的取值', [
+        ('all', '连系统项一起列'),
+        ('system', '只看系统项'),
+    ]),
+    ('mode',): ('mode 的取值', [
+        ('off', '不干预，只报告（默认）'),
+        ('deny_all', '全部拒绝：除系统基础进程外一律结束'),
+        ('blacklist', '黑名单：只结束挑中的'),
+        ('whitelist', '白名单：只放行挑中的'),
+    ]),
+    ('whitelist',): ('whitelist 后面可以跟', [
+        ('startup', '启动项维度'),
+        ('process', '进程维度'),
+    ]),
+    ('blacklist',): ('blacklist 后面可以跟', [
+        ('startup', '启动项维度'),
+        ('process', '进程维度'),
+    ]),
+    ('whitelist', 'startup'): ('再下一层', [('selector', '开窗口挑启动项加入白名单')]),
+    ('whitelist', 'process'): ('再下一层', [('selector', '开窗口挑进程加入白名单')]),
+    ('blacklist', 'startup'): ('再下一层', [('selector', '开窗口挑启动项加入黑名单')]),
+    ('blacklist', 'process'): ('再下一层', [('selector', '开窗口挑进程加入黑名单')]),
+    ('update',): ('update 后面可以跟', [('check', '只比对版本，不落盘')]),
+    ('uninstall',): ('uninstall 后面可以跟', [('confirm', '跳过确认，直接卸载')]),
+}
+
+
+def hint_text(path):
+    """`startupctl <命令> ?` 的输出；位置不认识返回 None。"""
+    key = tuple(w.lower() for w in path)
+    entry = HINTS.get(key)
+    if entry is None:
+        return None
+    title, rows = entry
+    return '\n'.join([title + ':'] + _rows(rows)) + '\n'
+
 
 SUB_HELP = {
     'list': """

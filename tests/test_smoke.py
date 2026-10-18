@@ -1290,6 +1290,22 @@ def check_cli_contracts():
     check('用法: startupctl list' in out, 'help <子命令> 打印该子命令的帮助')
     rc, out = run_cli(['help', 'nosuch'])
     check_eq(rc, 2, 'help 未知子命令退出 2')
+    # 「这个位置能填什么」——cmd/PowerShell 没有补全时用它
+    for argv, needle in (
+            (['?'], 'startupctl list'),
+            (['list', '?'], 'all'),
+            (['mode', '?'], 'deny_all'),
+            (['whitelist', '?'], 'startup'),
+            (['whitelist', 'startup', '?'], 'selector'),
+            (['update', '?'], 'check'),
+            (['uninstall', '?'], 'confirm')):
+        rc, out = run_cli(argv)
+        check_eq(rc, 0, '`%s` 退出 0' % ' '.join(argv))
+        check(needle in out, '`%s` 提示里含 %s' % (' '.join(argv), needle))
+    rc, out = run_cli(['whitelist', 'help'])
+    check_eq(rc, 0, '`whitelist help` 等价于 `whitelist ?`')
+    rc, out = run_cli(['nosuch', '?'])
+    check_eq(rc, 2, '不认识的位置退出 2')
     rc, out = run_cli(['nosuchcmd'])
     check_eq(rc, 2, '未知子命令退出 2（用法错）')
 
