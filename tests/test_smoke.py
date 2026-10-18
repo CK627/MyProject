@@ -1009,6 +1009,33 @@ def check_windows_payload_is_clean():
         os.name = saved
 
 
+def check_broken_file_is_never_overwritten():
+    section('坏策略文件绝不被静默覆盖（数据丢失防线）')
+    import tempfile as _tf
+    import shutil as _sh
+    sys.path.insert(0, ROOT)
+    from startupctl.core import guard as G
+
+    tmp = _tf.mkdtemp()
+    try:
+        path = os.path.join(tmp, 'guard.json')
+        with open(path, 'w', encoding='utf-8') as fh:
+            fh.write('{ this is not json')
+        before = open(path, 'rb').read()
+        g = G.Guard(path=path).load()
+        check(getattr(g, '_broken', False), '坏文件被标记为 _broken')
+        check(g.mode == G.MODE_OFF and g.count() == (0, 0),
+              '坏文件按"不干预 + 空名单"跑（工具仍可用）')
+        try:
+            g.save()
+            check(False, '坏文件上的 save() 被拒绝')
+        except ValueError:
+            check(True, '坏文件上的 save() 被拒绝（不会覆盖）')
+        check(open(path, 'rb').read() == before, '磁盘上的坏文件字节未变')
+    finally:
+        _sh.rmtree(tmp, ignore_errors=True)
+
+
 def check_deploy_ignores_umask():
     section('部署不继承 umask（077 会装出 0600/0700，普通用户跑不了）')
     import subprocess as _sp
@@ -1211,6 +1238,7 @@ def main():
     check_app_group()
     check_fixture_links_are_relative()
     check_deploy_ignores_umask()
+    check_broken_file_is_never_overwritten()
 
     print('')
     print('=' * 60)

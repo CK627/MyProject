@@ -338,9 +338,14 @@ def _policy_add(ctx, g, name, dim):
             label = getattr(obj, 'comm', None) or (
                 getattr(obj[0], 'comm', '?') if isinstance(obj, tuple) else '?')
             print(c('跳过 %s: %s' % (label, e), 'yellow'))
-    g.save()
     total = len(g.entries_of(name, dim))
     added = total - before
+    if added:
+        try:
+            g.save()
+        except ValueError as e:
+            sys.stderr.write('错误: %s\n' % e)
+            return EXIT_FAIL
     note = ''
     if len(picked) != added:
         # 同名的多个进程共用一条规则（匹配方式就是进程名），必须说出来，

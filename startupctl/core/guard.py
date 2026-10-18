@@ -672,6 +672,12 @@ class Guard(object):
         return self
 
     def save(self):
+        # ★ 解析失败过的策略文件**绝不覆盖**。
+        #   load() 在坏文件上会退回"空名单 + 不干预"好让工具还能跑；如果这时
+        #   任何一个入口顺手 save()，用户原来的名单就被一份空文件永久替换了。
+        #   这是静默数据丢失，比拒绝保存难发现得多。
+        if getattr(self, '_broken', False):
+            raise ValueError('策略文件解析失败，已拒绝覆盖: %s' % self.path)
         d = os.path.dirname(self.path)
         if d:
             paths.ensure_dir(d)
