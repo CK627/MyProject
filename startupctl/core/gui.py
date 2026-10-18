@@ -104,6 +104,20 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
     columns = columns or ('选择', '名称', '说明')
     root, tk, ttk = _root(title)
 
+    # ★ 颜色写死，不用 macOS 的动态色。
+    #   aqua 主题里 TCheckbutton/TLabel 的前景是 systemLabelColor —— 窗口不是
+    #   活动窗口时系统把它渲染成灰色，整屏看起来像"全禁用了"（用户实测反馈）。
+    #   列表底色同理：用纯白，和之前的表格观感一致。
+    style = ttk.Style()
+    style.configure('Pick.TCheckbutton', background='#ffffff', foreground='#1d1d1f')
+    style.map('Pick.TCheckbutton',
+              foreground=[('disabled', '#9a9a9a')],
+              background=[('active', '#f2f2f2')])
+    style.configure('Pick.TFrame', background='#ffffff')
+    style.configure('Pick.TLabel', background='#ffffff', foreground='#3a3a3a')
+    style.configure('PickHead.TLabel', background='#ffffff', foreground='#111111',
+                    font=('TkDefaultFont', 11, 'bold'))
+
     head = ttk.Frame(root)
     head.pack(fill='x', padx=10, pady=(10, 0))
     ttk.Label(head, text=subtitle or '勾选要加入的条目（系统项与锁定项不可选）',
@@ -126,12 +140,13 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
     def make_page(name, idxs, group_by):
         frame = ttk.Frame(nb)
         nb.add(frame, text='%s（%d）' % (name, len(idxs)))
-        canvas = tk.Canvas(frame, highlightthickness=0, borderwidth=0)
+        canvas = tk.Canvas(frame, highlightthickness=0, borderwidth=0,
+                           background='#ffffff')
         vs = ttk.Scrollbar(frame, orient='vertical', command=canvas.yview)
         canvas.configure(yscrollcommand=vs.set)
         vs.pack(side='right', fill='y')
         canvas.pack(side='left', fill='both', expand=True)
-        inner = ttk.Frame(canvas)
+        inner = ttk.Frame(canvas, style='Pick.TFrame')
         win = canvas.create_window((0, 0), window=inner, anchor='nw')
         canvas.bind('<Configure>',
                     lambda e, c=canvas, w=win: c.itemconfigure(w, width=e.width))
@@ -170,6 +185,12 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
             inner.grid_columnconfigure(0, minsize=18)
             inner.grid_columnconfigure(1, weight=1)
             row = 0
+            # 表头：没有它，一列列勾选框看起来不像表格
+            ttk.Label(inner, text='', style='PickHead.TLabel').grid(row=row, column=0)
+            for j, name in enumerate(columns[1:], start=1):
+                ttk.Label(inner, text=name, style='PickHead.TLabel').grid(
+                    row=row, column=j, sticky='w', padx=(0, 10), pady=(0, 4))
+            row += 1
             vis = [gi for gi in idxs if match(rows[gi], f)]
             if group_by:
                 groups, order = {}, []
@@ -194,7 +215,8 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
         live = not getattr(r, 'frozen', False)
         var = tk.BooleanVar(value=r.selected)
         texts = columns[1:] if len(columns) > 1 else ()
-        cb = ttk.Checkbutton(parent, text=getattr(r, 'display_name', None)
+        cb = ttk.Checkbutton(parent, style='Pick.TCheckbutton',
+                             text=getattr(r, 'display_name', None)
                              or getattr(r, 'label', ''), variable=var)
         if live:
             def _toggle(_r=r, _v=var):
@@ -209,7 +231,7 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
         cells = list(getattr(r, 'cells', None) or
                      [getattr(r, 'label', ''), getattr(r, 'detail', '')])
         for j, val in enumerate(cells[1:], start=2):
-            ttk.Label(parent, text=str(val), foreground='#555').grid(
+            ttk.Label(parent, text=str(val), style='Pick.TLabel').grid(
                 row=row, column=j, sticky='w', padx=(0, 10))
         CB_VARS[gi] = var
         return row + 1
@@ -218,8 +240,8 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
         live = [rows[gi] for gi in kids if not getattr(rows[gi], 'frozen', False)]
         holder = {'open': EXPAND_BY_DEFAULT, 'rows': [], 'kids': kids}
         var = tk.BooleanVar(value=False)
-        cb = ttk.Checkbutton(parent, text='%s（%d）' % (gname, len(kids)),
-                             variable=var)
+        cb = ttk.Checkbutton(parent, style='Pick.TCheckbutton',
+                             text='%s（%d）' % (gname, len(kids)), variable=var)
         if live:
             def _toggle_group(_v=var, _live=live):
                 want = bool(_v.get())
@@ -239,7 +261,7 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
         cb.grid(row=row, column=1, sticky='w', pady=(6, 1))
 
         arrow = ttk.Label(parent, text=('▾' if holder['open'] else '▸'),
-                          cursor='hand2', width=2)
+                          cursor='hand2', width=2, style='Pick.TLabel')
         arrow.grid(row=row, column=0, sticky='w')
         arrow.bind('<Button-1>', lambda e, h=holder, a=arrow: toggle_open(h, a))
         holder['cb'], holder['var'], holder['live'] = cb, var, live
@@ -336,6 +358,14 @@ def pick(rows, title='选择', subtitle='', columns=('选择', '名称', '说明
     filter_var.trace_add('write', lambda *a: (rebuild(), None)[1])
     rebuild()
     entry.focus_set()
+    # 让窗口真的成为活动窗口：否则 macOS 把控件按"非活动"的灰色画
+    try:
+        root.lift()
+        root.attributes('-topmost', True)
+        root.focus_force()
+        root.after(300, lambda: root.attributes('-topmost', False))
+    except Exception:
+        pass
     try:
         root.bind('<Escape>', lambda e: on_cancel())
         root.bind('<Return>', lambda e: on_ok())
