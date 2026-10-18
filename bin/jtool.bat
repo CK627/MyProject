@@ -392,7 +392,7 @@ if not defined JTOOL_MIRROR set "JTOOL_MIRROR=http://101.132.165.98/dist/jtool"
 REM --max-time matters: on a blocked network the connect does not fail, it hangs,
 REM and without it the whole update stalls here looking like a broken script.
 if /i not "!JTOOL_MIRROR!"=="none" for /f "usebackq delims=" %%v in (`curl -fsSL --connect-timeout 6 --max-time 15 "!JTOOL_MIRROR!/VERSION" 2^>nul`) do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
-for /f "usebackq delims=" %%v in (`powershell -NoProfile -Command "(Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/CK627/MyProject/jtool/VERSION').Content.Trim()"`) do set "REMOTE_VERSION=%%v"
+if "!REMOTE_VERSION!"=="" for /f "usebackq delims=" %%v in (`powershell -NoProfile -Command "(Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/CK627/MyProject/jtool/VERSION').Content.Trim()"`) do set "REMOTE_VERSION=%%v"
 if "!REMOTE_VERSION!"=="" for /f "usebackq delims=" %%v in (`curl -fsSL "https://raw.githubusercontent.com/CK627/MyProject/jtool/VERSION" 2^>nul`) do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
 REM Third source: the GitHub contents API. raw.githubusercontent.com is unreachable
 REM on some networks (CN IDCs, measured) while api.github.com works; with raw-only
