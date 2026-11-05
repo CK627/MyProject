@@ -3,16 +3,18 @@
 # ptool 一键安装脚本（macOS / Linux）
 #
 # 用法（安装后自动刷新当前终端，无需手动 source）:
-#   source <(curl -fsSL http://101.132.165.98/dist/ptool/install.sh)
+#   source <(curl -fsSL https://raw.githubusercontent.com/CK627/MyProject/ptool/installer/install.sh)
 #
 # 传统用法（安装后需重开终端或手动 source）:
-#   curl -fsSL http://101.132.165.98/dist/ptool/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/CK627/MyProject/ptool/installer/install.sh | bash
 #
-# 国内镜像是本脚本的默认来源，GitHub 只是回退路径。raw.githubusercontent.com 在国内
-# 经常被直接重置（curl: (35) Recv failure），遇到这种情况不用改脚本，改用走 API 的
-# 等价命令取本文件即可（同一个文件，api.github.com 通常可达）：
+# raw.githubusercontent.com 在国内经常被直接重置（curl: (35) Recv failure），这时不用
+# 改脚本，改用走 API 的等价命令取本文件即可（同一个文件，api.github.com 通常可达）：
 #   source <(curl -fsSL -H "Accept: application/vnd.github.raw" \
 #     "https://api.github.com/repos/CK627/MyProject/contents/installer/install.sh?ref=ptool")
+#
+# 国内镜像（自建服务器，可能在跑也可能没有；脚本内部仍是镜像优先）:
+#   source <(curl -fsSL http://101.132.165.98/dist/ptool/install.sh)
 #
 # macOS : 下载最新 Release 的 .dmg，挂载后安装里面的 .pkg（带安装器收据）
 # Linux : 下载最新 Release 的 <tool>-<ver>-linux.tar.gz，运行其中的 install-from-source.sh
