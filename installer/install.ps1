@@ -4,7 +4,14 @@
 # Usage (refreshes PATH in the current session when done):
 #   irm https://raw.githubusercontent.com/CK627/MyProject/jtool/installer/install.ps1 | iex
 #
-# China mirror (no VPN needed, same script, different download host):
+# raw.githubusercontent.com is frequently reset on mainland networks (curl 35 /
+# connection timeout). The same file is also served by api.github.com; use that
+# URL when raw fails:
+#   irm "https://api.github.com/repos/CK627/MyProject/contents/installer/install.ps1?ref=jtool" `
+#     -Headers @{ Accept = 'application/vnd.github.raw' } | iex
+#
+# China mirror (self-hosted, may or may not be running; the script itself still
+# tries the mirror first):
 #   irm http://101.132.165.98/dist/jtool/install.ps1 | iex
 #
 # Downloads the latest release .exe and installs it silently. Requires

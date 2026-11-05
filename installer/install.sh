@@ -8,7 +8,12 @@
 # 传统用法（安装后需重开终端或手动 source）:
 #   curl -fsSL https://raw.githubusercontent.com/CK627/MyProject/jtool/installer/install.sh | bash
 #
-# 国内镜像（无需 VPN，同一份脚本，只是换个下载地址）:
+# raw.githubusercontent.com 在国内经常被直接重置（curl: (35) Recv failure），这时不用
+# 改脚本，改用走 API 的等价命令取本文件即可（同一个文件，api.github.com 通常可达）：
+#   source <(curl -fsSL -H "Accept: application/vnd.github.raw" \
+#     "https://api.github.com/repos/CK627/MyProject/contents/installer/install.sh?ref=jtool")
+#
+# 国内镜像（自建服务器，可能在跑也可能没有；脚本内部仍是镜像优先）:
 #   source <(curl -fsSL http://101.132.165.98/dist/jtool/install.sh)
 #
 # macOS : 下载最新 Release 的 .dmg，挂载后安装里面的 .pkg（带安装器收据）
@@ -113,7 +118,15 @@
         fi
         local gurl="$BASE/releases/download/${TOOL}-v${ver}/${asset}"
         info "下载 $gurl"
-        curl -fL --progress-bar "$gurl" -o "$out"
+        # 404 在这里通常不是文件名写错，而是「tag 有了但 release 没传资产」，或者
+        # VERSION 来自镜像、GitHub 侧还没发版。把可能的原因说出来，别让人对着
+        # 一句 curl 404 猜。
+        if ! curl -fL --progress-bar "$gurl" -o "$out"; then
+            err "下载失败：$gurl
+      该 tag 存在但没有对应的 release 资产（或版本号来自镜像、GitHub 侧尚未发版）。
+      请改用镜像（JTOOL_MIRROR=<url>），或从源码安装：
+        git clone -b ${TOOL} ${BASE}.git && cd ${REPO} && ./installer/install-from-source.sh install"
+        fi
     }
 
     case "$(uname -s)" in
@@ -122,7 +135,7 @@
             command -v hdiutil >/dev/null 2>&1 || err "需要 hdiutil（macOS 自带）"
             info "解析最新版本..."
             VER="$(resolve_latest)" || err "无法解析最新版本，请检查网络"
-            [ -n "$VER" ] || err "未找到 ${TOOL} 的版本 tag"
+            [ -n "$VER" ] || err "未找到 ${TOOL} 的版本 tag（镜像不可达，GitHub 的 git / api 也都没返回，多半是网络受限）"
             info "安装 ${TOOL} ${VER}"
 
             # 发布产物是 .dmg，.pkg 打在 dmg 里，所以要先挂载再从挂载点安装。
@@ -153,7 +166,7 @@
             # 资产（installer/linux-build.sh 产出、随 tag 上传）才是用户要装的东西。
             info "解析最新版本..."
             VER="$(resolve_latest)" || err "无法解析最新版本，请检查网络"
-            [ -n "$VER" ] || err "未找到 ${TOOL} 的发布版本"
+            [ -n "$VER" ] || err "未找到 ${TOOL} 的发布版本（镜像不可达，GitHub 的 git / api 也都没返回，多半是网络受限）"
             ASSET="${TOOL}-${VER}-linux.tar.gz"
             TMPDIR_DL=$(mktemp -d)
             fetch_asset "$ASSET" "$VER" "$TMPDIR_DL/$ASSET" || err "下载失败：$ASSET"

@@ -7,7 +7,7 @@
 
 ## 安装
 
-### 命令行一键安装
+### 方式一：一键安装
 
 macOS / Linux（安装后自动刷新当前终端，无需手动 source）：
 
@@ -21,16 +21,23 @@ Windows（PowerShell）：
 irm https://raw.githubusercontent.com/CK627/MyProject/jtool/installer/install.ps1 | iex
 ```
 
-macOS 发布的是 `.dmg`，`.pkg` 打在它里面：手动装就双击 dmg 再双击 `.pkg`，用上面的
-一键安装则是由脚本自动挂载 dmg、从挂载点里取 `.pkg` 安装，装完自动卸载。
-Release 里**没有**单独的 `.pkg` 资产，所以别去直接下载 `.pkg`（会 404）。
-Linux 下载 `.tar.gz` 解压后安装；
-Windows 下载 `.exe` 静默安装。
+> **国内网络注意**：`raw.githubusercontent.com` 经常被直接重置，报
+> `curl: (35) Recv failure: Connection reset by peer` 或干脆超时。换成走 API 的等价命令即可
+> ——`api.github.com` 通常可达，取的是同一个文件：
+>
+> ```bash
+> source <(curl -fsSL -H "Accept: application/vnd.github.raw" \
+>   "https://api.github.com/repos/CK627/MyProject/contents/installer/install.sh?ref=jtool")
+> ```
+>
+> ```powershell
+> irm "https://api.github.com/repos/CK627/MyProject/contents/installer/install.ps1?ref=jtool" `
+>   -Headers @{ Accept = 'application/vnd.github.raw' } | iex
+> ```
 
-### 国内镜像（无需 VPN）
+### 方式二：国内镜像（无需 VPN，可能没在跑）
 
-GitHub 的 raw / api / release 域名在国内不保证可达。镜像服务器在国内，产物与
-GitHub Release 逐字节相同：
+镜像服务器在国内，产物与 GitHub Release 一致：
 
 ```bash
 # macOS / Linux
@@ -42,28 +49,42 @@ source <(curl -fsSL http://101.132.165.98/dist/jtool/install.sh)
 irm http://101.132.165.98/dist/jtool/install.ps1 | iex
 ```
 
-安装脚本**先访问镜像，拿不到再回退 GitHub Release**，`jtool update` 同样如此。
-换源用环境变量：
+镜像由自建服务器提供，**可能没在跑**：返回 404 或连不上就用方式一或方式三。
+安装脚本本身是**先镜像、再回退 GitHub Release**，`jtool update` 同理；换源用环境变量：
 
 ```bash
 JTOOL_MIRROR=https://mirror.example.com/jtool source <(curl -fsSL .../install.sh)
 JTOOL_MIRROR=none source <(curl -fsSL .../install.sh)   # 强制只走 GitHub
 ```
 
-### macOS / Linux
+### 方式三：源码安装
+
+不下载发布产物，也不依赖镜像是否在线，新机器和离线环境用它：
 
 ```bash
-cd /path/to/jtool
+# macOS / Linux
+git clone -b jtool https://github.com/CK627/MyProject.git
+cd MyProject
 ./installer/install-from-source.sh install
 ```
 
 安装完成后执行 `source ~/.zshrc`（或 `source ~/.bashrc`）或重新打开终端。
 
-### Windows
+Windows 在仓库里右键 `installer\windows\install.bat`，选 **以管理员身份运行**，
+装完重新打开 CMD 窗口。
 
-在 `installer\windows\` 下右键 `install.bat`，选择 **以管理员身份运行**。
+### 方式四：离线安装包
 
-安装完成后重新打开 CMD 窗口。
+从构建机的 `dist/` 直接拷产物，全程不联网：
+
+| 系统 | 产物 | 怎么装 |
+|------|------|--------|
+| macOS | `jtool-<版本>.dmg` | 双击 dmg，再双击里面的 `.pkg` |
+| Linux | `jtool-<版本>-linux.tar.gz` | 解压后跑 `./installer/install-from-source.sh install` |
+| Windows | `jtool-setup-<版本>.exe` | 双击（静默安装，需要管理员） |
+
+macOS 发布的是 `.dmg`，`.pkg` 打在它里面。Release 与镜像里**都没有**独立的 `.pkg`
+资产，`jtool-<版本>.pkg` 只存在于 dmg 内部，直接下 `.pkg` 会 404。
 
 ---
 
