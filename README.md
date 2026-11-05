@@ -9,10 +9,13 @@
 
 ### 方式一：一键安装
 
-macOS / Linux（安装后自动刷新当前终端，无需手动 source）：
+macOS / Linux（安装后自动刷新当前终端，无需手动 source）——先走 raw，被重置就自动改走 api：
 
 ```bash
-source <(curl -fsSL https://raw.githubusercontent.com/CK627/MyProject/jtool/installer/install.sh)
+source <(curl -fsSL --connect-timeout 6 --max-time 15 \
+  https://raw.githubusercontent.com/CK627/MyProject/jtool/installer/install.sh \
+  || curl -fsSL -H "Accept: application/vnd.github.raw" \
+  "https://api.github.com/repos/CK627/MyProject/contents/installer/install.sh?ref=jtool")
 ```
 
 Windows（PowerShell）：
@@ -21,14 +24,9 @@ Windows（PowerShell）：
 irm https://raw.githubusercontent.com/CK627/MyProject/jtool/installer/install.ps1 | iex
 ```
 
-> **国内网络注意**：`raw.githubusercontent.com` 经常被直接重置，报
-> `curl: (35) Recv failure: Connection reset by peer` 或干脆超时。换成走 API 的等价命令即可
-> ——`api.github.com` 通常可达，取的是同一个文件：
->
-> ```bash
-> source <(curl -fsSL -H "Accept: application/vnd.github.raw" \
->   "https://api.github.com/repos/CK627/MyProject/contents/installer/install.sh?ref=jtool")
-> ```
+> `raw.githubusercontent.com` 在部分网络会被直接重置，报
+> `curl: (35) Recv failure: Connection reset by peer` 或干脆超时——同一台机器上
+> `api.github.com` 往往还通，两条命令取的是**同一个文件**。PowerShell 侧的对应写法：
 >
 > ```powershell
 > irm "https://api.github.com/repos/CK627/MyProject/contents/installer/install.ps1?ref=jtool" `
