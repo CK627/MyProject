@@ -38,23 +38,6 @@ run_root() {
 }
 
 # ============================================
-# 国内镜像源
-# ============================================
-# update 也默认先问镜像：raw.githubusercontent.com 与 api.github.com 在国内不保证
-# 可达，而「更新」和「安装」一样会卡在读取版本号这第一步上。
-# 镜像布局：<base>/VERSION（纯文本版本号）、<base>/<version>/<asset>（发布资产）。
-# 覆盖：JTOOL_MIRROR=<url> 换地址，JTOOL_MIRROR=none 强制只走 GitHub。
-tool_mirror() {
-    local tool_name="$1"
-    local default="http://101.132.165.98/dist/${tool_name}"
-    case "$tool_name" in
-        ptool) printf '%s' "${PTOOL_MIRROR:-$default}" ;;
-        jtool) printf '%s' "${JTOOL_MIRROR:-$default}" ;;
-        *)     printf '%s' "$default" ;;
-    esac
-}
-
-# ============================================
 # JDK 路径解析（全平台唯一实现）
 #
 # 版本号 -> JDK home，分三段，先廉价后昂贵：
@@ -351,33 +334,26 @@ do_update_via_curl() {
 
     # Step 1: 读取远程版本号（不依赖 git）
     #
-    # 三条路依次降级：国内镜像（最优先，国内直连可达）→ raw 跳转（省流，但
-    # raw.githubusercontent.com 在部分网络不可达）→ GitHub contents API + Accept:
-    # raw（走 api.github.com，通常可达）。只留一条的话，受限网络里「版本读取」
-    # 会先失败，而真正要装的 archive（走 codeload）其实是通的 —— 用户会看到
-    # 莫名其妙的「无法获取版本号」。
+    # 先走 contents API，再退 raw，顺序是有讲究的：
+    #   · api.github.com 在国内通常可达，且直接返回文件原文（不用解 base64）；
+    #   · raw.githubusercontent.com 国内经常被直接重置，放前面只会白等一个超时。
+    # 两条都失败才报错 —— 真正要下的 archive 走 codeload，往往还是通的，所以别把
+    # 「版本读取失败」当成「整台机器没网」。
     echo "正在检查更新..."
-    local remote_version="" owner_repo mirror
+    local remote_version="" owner_repo
     owner_repo="${base_url#https://github.com/}"
-    mirror="$(tool_mirror "$tool_name")"
-    # 超时必须短：国内访问 GitHub 常见的不是「连不上」而是「连上后一直挂着」，
-    # 没有 --max-time 就会把 update 卡死，看起来像命令坏了。
-    if [ "$mirror" != "none" ]; then
-        remote_version=$(curl -fsSL --connect-timeout 6 --max-time 15 "$mirror/VERSION" 2>/dev/null | tr -d '[:space:]')
-    fi
+    # 超时必须短：国内访问 GitHub 常见的不是「连不上」而是「连上后一直挂着」。
+    remote_version=$(curl -fsSL --connect-timeout 6 --max-time 20 -H 'Accept: application/vnd.github.raw' \
+        "https://api.github.com/repos/$owner_repo/contents/VERSION?ref=$branch" 2>/dev/null \
+        | tr -d '[:space:]')
     if [ -z "$remote_version" ]; then
-        remote_version=$(curl -fsSL --max-time 20 "$base_url/raw/refs/heads/$branch/VERSION" 2>/dev/null | tr -d '[:space:]')
-    fi
-    if [ -z "$remote_version" ]; then
-        remote_version=$(curl -fsSL --max-time 20 -H 'Accept: application/vnd.github.raw' \
-            "https://api.github.com/repos/$owner_repo/contents/VERSION?ref=$branch" 2>/dev/null \
-            | tr -d '[:space:]')
+        remote_version=$(curl -fsSL --connect-timeout 6 --max-time 20 "$base_url/raw/refs/heads/$branch/VERSION" 2>/dev/null | tr -d '[:space:]')
     fi
     if [ -z "$remote_version" ]; then
         # 别只说「检查网络」：raw 被重置时 curl 只留一个空字符串，和「版本号确实不存在」
-        # 长得一样。把试过的三处都说出来，省得用户去查错方向。
+        # 长得一样。把试过的两处都说出来，省得用户去查错方向。
         echo "错误: 无法获取版本号"
-        echo "  镜像不可达，GitHub 的 raw 与 contents API 也都没返回（国内 raw 常被连接重置）。"
+        echo "  GitHub 的 contents API 与 raw 都没返回（国内 raw 常被连接重置）。"
         echo "  请在能访问 GitHub 的网络下重试，或手动从仓库源码更新。"
         return 1
     fi
@@ -401,26 +377,15 @@ do_update_via_curl() {
     echo "发现新版本: v${local_version:-未知} → v$remote_version"
 
     # Step 4: 下载源码包并解压（不依赖 git）
-    # 镜像上的源码包用与 GitHub archive 相同的顶层目录名（MyProject-<branch>）打包，
-    # 所以下面 $src 两条路都能直接用。
+    # 用 GitHub archive（302 到 codeload），与 release 里的 src.tar.gz 同源，
+    # 顶层目录都是 MyProject-<branch>，所以下面 $src 直接可用。
     local tmp
     tmp=$(mktemp -d)
     local src="$tmp/MyProject-$branch"
-    local got=0
-    if [ "$mirror" != "none" ]; then
-        local murl="$mirror/$remote_version/${tool_name}-${remote_version}-src.tar.gz"
-        # 源码包不大，但仍不给 --max-time：慢网络下截断会得到一个坏 tar。
-        if curl -fsSL --connect-timeout 6 "$murl" -o "$tmp/src.tar.gz" 2>/dev/null \
-           && tar xzf "$tmp/src.tar.gz" -C "$tmp" 2>/dev/null; then
-            got=1
-        fi
-    fi
-    if [ "$got" -eq 0 ]; then
-        if ! curl -fsSL "$base_url/archive/refs/heads/$branch.tar.gz" | tar xz -C "$tmp"; then
-            rm -rf "$tmp"
-            echo "错误: 下载更新失败，请检查网络"
-            return 1
-        fi
+    if ! curl -fsSL --connect-timeout 6 "$base_url/archive/refs/heads/$branch.tar.gz" | tar xz -C "$tmp"; then
+        rm -rf "$tmp"
+        echo "错误: 下载更新失败，请检查网络"
+        return 1
     fi
 
     # Step 5: 复制文件到安装目录（保留用户配置）

@@ -35,31 +35,9 @@ irm https://raw.githubusercontent.com/CK627/MyProject/jtool/installer/install.ps
 >   -Headers @{ Accept = 'application/vnd.github.raw' } | iex
 > ```
 
-### 方式二：国内镜像（无需 VPN，可能没在跑）
+### 方式二：源码安装
 
-镜像服务器在国内，产物与 GitHub Release 一致：
-
-```bash
-# macOS / Linux
-source <(curl -fsSL http://101.132.165.98/dist/jtool/install.sh)
-```
-
-```powershell
-# Windows
-irm http://101.132.165.98/dist/jtool/install.ps1 | iex
-```
-
-镜像由自建服务器提供，**可能没在跑**：返回 404 或连不上就用方式一或方式三。
-安装脚本本身是**先镜像、再回退 GitHub Release**，`jtool update` 同理；换源用环境变量：
-
-```bash
-JTOOL_MIRROR=https://mirror.example.com/jtool source <(curl -fsSL .../install.sh)
-JTOOL_MIRROR=none source <(curl -fsSL .../install.sh)   # 强制只走 GitHub
-```
-
-### 方式三：源码安装
-
-不下载发布产物，也不依赖镜像是否在线，新机器和离线环境用它：
+不下载发布产物，也不依赖下载域名是否可达，新机器和离线环境用它：
 
 ```bash
 # macOS / Linux
@@ -73,7 +51,7 @@ cd MyProject
 Windows 在仓库里右键 `installer\windows\install.bat`，选 **以管理员身份运行**，
 装完重新打开 CMD 窗口。
 
-### 方式四：离线安装包
+### 方式三：离线安装包
 
 从构建机的 `dist/` 直接拷产物，全程不联网：
 
@@ -83,7 +61,7 @@ Windows 在仓库里右键 `installer\windows\install.bat`，选 **以管理员�
 | Linux | `jtool-<版本>-linux.tar.gz` | 解压后跑 `./installer/install-from-source.sh install` |
 | Windows | `jtool-setup-<版本>.exe` | 双击（静默安装，需要管理员） |
 
-macOS 发布的是 `.dmg`，`.pkg` 打在它里面。Release 与镜像里**都没有**独立的 `.pkg`
+macOS 发布的是 `.dmg`，`.pkg` 打在它里面。Release 里**没有**独立的 `.pkg`
 资产，`jtool-<版本>.pkg` 只存在于 dmg 内部，直接下 `.pkg` 会 404。
 
 ---
@@ -398,7 +376,6 @@ jtool/
 │   ├── install.ps1             # 一键安装（Windows）
 │   ├── install-from-source.sh  # 从源码安装 / 卸载（macOS / Linux）
 │   ├── linux-build.sh          # 打 Linux .tar.gz 安装包
-│   ├── publish-mirror.sh       # 把产物推到国内镜像服务器（dist/ -> 镜像）
 │   ├── macos/
 │   │   ├── build.sh            # 打包 .pkg / .dmg（.pkg 打进 dmg，不单独发布）
 │   │   ├── distribution.xml.in
@@ -481,12 +458,6 @@ pwsh tests/smoke.ps1
 
 CI（`.github/workflows/ci.yml`）在 ubuntu / macos / windows 上跑上面两套冒烟，外加
 `bash -n`/`zsh -n`、shellcheck（error 级阻塞）与 `.bat`/`.ps1` 的 CRLF 行尾契约检查。
-
-发布到国内镜像（`installer/publish-mirror.sh`，需要先跑完三个平台的构建）：
-
-```bash
-./installer/publish-mirror.sh        # 把 dist/ 里的产物推到镜像服务器
-```
 
 > ⚠️ `installer/linux-build.sh`、`installer/macos/build.sh` 与 `installer/windows/build-from-mac.sh`
 > 都要求**工作区干净**（`git status --porcelain` 非空即拒绝构建），改动未提交会直接卡住打包。
