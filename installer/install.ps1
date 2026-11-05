@@ -2,10 +2,13 @@
 # ptool one-click installer (Windows, PowerShell 5.1+)
 #
 # Usage (refreshes PATH in the current session when done):
-#   irm https://raw.githubusercontent.com/CK627/MyProject/ptool/installer/install.ps1 | iex
-#
-# China mirror (no VPN needed, same script, different download host):
 #   irm http://101.132.165.98/dist/ptool/install.ps1 | iex
+#
+# raw.githubusercontent.com is frequently reset on mainland networks (curl 35 /
+# connection timeout). The same file is also served by api.github.com; use that
+# URL when raw fails:
+#   irm "https://api.github.com/repos/CK627/MyProject/contents/installer/install.ps1?ref=ptool" `
+#     -Headers @{ Accept = 'application/vnd.github.raw' } | iex
 #
 # Downloads the latest release .exe and installs it silently. Requires
 # administrator rights (UAC prompt). Switch source with

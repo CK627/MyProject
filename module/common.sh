@@ -201,7 +201,11 @@ do_update_via_curl() {
             | tr -d '[:space:]')
     fi
     if [ -z "$remote_version" ]; then
-        echo "错误: 无法获取版本号，请检查网络"
+        # 别只说「检查网络」：raw 被重置时 curl 只留一个空字符串，和「版本号确实不存在」
+        # 长得一样。把试过的三处都说出来，省得用户去查错方向。
+        echo "错误: 无法获取版本号"
+        echo "  镜像不可达，GitHub 的 raw 与 contents API 也都没返回（国内 raw 常被连接重置）。"
+        echo "  请在能访问 GitHub 的网络下重试，或手动从仓库源码更新。"
         return 1
     fi
 
