@@ -374,20 +374,13 @@ REM ============================================
 :update_via_curl
 echo 正在检查更新...
 set "REMOTE_VERSION="
-REM Mirror first. raw.githubusercontent.com / api.github.com are not reachable from
-REM every network, and this one is: same VERSION file, one GET, no VPN needed.
-REM Override with PTOOL_MIRROR=<url>; set it to `none` to go straight to GitHub.
-if not defined PTOOL_MIRROR set "PTOOL_MIRROR=http://101.132.165.98/dist/ptool"
-REM --max-time matters: on a blocked network the connect does not fail, it hangs,
-REM and without it the whole update stalls here looking like a broken script.
-if /i not "!PTOOL_MIRROR!"=="none" for /f "usebackq delims=" %%v in (`curl -fsSL --connect-timeout 6 --max-time 15 "!PTOOL_MIRROR!/VERSION" 2^>nul`) do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
+REM The contents API comes first: raw.githubusercontent.com is reset on many
+REM mainland networks while api.github.com works, so probing raw first only burns
+REM two timeouts before the call that would have succeeded.
+if "!REMOTE_VERSION!"=="" for /f "usebackq delims=" %%v in (`curl -fsSL -H "Accept: application/vnd.github.raw" "https://api.github.com/repos/CK627/MyProject/contents/VERSION?ref=ptool" 2^>nul`) do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
+REM Then raw, once through PowerShell (works even without curl) and once via curl.
 if "!REMOTE_VERSION!"=="" for /f "usebackq delims=" %%v in (`powershell -NoProfile -Command "(Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/CK627/MyProject/ptool/VERSION').Content.Trim()"`) do set "REMOTE_VERSION=%%v"
 if "!REMOTE_VERSION!"=="" for /f "usebackq delims=" %%v in (`curl -fsSL "https://raw.githubusercontent.com/CK627/MyProject/ptool/VERSION" 2^>nul`) do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
-REM Third source: the GitHub contents API. raw.githubusercontent.com is unreachable
-REM on some networks (CN IDCs, measured) while api.github.com works; with raw-only
-REM probing the version check fails even though the archive download below (which
-REM goes through codeload) would have succeeded.
-if "!REMOTE_VERSION!"=="" for /f "usebackq delims=" %%v in (`curl -fsSL -H "Accept: application/vnd.github.raw" "https://api.github.com/repos/CK627/MyProject/contents/VERSION?ref=ptool" 2^>nul`) do if not defined REMOTE_VERSION set "REMOTE_VERSION=%%v"
 if "!REMOTE_VERSION!"=="" (
     echo 读取版本号失败，改用 git 方式...
     goto :update_via_git
@@ -414,20 +407,10 @@ rmdir /s /q "%UPD_TMP%" 2>nul
 mkdir "%UPD_TMP%"
 
 echo 正在下载更新...
-REM Mirror first here too. The mirror's source tarball is packed with the same
-REM top-level directory as GitHub's archive (MyProject-ptool\), so %UPD_SRC%
-REM below resolves either way.
-set "GOT_SRC=0"
-if /i not "!PTOOL_MIRROR!"=="none" (
-    curl -fsSL --connect-timeout 6 "!PTOOL_MIRROR!/!REMOTE_VERSION!/ptool-!REMOTE_VERSION!-src.tar.gz" -o "%UPD_TMP%\src.tar.gz" 2>nul
-    REM `if exist` is true for a 0-byte file, and curl leaves one behind on some
-    REM failures -- check the size, not just the name.
-    for %%A in ("%UPD_TMP%\src.tar.gz") do if %%~zA GTR 0 set "GOT_SRC=1"
-)
-if "!GOT_SRC!"=="0" (
-    powershell -NoProfile -Command "Invoke-WebRequest -UseBasicParsing 'https://github.com/CK627/MyProject/archive/refs/heads/ptool.tar.gz' -OutFile '%UPD_TMP%\src.tar.gz'"
-    if not exist "%UPD_TMP%\src.tar.gz" curl -fsSL "https://github.com/CK627/MyProject/archive/refs/heads/ptool.tar.gz" -o "%UPD_TMP%\src.tar.gz"
-)
+REM GitHub archive (302 to codeload); its top level is MyProject-ptool\, which is
+REM what SRC below expects.
+powershell -NoProfile -Command "Invoke-WebRequest -UseBasicParsing 'https://github.com/CK627/MyProject/archive/refs/heads/ptool.tar.gz' -OutFile '%UPD_TMP%\src.tar.gz'"
+if not exist "%UPD_TMP%\src.tar.gz" curl -fsSL "https://github.com/CK627/MyProject/archive/refs/heads/ptool.tar.gz" -o "%UPD_TMP%\src.tar.gz"
 if not exist "%UPD_TMP%\src.tar.gz" ( echo Download failed, fallback to git & goto :update_via_git )
 
 tar -xzf "%UPD_TMP%\src.tar.gz" -C "%UPD_TMP%"

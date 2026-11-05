@@ -13,9 +13,6 @@
 #   source <(curl -fsSL -H "Accept: application/vnd.github.raw" \
 #     "https://api.github.com/repos/CK627/MyProject/contents/installer/install.sh?ref=ptool")
 #
-# 国内镜像（自建服务器，可能在跑也可能没有；脚本内部仍是镜像优先）:
-#   source <(curl -fsSL http://101.132.165.98/dist/ptool/install.sh)
-#
 # macOS : 下载最新 Release 的 .dmg，挂载后安装里面的 .pkg（带安装器收据）
 # Linux : 下载最新 Release 的 <tool>-<ver>-linux.tar.gz，运行其中的 install-from-source.sh
 # Windows: 请用 PowerShell 一键安装（install.ps1）
@@ -39,12 +36,6 @@
     OWNER="CK627"
     REPO="MyProject"
     BASE="https://github.com/$OWNER/$REPO"
-
-    # 安装源：默认先走国内镜像，拿不到再回退 GitHub Release。
-    #   · 这台镜像机在国内直连可达，raw.githubusercontent.com / api.github.com 则不保证；
-    #     把镜像放在前面，「不开 VPN 也能装」才是真的，而不是「卡 30 秒后失败」。
-    #   · 覆盖方式：PTOOL_MIRROR=<url> 换镜像地址，PTOOL_MIRROR=none 强制只走 GitHub。
-    MIRROR="${PTOOL_MIRROR:-http://101.132.165.98/dist/ptool}"
 
     err() { echo "错误: $*" >&2; exit 1; }
     info() { echo "==> $*"; }
@@ -77,54 +68,38 @@
     #   · 没有 git 时回退 GitHub API：Linux 侧原本不要求装 git
     # ---------------------------------------------------------------
     resolve_latest() {
-        # 镜像优先：它就是一个纯文本 VERSION，一次 GET 就够，比 ls-remote / API 都快。
-        # 超时必须短——国内访问 GitHub 常见的不是「连不上」而是「连上后一直挂着」，
-        # 没有 --max-time 就会把整个安装卡死在第一步，看起来像脚本坏了。
-        if [ "$MIRROR" != "none" ]; then
-            local mv
-            mv=$(curl -fsSL --connect-timeout 6 --max-time 15 "$MIRROR/VERSION" 2>/dev/null | tr -d '[:space:]')
-            if [ -n "$mv" ]; then printf '%s\n' "$mv"; return 0; fi
-        fi
+        # 有 git 就直接问远端 tag：一次 ls-remote 拿全，不受 API 60 次/小时的匿名限额。
+        # 没 git 才走 API——Linux 侧原本就不要求装 git。
         if command -v git >/dev/null 2>&1; then
             git ls-remote --tags "$BASE.git" "refs/tags/${TOOL}-v*" \
                 | grep -vF '^{}' \
                 | sed "s|.*refs/tags/${TOOL}-v||" \
                 | sort -t. -k1,1n -k2,2n -k3,3n | tail -1
         else
-            curl -fsSL "https://api.github.com/repos/$OWNER/$REPO/releases?per_page=100" \
+            curl -fsSL --connect-timeout 6 --max-time 20 \
+                "https://api.github.com/repos/$OWNER/$REPO/releases?per_page=100" \
                 | grep -oE "\"tag_name\"[[:space:]]*:[[:space:]]*\"${TOOL}-v[0-9.]+\"" \
                 | sed -E "s/.*\"${TOOL}-v([0-9.]+)\"/\1/" \
                 | sort -t. -k1,1n -k2,2n -k3,3n | tail -1
         fi
     }
 
-    # 下载发布资产：先镜像，再 GitHub Release。
-    # 镜像按 <base>/<version>/<asset> 布局，与 release 里的资产同名，所以调用方只
-    # 传文件名和版本号，不用关心当前走的是哪条路。
+    # 下载发布资产：直接取 GitHub Release。
+    # 资产主机是 objects.githubusercontent.com（github.com 302 过去），与 raw 不是一台，
+    # raw 被重置时这里通常仍然能下——这也是脚本不依赖 raw 的原因。
     #
-    # GitHub 这一路在私有仓库下必然失败（404），这里把真实原因说出来：否则用户
-    # 只会看到一句 curl 的 404，去查文件名或者网络，方向全错。
+    # 404 在这里通常不是文件名写错，而是「tag 有了但 release 没传资产」。把可能的原因
+    # 说出来，别让人对着一句 curl 404 猜。
     fetch_asset() {
         # $1 资产文件名  $2 版本号  $3 输出路径
         local asset="$1" ver="$2" out="$3"
         rm -f "$out" 2>/dev/null || true
-        if [ "$MIRROR" != "none" ]; then
-            local murl="$MIRROR/$ver/$asset"
-            info "下载 $murl"
-            # 大文件（dmg / tar.gz）不能套短 --max-time，否则 20 秒就被掐断；
-            # 这里只给连接阶段设超时，传输阶段交给 curl 自己跑。
-            if curl -fL --connect-timeout 6 --progress-bar "$murl" -o "$out" 2>/dev/null \
-               && [ -s "$out" ]; then
-                return 0
-            fi
-            info "镜像上没有该版本，回退 GitHub Release"
-        fi
         local gurl="$BASE/releases/download/${TOOL}-v${ver}/${asset}"
         info "下载 $gurl"
-        if ! curl -fL --progress-bar "$gurl" -o "$out"; then
+        if ! curl -fL --connect-timeout 6 --progress-bar "$gurl" -o "$out"; then
             err "下载失败：$gurl
-      该 tag 存在但没有对应的 release 资产（或版本号来自镜像、GitHub 侧尚未发版）。
-      请改用镜像（PTOOL_MIRROR=<url>），或从源码安装：
+      该 tag 存在但没有对应的 release 资产（安装包没上传，或 tag 打错了）。
+      也可以从源码安装：
         git clone -b ${TOOL} ${BASE}.git && cd ${REPO} && ./installer/install-from-source.sh install"
         fi
     }
@@ -135,7 +110,7 @@
             command -v hdiutil >/dev/null 2>&1 || err "需要 hdiutil（macOS 自带）"
             info "解析最新版本..."
             VER="$(resolve_latest)" || err "无法解析最新版本，请检查网络"
-            [ -n "$VER" ] || err "未找到 ${TOOL} 的版本 tag（镜像不可达，GitHub 的 git / api 也都没返回，多半是网络受限）"
+            [ -n "$VER" ] || err "未找到 ${TOOL} 的版本 tag（GitHub 的 git / api 都没返回，多半是网络被挡，先确认网络或换台机器）"
             info "安装 ${TOOL} ${VER}"
 
             # 发布产物是 .dmg，.pkg 打在 dmg 里，所以要先挂载再从挂载点安装。
@@ -166,7 +141,7 @@
             # 资产（installer/linux-build.sh 产出、随 tag 上传）才是用户要装的东西。
             info "解析最新版本..."
             VER="$(resolve_latest)" || err "无法解析最新版本，请检查网络"
-            [ -n "$VER" ] || err "未找到 ${TOOL} 的发布版本（镜像不可达，GitHub 的 git / api 也都没返回，多半是网络受限）"
+            [ -n "$VER" ] || err "未找到 ${TOOL} 的发布版本（GitHub 的 git / api 都没返回，多半是网络被挡，先确认网络或换台机器）"
             ASSET="${TOOL}-${VER}-linux.tar.gz"
             TMPDIR_DL=$(mktemp -d)
             fetch_asset "$ASSET" "$VER" "$TMPDIR_DL/$ASSET" || err "下载失败：$ASSET"
