@@ -65,6 +65,7 @@ list_pythons() {
 
     local entries=""
     local seen=""
+    local unusable=0 hint=""
     for bin in "$PYTHON_BASE_DIR"/python[0-9]*.[0-9]* "$PYTHON_BASE_DIR"/python[0-9]*; do
         [ -f "$bin" ] && [ -x "$bin" ] || continue
 
@@ -81,7 +82,15 @@ list_pythons() {
         seen="$seen $version"
 
         local real_version
-        real_version=$("$bin" --version 2>&1 | head -1)
+        if python_probe "$bin"; then
+            real_version="$PYTHON_PROBE_VERSION"
+        else
+            # 跑不起来的照样列出来，但标清楚——最误导人的就是把报错当成版本号打印
+            # （旧版就是这样：`3.6 - ... Bad CPU type in executable`）。
+            real_version="不可用：$PYTHON_PROBE_ERROR"
+            unusable=$((unusable + 1))
+            [ -z "$hint" ] && hint="$PYTHON_PROBE_ERROR"
+        fi
 
         entries="${entries}  $version - $real_version ($bin)"$'\n'
     done
@@ -94,6 +103,12 @@ list_pythons() {
         printf '%s' "$entries" | sort
     fi
 
+    if [ "$unusable" -gt 0 ]; then
+        echo ""
+        echo "  注：标「不可用」的解释器在这台机器上跑不起来，ptool use 不会接受它们。"
+        PYTHON_PROBE_ERROR="$hint" python_probe_hint
+    fi
+
     echo ""
     [ -n "$PTOOL_DEFAULT_VERSION" ] && echo "默认版本: $PTOOL_DEFAULT_VERSION" || echo "默认版本: 未设置"
 }
@@ -104,13 +119,21 @@ list_pythons() {
 show_state() {
     echo "ptool - Python 版本管理"
     if [ -n "$PTOOL_DEFAULT_VERSION" ]; then
+        local cur
+        cur=$(get_python_path "$PTOOL_DEFAULT_VERSION")
         echo "当前版本: $PTOOL_DEFAULT_VERSION"
-        echo "路径:     $(get_python_path "$PTOOL_DEFAULT_VERSION")"
+        echo "路径:     $cur"
+        # 默认版本可能是在别的机器上设的，或者装完系统后架构变了——探一次，别让
+        # 用户敲 python 才发现坏了。
+        if ! python_probe "$cur"; then
+            echo "⚠ 这个解释器在本机跑不起来：$PYTHON_PROBE_ERROR"
+            echo "  裸敲 python 会失败，用 ptool use <版本> 换一个（ptool list 看哪些可用）"
+        fi
     else
         echo "当前版本: （未设置，用 ptool use <版本号> 设置）"
     fi
     echo "基础目录: $PYTHON_BASE_DIR"
-    local n=0 seen="" bin version
+    local n=0 unusable=0 seen="" bin version
     for bin in "$PYTHON_BASE_DIR"/python[0-9]*.[0-9]* "$PYTHON_BASE_DIR"/python[0-9]*; do
         [ -f "$bin" ] && [ -x "$bin" ] || continue
         case "$(basename "$bin")" in *-*) continue ;; esac
@@ -119,9 +142,17 @@ show_state() {
         [ -z "$version" ] && continue
         case " $seen " in *" $version "*) continue ;; esac
         seen="$seen $version"
-        n=$((n + 1))
+        if python_probe "$bin"; then
+            n=$((n + 1))
+        else
+            unusable=$((unusable + 1))
+        fi
     done
-    echo "已安装:   $n 个（ptool list 看明细）"
+    if [ "$unusable" -gt 0 ]; then
+        echo "已安装:   $n 个可用（另有 $unusable 个跑不起来，ptool list 看明细）"
+    else
+        echo "已安装:   $n 个（ptool list 看明细）"
+    fi
     echo ""
     echo "ptool help 看全部命令"
 }
@@ -171,6 +202,17 @@ cmd_use() {
 
     if [ ! -f "$python_path" ]; then
         echo "错误: Python $version 不存在 ($python_path)"
+        return 1
+    fi
+
+    # 存在 ≠ 能跑。新机器上常见 /usr/local/bin 里留着 x86_64 的旧版本，在 Apple
+    # Silicon 上一执行就 "Bad CPU type in executable"。真写进配置的话，shim 会 exec
+    # 到一个跑不起来的二进制，整台机器的 python 直接坏掉——所以这里先探一次。
+    if ! python_probe "$python_path"; then
+        echo "错误: Python $version 无法在这台机器上运行" >&2
+        echo "      $python_path: $PYTHON_PROBE_ERROR" >&2
+        python_probe_hint >&2
+        echo "      默认版本未改动。" >&2
         return 1
     fi
 

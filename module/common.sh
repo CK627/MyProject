@@ -38,6 +38,49 @@ run_root() {
 }
 
 # ============================================
+# 解释器可用性探测
+# ============================================
+# 只判断「文件存在且可执行」是不够的：/usr/local/bin 里常混着 x86_64 的老版本，
+# 在 Apple Silicon（没装 Rosetta 2）上一执行就 "Bad CPU type in executable"。
+# 这种版本既不该被 list 当成正常版本列出来，更不能被 `ptool use` 接受——一旦写进
+# 配置，shim 就会 exec 到一个跑不起来的二进制，整台机器的 python 直接坏掉。
+#
+# 判定标准只有一个：能执行，且 `--version` 的第一行是 "Python <数字>"。
+# 失败原因写进 PYTHON_PROBE_ERROR，调用方拼提示时用。
+PYTHON_PROBE_ERROR=""
+PYTHON_PROBE_VERSION=""
+python_probe() {
+    local bin="$1" out
+    PYTHON_PROBE_ERROR=""
+    PYTHON_PROBE_VERSION=""
+    [ -f "$bin" ] || { PYTHON_PROBE_ERROR="文件不存在"; return 1; }
+    [ -x "$bin" ] || { PYTHON_PROBE_ERROR="没有执行权限"; return 1; }
+    # 2>&1 是必需的：Python 2 把版本号打在 stderr 上。
+    out=$("$bin" --version 2>&1 | head -1)
+    case "$out" in
+        # 顺手把首行带回去，调用方不用为了显示版本再跑一次解释器。
+        Python\ [0-9]*) PYTHON_PROBE_VERSION="$out"; return 0 ;;
+    esac
+    PYTHON_PROBE_ERROR="${out:-无法执行}"
+    return 1
+}
+
+# 「跑不起来」的补充说明。架构不匹配在 Apple Silicon 上最常见，给一条能照做的命令，
+# 别让人对着 "Bad CPU type in executable" 自己猜。
+python_probe_hint() {
+    case "${PYTHON_PROBE_ERROR:-}" in
+        *"Bad CPU type"*)
+            echo "      这台是 $(uname -m)，该解释器架构不匹配（通常是 x86_64 装在 Apple Silicon 上）。"
+            echo "      装 Rosetta 2: sudo softwareupdate --install-rosetta --agree-to-license"
+            echo "      或改用 arm64 版本的解释器。"
+            ;;
+        *"No such file"*|*"文件不存在"*)
+            echo "      目标文件不存在，先用 ptool scan 重新扫描。"
+            ;;
+    esac
+}
+
+# ============================================
 # 扫描 Python 路径
 # ============================================
 do_scan() {
@@ -76,18 +119,31 @@ do_scan() {
     echo ""
 
     echo "已安装的 Python:"
-    local seen=""
+    local seen="" unusable=0 hint=""
     for bin in "$python_base_dir"/python[0-9]*.[0-9]* "$python_base_dir"/python[0-9]*; do
         [ -f "$bin" ] && [ -x "$bin" ] || continue
         # 跳过 python*-config、python*-intel64 等非解释器文件
         basename "$bin" | grep -q '-' && continue
         local ver
-        ver=$("$bin" --version 2>&1 | head -1)
+        if python_probe "$bin"; then
+            ver="$PYTHON_PROBE_VERSION"
+        else
+            # 跑不起来的也列出来，但明确标成不可用——否则用户会以为它能用
+            echo "  $(basename "$bin") - 不可用：$PYTHON_PROBE_ERROR"
+            unusable=$((unusable + 1))
+            [ -z "$hint" ] && hint="$PYTHON_PROBE_ERROR"
+            continue
+        fi
         # 跳过重复
         case " $seen " in *" $ver "*) continue ;; esac
         seen="$seen $ver"
         echo "  $(basename "$bin") - $ver"
     done
+    if [ "$unusable" -gt 0 ]; then
+        echo ""
+        echo "  注：标「不可用」的解释器在这台机器上跑不起来，ptool use 不会接受它们。"
+        PYTHON_PROBE_ERROR="$hint" python_probe_hint
+    fi
 
     echo ""
 

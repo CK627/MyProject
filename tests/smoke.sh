@@ -178,6 +178,48 @@ else
     fail "use 写回格式异常"
 fi
 
+# -------------------- 7.5) 跑不起来的解释器（真机事故：Bad CPU type）
+# 新机器 /usr/local/bin 里留着 x86_64 的 python3.6，在 Apple Silicon 上一执行就
+# "Bad CPU type in executable"。旧版把这条报错当成版本号打印，`ptool use 3.6` 还
+# 照写配置 —— 裸敲 python 直接坏掉。现在要求：list 标「不可用」、use 拒绝且不改配置。
+echo "== 跑不起来的解释器（Bad CPU type） =="
+MIX_BASE="$TMP/mix base"
+mkdir -p "$MIX_BASE"
+cp "$TMP/py base/python3.11" "$MIX_BASE/python3.11"
+cat > "$MIX_BASE/python3.6" <<'EOF'
+#!/bin/sh
+echo "$0: Bad CPU type in executable" >&2
+exit 126
+EOF
+chmod +x "$MIX_BASE/python3.6"
+printf 'PYTHON_BASE_DIR="%s"\n' "$MIX_BASE" > "$TOOL_DIR/config/ptool.conf"
+
+out="$(PATH="$TMP/stub:$PATH" "$TOOL_DIR/bin/ptool.sh" list 2>&1)"
+case "$out" in
+    *"3.6 - 不可用"*)  pass "list 把跑不起来的标成「不可用」" ;;
+    *)                 fail "list 未标记不可用: $out" ;;
+esac
+case "$out" in
+    *"3.11 - Python 3.11"*) pass "list 里可用的照常显示版本号" ;;
+    *)                      fail "list 弄丢了可用版本: $out" ;;
+esac
+
+use_out="$(PATH="$TMP/stub:$PATH" "$TOOL_DIR/bin/ptool.sh" use 3.6 2>&1)"
+if [ $? -eq 0 ]; then
+    fail "use 接受了跑不起来的解释器"
+else
+    pass "use 拒绝跑不起来的解释器"
+fi
+if grep -q '^PTOOL_DEFAULT_VERSION=' "$TOOL_DIR/config/ptool.conf"; then
+    fail "use 失败却改写了配置"
+else
+    pass "use 失败未改写配置"
+fi
+case "$use_out" in
+    *"无法在这台机器上运行"*) pass "拒绝时给出了原因" ;;
+    *)                        fail "拒绝原因不明确: $use_out" ;;
+esac
+
 # --------------------------------------- 8) do_install 不得吞掉 do_scan 失败
 # 回归：do_scan 返回 1 时曾继续跑完 [4/5][5/5] 并打印「安装完成！」
 echo "== do_install 的失败传播 =="
