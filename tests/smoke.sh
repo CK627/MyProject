@@ -89,6 +89,42 @@ else
     fail "jtool home 输出异常: $home_out"
 fi
 
+# ---------------------- 2.5) 跑不起来的 JDK（真机事故：Bad CPU type）
+# x86_64 的 JDK 装在 Apple Silicon 上，`java -version` 直接失败。旧版把这条报错当
+# 版本行打印，`jtool use` 还照写配置 —— 裸敲 java 就坏。现在要求：list 标「不可用」、
+# use 拒绝且不改配置。
+echo "== 跑不起来的 JDK（Bad CPU type） =="
+mkdir -p "$TMP/java base/jdk-17/bin"
+cat > "$TMP/java base/jdk-17/bin/java" <<'EOF'
+#!/bin/sh
+echo "$0: Bad CPU type in executable" >&2
+exit 126
+EOF
+chmod +x "$TMP/java base/jdk-17/bin/java"
+printf 'JAVA_BASE_DIR="%s/java base"\n' "$TMP" > "$TOOL_DIR/config/jtool.conf"
+
+out="$("$TOOL_DIR/bin/jtool.sh" list 2>&1)"
+case "$out" in
+    *"17 - 不可用"*) pass "list 把跑不起来的 JDK 标成「不可用」" ;;
+    *)               fail "list 未标记不可用: $out" ;;
+esac
+
+use_out="$(PATH="$TMP/stub:$PATH" "$TOOL_DIR/bin/jtool.sh" use 17 2>&1)"
+if [ $? -eq 0 ]; then
+    fail "use 接受了跑不起来的 JDK"
+else
+    pass "use 拒绝跑不起来的 JDK"
+fi
+if grep -q '^JTOOL_DEFAULT_VERSION=' "$TOOL_DIR/config/jtool.conf"; then
+    fail "use 失败却改写了配置"
+else
+    pass "use 失败未改写配置"
+fi
+case "$use_out" in
+    *"无法在这台机器上运行"*) pass "拒绝时给出了原因" ;;
+    *)                        fail "拒绝原因不明确: $use_out" ;;
+esac
+
 # ------------------------------- 3) 生成的 shim（瘦转发到 jtool）
 echo "== 生成的 shim（含空格路径） =="
 FAKE_HOME="$TMP/home"

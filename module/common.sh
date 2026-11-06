@@ -38,6 +38,45 @@ run_root() {
 }
 
 # ============================================
+# JDK 可用性探测
+# ============================================
+# 目录存在、bin/java 有执行位，都不代表它跑得起来：x86_64 的 JDK 装在 Apple
+# Silicon 上，一执行就 "Bad CPU type in executable"。不探的话，list 会把这条报错
+# 当成版本号打印，use 还会照写配置，最后裸敲 java 直接坏掉。
+# 判据：能执行，且 `java -version` 的首行是 "... version "..."。
+JAVA_PROBE_ERROR=""
+java_probe() {
+    local home="$1" out
+    JAVA_PROBE_ERROR=""
+    [ -x "$home/bin/java" ] || { JAVA_PROBE_ERROR="缺少 bin/java"; return 1; }
+    out=$("$home/bin/java" -version 2>&1 | head -1)
+    case "$out" in
+        *version\ \"*) return 0 ;;
+    esac
+    JAVA_PROBE_ERROR="${out:-无法执行}"
+    return 1
+}
+
+java_probe_hint() {
+    case "${JAVA_PROBE_ERROR:-}" in
+        *"Bad CPU type"*)
+            echo "      这台是 $(uname -m)，该 JDK 架构不匹配（通常是 x86_64 装在 Apple Silicon 上）。"
+            echo "      装 Rosetta 2: sudo softwareupdate --install-rosetta --agree-to-license"
+            echo "      或改用 arm64 版本的 JDK。"
+            ;;
+    esac
+}
+
+# 手上已经有 `java -version` 首行时（list / scan 都会跑一次），直接判它像不像版本行，
+# 不必为了「能不能用」再起一个子进程。
+java_line_ok() {
+    case "$1" in
+        *version\ \"*) return 0 ;;
+    esac
+    return 1
+}
+
+# ============================================
 # JDK 路径解析（全平台唯一实现）
 #
 # 版本号 -> JDK home，分三段，先廉价后昂贵：

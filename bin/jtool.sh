@@ -70,8 +70,16 @@ list_jdks() {
 
     local entries=""
     local version home first_line
+    local unusable=0 hint=""
     while IFS=$'\t' read -r version home first_line; do
         [ -n "$version" ] || continue
+        # 跑不起来的（典型：x86_64 的 JDK 装在 Apple Silicon 上）照样列出来，
+        # 但要标清楚——旧版直接把 "Bad CPU type in executable" 当版本行打印。
+        if ! java_line_ok "$first_line"; then
+            first_line="不可用：${first_line:-无法执行}"
+            unusable=$((unusable + 1))
+            [ -z "$hint" ] && hint="$first_line"
+        fi
         entries="${entries}  $version - $first_line"$'\n'
     done < <(do_list_jdk_dirs)
 
@@ -81,6 +89,12 @@ list_jdks() {
         printf '%s' "$entries" | sort -V
     else
         printf '%s' "$entries" | sort
+    fi
+
+    if [ "$unusable" -gt 0 ]; then
+        echo ""
+        echo "  注：标「不可用」的 JDK 在这台机器上跑不起来，jtool use 不会接受它们。"
+        JAVA_PROBE_ERROR="$hint" java_probe_hint
     fi
 
     echo ""
@@ -93,17 +107,33 @@ list_jdks() {
 show_state() {
     echo "jtool - Java 版本管理"
     if [ -n "$JTOOL_DEFAULT_VERSION" ]; then
+        local cur
+        cur=$(get_jdk_home "$JTOOL_DEFAULT_VERSION")
         echo "当前版本: $JTOOL_DEFAULT_VERSION"
-        echo "JAVA_HOME: $(get_jdk_home "$JTOOL_DEFAULT_VERSION")"
+        echo "JAVA_HOME: $cur"
+        # 默认版本可能是在别的机器上设的；探一次，别等敲 java 才发现坏了。
+        if ! java_probe "$cur"; then
+            echo "⚠ 这个 JDK 在本机跑不起来：$JAVA_PROBE_ERROR"
+            echo "  裸敲 java 会失败，用 jtool use <版本> 换一个（jtool list 看哪些可用）"
+        fi
     else
         echo "当前版本: （未设置，用 jtool use <版本号> 设置）"
     fi
     echo "基础目录: $JAVA_BASE_DIR"
-    local n=0 _v _h _f
+    local n=0 unusable=0 _v _h _f
     while IFS=$'\t' read -r _v _h _f; do
-        [ -n "$_v" ] && n=$((n + 1))
+        [ -n "$_v" ] || continue
+        if java_line_ok "$_f"; then
+            n=$((n + 1))
+        else
+            unusable=$((unusable + 1))
+        fi
     done < <(do_list_jdk_dirs)
-    echo "已安装:   $n 个（jtool list 看明细）"
+    if [ "$unusable" -gt 0 ]; then
+        echo "已安装:   $n 个可用（另有 $unusable 个跑不起来，jtool list 看明细）"
+    else
+        echo "已安装:   $n 个（jtool list 看明细）"
+    fi
     echo ""
     echo "jtool help 看全部命令"
 }
@@ -153,6 +183,16 @@ cmd_use() {
 
     if [ ! -d "$jdk_home" ]; then
         echo "错误: JDK $version 不存在 ($jdk_home)"
+        return 1
+    fi
+
+    # 目录在 ≠ 跑得起来。x86_64 的 JDK 装在 Apple Silicon 上，写进配置后
+    # 裸敲 java 就是 "Bad CPU type in executable"，所以先探一次。
+    if ! java_probe "$jdk_home"; then
+        echo "错误: JDK $version 无法在这台机器上运行" >&2
+        echo "      $jdk_home/bin/java: $JAVA_PROBE_ERROR" >&2
+        java_probe_hint >&2
+        echo "      默认版本未改动。" >&2
         return 1
     fi
 
