@@ -50,6 +50,10 @@ java_probe() {
     JAVA_PROBE_ERROR=""
     [ -x "$home/bin/java" ] || { JAVA_PROBE_ERROR="缺少 bin/java"; return 1; }
     out=$("$home/bin/java" -version 2>&1 | head -1)
+    # bash 的 exec 失败会把路径也带上，调用方本来就会打印路径，剥掉免得重复。
+    case "$out" in
+        "$home/bin/java: "*) out="${out#"$home/bin/java: "}" ;;
+    esac
     case "$out" in
         *version\ \"*) return 0 ;;
     esac
@@ -240,6 +244,11 @@ do_list_jdk_dirs() {
             version=$(_jdk_real_version "$home" 2>/dev/null) || version="$name"
         fi
         first_line=$("$home/bin/java" -version 2>&1 | head -1)
+        # 跑不起来时 bash 会把路径拼在报错前面（"<path>: Bad CPU type ..."），
+        # 显示时路径另有位置，这里剥掉，免得一行里出现两次。
+        case "$first_line" in
+            "$home/bin/java: "*) first_line="${first_line#"$home/bin/java: "}" ;;
+        esac
         printf '%s\t%s\t%s\n' "$version" "$home" "$first_line"
     done < <(_jdk_dirs "$base")
 }

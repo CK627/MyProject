@@ -44,7 +44,19 @@ WIN_PASS="${JTOOL_WIN_PASS:-}"
 if [ -z "$WIN_PASS" ] && [ -f "$PASS_FILE" ]; then
     WIN_PASS="$(cat "$PASS_FILE")"
 fi
+
 SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=20)
+SCP_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=20)
+# 构建机在内网时通常靠端口转发（frp 之类）暴露出来，所以端口与私钥都要能覆盖。
+# ssh 的端口参数是 -p、scp 是 -P，两者不能共用同一个数组。
+if [ -n "${JTOOL_WIN_PORT:-}" ]; then
+    SSH_OPTS+=(-p "$JTOOL_WIN_PORT")
+    SCP_OPTS+=(-P "$JTOOL_WIN_PORT")
+fi
+if [ -n "${JTOOL_WIN_KEY:-}" ]; then
+    SSH_OPTS+=(-i "$JTOOL_WIN_KEY" -o IdentitiesOnly=yes)
+    SCP_OPTS+=(-i "$JTOOL_WIN_KEY" -o IdentitiesOnly=yes)
+fi
 
 if [ -n "$WIN_PASS" ]; then
     PASS_TMP="$(mktemp)"
@@ -52,7 +64,7 @@ if [ -n "$WIN_PASS" ]; then
     printf '%s' "$WIN_PASS" > "$PASS_TMP"
     trap 'rm -f "$PASS_TMP"' EXIT
     SSH=(sshpass -f "$PASS_TMP" ssh "${SSH_OPTS[@]}" "$WIN_USER@$WIN_HOST")
-    SCP=(sshpass -f "$PASS_TMP" scp "${SSH_OPTS[@]}")
+    SCP=(sshpass -f "$PASS_TMP" scp "${SCP_OPTS[@]}")
 else
     # 没给密码就走免密。先探一次而不是等 scp 才失败：连接不通和「远程编译失败」
     # 是两件事，混在一起报错没法定位。
@@ -63,7 +75,7 @@ else
         exit 1
     fi
     SSH=(ssh "${SSH_OPTS[@]}" "$WIN_USER@$WIN_HOST")
-    SCP=(scp "${SSH_OPTS[@]}")
+    SCP=(scp "${SCP_OPTS[@]}")
 fi
 
 # ------------------------------------------------------------------
@@ -102,14 +114,15 @@ TOOL_UPPER="$(echo "$TOOL" | tr 'a-z' 'A-Z')"
 # 仓库里的 config 模板带的是 macOS/Linux 默认路径（如 /usr/local/bin），
 # 直接发到 Windows 上会让 `jtool list` 找不到任何东西。这里换成 Windows 默认值，
 # 安装后的 [Run] 扫描再用实际检测结果覆盖它。
+#
+# 键名从模板里推导（第一个 *_BASE_DIR= 行）。不要用 $TOOL_UPPER 拼键名：jtool 的
+# 键叫 PYTHON_BASE_DIR，拼出来是 JTOOL_BASE_DIR，永远匹配不上，替换会静默失效。
+# 找不到可替换的行就直接报错退出，好过悄悄发出一个带 macOS 路径的配置。
 case "$TOOL" in
     ptool) WIN_BASE='C:\' ;;
     jtool) WIN_BASE='C:\Program Files\Java' ;;
     *)     WIN_BASE='C:\' ;;
 esac
-# 键名从模板里推导（第一个 *_BASE_DIR= 行）。不要用 $TOOL_UPPER 拼键名：jtool 的
-# 键叫 JAVA_BASE_DIR，拼出来是 JTOOL_BASE_DIR，永远匹配不上，替换会静默失效。
-# 找不到可替换的行就直接报错退出，好过悄悄发出一个带 macOS 路径的配置。
 WIN_BASE="$WIN_BASE" python3 - "$STAGE/src/config/$TOOL.conf" <<'PYEOF'
 import os, re, sys
 path = sys.argv[1]

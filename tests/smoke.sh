@@ -101,7 +101,7 @@ echo "$0: Bad CPU type in executable" >&2
 exit 126
 EOF
 chmod +x "$TMP/java base/jdk-17/bin/java"
-printf 'JAVA_BASE_DIR="%s/java base"\n' "$TMP" > "$TOOL_DIR/config/jtool.conf"
+printf 'JAVA_BASE_DIR="%s/java base"\nJTOOL_DEFAULT_VERSION="21"\n' "$TMP" > "$TOOL_DIR/config/jtool.conf"
 
 out="$("$TOOL_DIR/bin/jtool.sh" list 2>&1)"
 case "$out" in
@@ -115,10 +115,10 @@ if [ $? -eq 0 ]; then
 else
     pass "use 拒绝跑不起来的 JDK"
 fi
-if grep -q '^JTOOL_DEFAULT_VERSION=' "$TOOL_DIR/config/jtool.conf"; then
-    fail "use 失败却改写了配置"
+if grep -q '^JTOOL_DEFAULT_VERSION="21"$' "$TOOL_DIR/config/jtool.conf"; then
+    pass "use 失败未改写配置（仍是 21）"
 else
-    pass "use 失败未改写配置"
+    fail "use 失败却改写了配置"
 fi
 case "$use_out" in
     *"无法在这台机器上运行"*) pass "拒绝时给出了原因" ;;
