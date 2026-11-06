@@ -46,6 +46,17 @@ if [ -z "$WIN_PASS" ] && [ -f "$PASS_FILE" ]; then
 fi
 
 SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=20)
+SCP_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=20)
+# 构建机在内网时通常靠端口转发（frp 之类）暴露出来，所以端口与私钥都要能覆盖。
+# ssh 的端口参数是 -p、scp 是 -P，两者不能共用同一个数组。
+if [ -n "${PTOOL_WIN_PORT:-}" ]; then
+    SSH_OPTS+=(-p "$PTOOL_WIN_PORT")
+    SCP_OPTS+=(-P "$PTOOL_WIN_PORT")
+fi
+if [ -n "${PTOOL_WIN_KEY:-}" ]; then
+    SSH_OPTS+=(-i "$PTOOL_WIN_KEY" -o IdentitiesOnly=yes)
+    SCP_OPTS+=(-i "$PTOOL_WIN_KEY" -o IdentitiesOnly=yes)
+fi
 
 if [ -n "$WIN_PASS" ]; then
     PASS_TMP="$(mktemp)"
@@ -53,7 +64,7 @@ if [ -n "$WIN_PASS" ]; then
     printf '%s' "$WIN_PASS" > "$PASS_TMP"
     trap 'rm -f "$PASS_TMP"' EXIT
     SSH=(sshpass -f "$PASS_TMP" ssh "${SSH_OPTS[@]}" "$WIN_USER@$WIN_HOST")
-    SCP=(sshpass -f "$PASS_TMP" scp "${SSH_OPTS[@]}")
+    SCP=(sshpass -f "$PASS_TMP" scp "${SCP_OPTS[@]}")
 else
     # 没给密码就走免密。先探一次而不是等 scp 才失败：连接不通和「远程编译失败」
     # 是两件事，混在一起报错没法定位。
@@ -64,7 +75,7 @@ else
         exit 1
     fi
     SSH=(ssh "${SSH_OPTS[@]}" "$WIN_USER@$WIN_HOST")
-    SCP=(scp "${SSH_OPTS[@]}")
+    SCP=(scp "${SCP_OPTS[@]}")
 fi
 
 # ------------------------------------------------------------------

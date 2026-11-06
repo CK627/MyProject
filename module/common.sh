@@ -57,6 +57,11 @@ python_probe() {
     [ -x "$bin" ] || { PYTHON_PROBE_ERROR="没有执行权限"; return 1; }
     # 2>&1 是必需的：Python 2 把版本号打在 stderr 上。
     out=$("$bin" --version 2>&1 | head -1)
+    # bash 的 exec 失败会把路径也带上（"<路径>: Bad CPU type in executable"），
+    # 调用方本来就会打印路径，这里剥掉前缀免得同一个路径出现两次。
+    case "$out" in
+        "$bin: "*) out="${out#"$bin: "}" ;;
+    esac
     case "$out" in
         # 顺手把首行带回去，调用方不用为了显示版本再跑一次解释器。
         Python\ [0-9]*) PYTHON_PROBE_VERSION="$out"; return 0 ;;
